@@ -1,0 +1,36 @@
+name: funnelhub
+
+services:
+  app:
+    build: .
+    env_file:
+      - .env.example
+    ports:
+      - "8000:8000"
+    depends_on:
+      - postgres
+      - redis
+    volumes:
+      - ./alembic.ini:/app/alembic.ini
+      - ./migrations:/app/migrations
+      - ./src:/app/src
+      - ./tests:/app/tests
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: funnelhub
+      POSTGRES_USER: funnelhub
+      POSTGRES_PASSWORD: funnelhub
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+volumes:
+  postgres_data:

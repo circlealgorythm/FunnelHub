@@ -1,0 +1,1 @@
+"""FunnelHub application package."""
