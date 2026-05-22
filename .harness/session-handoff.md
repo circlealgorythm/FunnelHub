@@ -26,10 +26,19 @@ FunnelHub is being set up as a Harness-engineering project. GetCourse keeps cour
 - Added SQLAlchemy core data models, Alembic setup, and migration `0001_core_data_model`.
 - Applied migration to local Docker PostgreSQL successfully.
 - Documented schema in `.harness/docs/data-model.md`.
+- Captured GetCourse webhook.site screenshots were summarized in `.harness/docs/getcourse-webhook.md`: GetCourse sends GET query params, no body/form values, with profile fields, UTM fields, and `custom_<field_id>` parameters.
+- Captured GetCourse account fields API raw JSON was summarized in `.harness/docs/getcourse-webhook.md`. Correct checkbox IDs are `10558670`, `10575005`, `10616540`, `10661024`, `10682753`, `10682754`, `10683365`, `11344348`. Earlier screenshot-only read of `10663365/11344349` was corrected by raw JSON.
+- Consent meaning from raw JSON: all eight checkbox fields imply personal data + privacy policy consent when checked; all except `10616540` include an offer agreement link. Offer URLs differ per field.
+- Implemented `GET/POST /webhooks/getcourse`.
+- Added async SQLAlchemy session dependency in `src/funnelhub/db/session.py`.
+- Added webhook router in `src/funnelhub/api/webhooks.py`.
+- Added ingestion service in `src/funnelhub/services/getcourse_webhook.py`.
+- Webhook now creates/updates leads, contacts, GetCourse external IDs, email subscriptions, UTM rows, custom fields, and events.
+- Added tests in `tests/test_getcourse_webhook.py`.
 
 ## Next Recommended Step
 
-Choose the next feature. Recommended next feature: `getcourse-webhook`.
+Choose the next feature. Recommended next feature: `bot-linking`.
 
 ## Verification
 
@@ -47,3 +56,12 @@ Choose the next feature. Recommended next feature: `getcourse-webhook`.
 - `docker compose exec -T app alembic upgrade head` passed.
 - PostgreSQL contains 14 domain tables plus `alembic_version`.
 - `docker compose exec -T app pytest -x` passed: 2 tests passed.
+- GetCourse webhook payload discovery recorded from screenshots.
+- `ruff check .` passed after `getcourse-webhook`.
+- `mypy src` passed after `getcourse-webhook`.
+- `pytest -x` passed after `getcourse-webhook`: 7 tests passed.
+- `docker compose up -d --build` passed after `getcourse-webhook`.
+- `docker compose exec -T app ruff check .` passed.
+- `docker compose exec -T app mypy src` passed.
+- `docker compose exec -T app pytest -x` passed: 7 tests passed.
+- Smoke-tested `GET /webhooks/getcourse` on `localhost:8000`: first request created a lead, repeated request deduplicated to the same lead.
