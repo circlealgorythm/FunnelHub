@@ -144,6 +144,20 @@ class MessengerIdentity(Base, TimestampMixin):
     raw_profile: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
 
 
+class BotLinkToken(Base, TimestampMixin):
+    __tablename__ = "bot_link_tokens"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    lead_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("leads.id", ondelete="CASCADE"))
+    token: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+    status: Mapped[str] = mapped_column(String(64), default="active", nullable=False)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    metadata_: Mapped[dict[str, Any]] = mapped_column(
+        "metadata", JSONB, default=dict, nullable=False
+    )
+
+
 class EmailSubscription(Base, TimestampMixin):
     __tablename__ = "email_subscriptions"
 

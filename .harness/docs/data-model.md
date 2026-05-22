@@ -13,6 +13,7 @@ Initial PostgreSQL schema is managed by Alembic migration:
 - `lead_custom_fields`: GetCourse additional/custom fields, including headerless XLSX columns.
 - `lead_consents`: semantic consent records derived from custom fields or future forms.
 - `messenger_identities`: Telegram/VK/Max account bindings for a lead.
+- `bot_link_tokens`: temporary join tokens that connect a saved lead to a future Telegram/VK identity.
 - `email_subscriptions`: email subscription state independent of GetCourse.
 - `funnel_states`: current scheduled funnel state per lead and funnel.
 - `conversations`: inbox conversation state per lead/channel.

@@ -15,6 +15,13 @@ class Settings(BaseSettings):
         validation_alias="DATABASE_URL",
     )
     redis_url: str = Field(default="redis://localhost:6379/0", validation_alias="REDIS_URL")
+    public_base_url: str = Field(
+        default="http://localhost:8000", validation_alias="PUBLIC_BASE_URL"
+    )
+    telegram_bot_username: str | None = Field(
+        default=None, validation_alias="TELEGRAM_BOT_USERNAME"
+    )
+    telegram_bot_token: str | None = Field(default=None, validation_alias="TELEGRAM_BOT_TOKEN")
 
 
 @lru_cache

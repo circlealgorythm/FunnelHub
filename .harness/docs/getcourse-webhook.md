@@ -274,7 +274,10 @@ Current implementation target:
 - Treat `(empty)`, empty string, `none`, and `null` as absent values.
 - Require at least one identity: `gc_user_id`, `email`, or `phone`.
 - Deduplicate by GetCourse user ID first, then normalized email, then normalized phone.
-- Store `custom_*` fields in `lead_custom_fields` without guessing semantic consent types.
+- Store all `custom_*` fields in `lead_custom_fields`.
+- Derive `lead_consents` only from the raw-JSON-backed custom field mapping above.
+- For mapped checkbox fields with value `Да`, create/update `personal_data` and `privacy_policy`.
+- For mapped checkbox fields with value `Да`, create/update `offer_agreement` when the field has an offer URL; `10616540` is policy-only and must not create `offer_agreement`.
 
 ## Open Questions
 

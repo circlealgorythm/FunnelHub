@@ -7,7 +7,7 @@
     {"id": "scaffold-base-app", "title": "Scaffold base FastAPI app", "status": "completed"},
     {"id": "core-data-model", "title": "Core data model", "status": "completed"},
     {"id": "getcourse-webhook", "title": "GetCourse webhook ingestion", "status": "completed"},
-    {"id": "bot-linking", "title": "Telegram/VK bot linking", "status": "pending"},
+    {"id": "bot-linking", "title": "Telegram/VK bot linking", "status": "completed"},
     {"id": "funnel-engine", "title": "Scheduled funnel engine", "status": "pending"},
     {"id": "email-provider", "title": "Email provider integration", "status": "pending"},
     {"id": "simple-inbox", "title": "Simple mobile inbox", "status": "pending"},

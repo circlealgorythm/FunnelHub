@@ -35,10 +35,21 @@ FunnelHub is being set up as a Harness-engineering project. GetCourse keeps cour
 - Added ingestion service in `src/funnelhub/services/getcourse_webhook.py`.
 - Webhook now creates/updates leads, contacts, GetCourse external IDs, email subscriptions, UTM rows, custom fields, and events.
 - Added tests in `tests/test_getcourse_webhook.py`.
+- Added semantic consent normalization from mapped GetCourse checkbox custom fields.
+- Mapped custom fields with `Да` now create/update `lead_consents`: all mapped fields grant `personal_data` and `privacy_policy`; all except `10616540` also grant `offer_agreement`.
+- Added `bot_link_tokens` model/table and migration `0002_bot_link_tokens`.
+- GetCourse webhook response now includes `bot_link_token` and `join_url`.
+- Added local join page at `GET /join/{token}`.
+- Added messenger linking API at `POST /api/messenger/link`.
+- Added bot-linking docs in `.harness/docs/bot-linking.md`.
+- The provided Telegram bot token was not written to repository files. Real Telegram adapter should use environment config later.
+- Added aiogram-based Telegram polling adapter in `src/funnelhub/telegram_bot.py`.
+- Added `TELEGRAM_BOT_TOKEN` config/env example; the actual token remains outside repo files.
+- Telegram adapter handles `/start <token>` and links the Telegram user through the existing linking service.
 
 ## Next Recommended Step
 
-Choose the next feature. Recommended next feature: `bot-linking`.
+Choose the next feature. Recommended next feature: end-to-end local Telegram adapter test, then `funnel-engine`.
 
 ## Verification
 
@@ -65,3 +76,27 @@ Choose the next feature. Recommended next feature: `bot-linking`.
 - `docker compose exec -T app mypy src` passed.
 - `docker compose exec -T app pytest -x` passed: 7 tests passed.
 - Smoke-tested `GET /webhooks/getcourse` on `localhost:8000`: first request created a lead, repeated request deduplicated to the same lead.
+- `ruff check .` passed after consent normalization follow-up.
+- `mypy src` passed after consent normalization follow-up.
+- `pytest -x` passed after consent normalization follow-up: 9 tests passed.
+- `docker compose exec -T app ruff check .` passed after consent normalization follow-up.
+- `docker compose exec -T app mypy src` passed after consent normalization follow-up.
+- `docker compose exec -T app pytest -x` passed after consent normalization follow-up: 9 tests passed.
+- Smoke-tested consent derivation through `GET /webhooks/getcourse` on `localhost:8000`; `custom_10558670=Да` created `personal_data`, `privacy_policy`, and `offer_agreement`.
+- `docker compose up -d` passed after starting Docker Desktop.
+- `docker compose exec -T app alembic upgrade head` applied `0002_bot_link_tokens`.
+- `ruff check .` passed after `bot-linking`.
+- `mypy src` passed after `bot-linking`.
+- `pytest -x` passed after `bot-linking`: 14 tests passed.
+- `docker compose exec -T app ruff check .` passed after `bot-linking`.
+- `docker compose exec -T app mypy src` passed after `bot-linking`.
+- `docker compose exec -T app pytest -x` passed after `bot-linking`: 14 tests passed.
+- Smoke-tested webhook -> join page -> messenger link on `localhost:8000`; Telegram identity link returned `created:true`.
+- Installed updated dependencies in local `.venv` after adding `aiogram`.
+- `ruff check .` passed after Telegram adapter follow-up.
+- `mypy src` passed after Telegram adapter follow-up.
+- `pytest -x` passed after Telegram adapter follow-up: 16 tests passed.
+- `docker compose up -d --build` passed after adding `aiogram`.
+- `docker compose exec -T app ruff check .` passed after Telegram adapter follow-up.
+- `docker compose exec -T app mypy src` passed after Telegram adapter follow-up.
+- `docker compose exec -T app pytest -x` passed after Telegram adapter follow-up: 16 tests passed.

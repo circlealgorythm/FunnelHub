@@ -6,7 +6,9 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from funnelhub.config import Settings, get_settings
 from funnelhub.db.session import get_session
+from funnelhub.services.bot_linking import build_join_url
 from funnelhub.services.getcourse_webhook import ingest_getcourse_webhook
 
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
@@ -16,6 +18,8 @@ class GetCourseWebhookResponse(BaseModel):
     status: str
     lead_id: str
     created: bool
+    bot_link_token: str
+    join_url: str
 
 
 @router.api_route(
@@ -27,6 +31,7 @@ class GetCourseWebhookResponse(BaseModel):
 async def getcourse_webhook(
     request: Request,
     session: Annotated[AsyncSession, Depends(get_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
 ) -> GetCourseWebhookResponse:
     payload = await _extract_payload(request)
     if not payload:
@@ -48,6 +53,8 @@ async def getcourse_webhook(
         status="ok",
         lead_id=str(result.lead_id),
         created=result.created,
+        bot_link_token=result.bot_link_token,
+        join_url=build_join_url(settings, result.bot_link_token),
     )
 
 

@@ -11,6 +11,7 @@ def test_core_tables_are_registered() -> None:
         "lead_custom_fields",
         "lead_consents",
         "messenger_identities",
+        "bot_link_tokens",
         "email_subscriptions",
         "funnel_states",
         "conversations",

@@ -12,20 +12,34 @@ from funnelhub.db.models import (
     EmailSubscription,
     Event,
     Lead,
+    LeadConsent,
     LeadContact,
     LeadCustomField,
     LeadExternalId,
     LeadUtm,
 )
+from funnelhub.services.bot_linking import create_or_get_active_bot_link_token
 
 EMPTY_VALUES = {"", "(empty)", "none", "null"}
 UTM_KEYS = ("utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content", "utm_group")
+PRIVACY_POLICY_URL = "https://shamanaisu.getcourse.ru/politica"
+CONSENT_CUSTOM_FIELD_MAPPING = {
+    "custom_10558670": "https://shamanaisu.getcourse.ru/oferta",
+    "custom_10575005": "https://school.aisukam.ru/oferta_old",
+    "custom_10616540": None,
+    "custom_10661024": "https://school.aisukam.ru/oferta_marafon_meditation",
+    "custom_10682753": "https://school.aisukam.ru/oferta_orakuly",
+    "custom_10682754": "https://school.aisukam.ru/oferta_skoraya_pomoshch",
+    "custom_10683365": "https://school.aisukam.ru/oferta_individualnoe_nastavnichestvo",
+    "custom_11344348": "https://school.aisukam.ru/oferta_shamanputesh",
+}
 
 
 @dataclass(frozen=True)
 class GetCourseWebhookIngestionResult:
     lead_id: uuid.UUID
     created: bool
+    bot_link_token: str
 
 
 async def ingest_getcourse_webhook(
@@ -70,7 +84,8 @@ async def ingest_getcourse_webhook(
         normalized_value=normalized["normalized_phone"],
     )
     await upsert_email_subscription(session, lead, normalized)
-    await upsert_custom_fields(session, lead, normalized)
+    custom_fields = await upsert_custom_fields(session, lead, normalized)
+    await upsert_consents(session, lead, custom_fields)
 
     if has_utm_data(normalized):
         session.add(
@@ -98,7 +113,12 @@ async def ingest_getcourse_webhook(
         )
     )
 
-    return GetCourseWebhookIngestionResult(lead_id=lead.id, created=created)
+    bot_link_token = await create_or_get_active_bot_link_token(session, lead)
+    return GetCourseWebhookIngestionResult(
+        lead_id=lead.id,
+        created=created,
+        bot_link_token=bot_link_token.token,
+    )
 
 
 def normalize_getcourse_payload(payload: dict[str, Any]) -> dict[str, Any]:
@@ -268,7 +288,8 @@ async def upsert_custom_fields(
     session: AsyncSession,
     lead: Lead,
     normalized: dict[str, Any],
-) -> None:
+) -> dict[str, LeadCustomField]:
+    custom_fields = {}
     for field_key, value in normalized["custom_fields"].items():
         custom_field = await session.scalar(
             select(LeadCustomField).where(
@@ -279,22 +300,133 @@ async def upsert_custom_fields(
         )
         raw_data = {"field_key": field_key, "value": value}
         if custom_field is None:
-            session.add(
-                LeadCustomField(
-                    id=uuid.uuid4(),
-                    lead_id=lead.id,
-                    source="getcourse",
-                    field_key=field_key,
-                    field_label=field_key,
-                    value=value,
-                    normalized_bool=normalize_bool(value),
-                    raw_data=raw_data,
-                )
+            custom_field = LeadCustomField(
+                id=uuid.uuid4(),
+                lead_id=lead.id,
+                source="getcourse",
+                field_key=field_key,
+                field_label=field_key,
+                value=value,
+                normalized_bool=normalize_bool(value),
+                raw_data=raw_data,
             )
+            session.add(custom_field)
         else:
             custom_field.value = value
             custom_field.normalized_bool = normalize_bool(value)
             custom_field.raw_data = raw_data
+        custom_fields[field_key] = custom_field
+
+    return custom_fields
+
+
+async def upsert_consents(
+    session: AsyncSession,
+    lead: Lead,
+    custom_fields: dict[str, LeadCustomField],
+) -> None:
+    for field_key, custom_field in custom_fields.items():
+        if (
+            custom_field.normalized_bool is not True
+            or field_key not in CONSENT_CUSTOM_FIELD_MAPPING
+        ):
+            continue
+
+        offer_url = CONSENT_CUSTOM_FIELD_MAPPING[field_key]
+        await upsert_consent(
+            session=session,
+            lead=lead,
+            custom_field=custom_field,
+            consent_type="personal_data",
+            metadata={
+                "privacy_policy_url": PRIVACY_POLICY_URL,
+            },
+        )
+        await upsert_consent(
+            session=session,
+            lead=lead,
+            custom_field=custom_field,
+            consent_type="privacy_policy",
+            metadata={
+                "privacy_policy_url": PRIVACY_POLICY_URL,
+            },
+        )
+
+        if offer_url is not None:
+            await upsert_consent(
+                session=session,
+                lead=lead,
+                custom_field=custom_field,
+                consent_type="offer_agreement",
+                metadata={
+                    "offer_url": offer_url,
+                    "privacy_policy_url": PRIVACY_POLICY_URL,
+                },
+            )
+
+
+async def upsert_consent(
+    session: AsyncSession,
+    lead: Lead,
+    custom_field: LeadCustomField,
+    consent_type: str,
+    metadata: dict[str, Any],
+) -> None:
+    now = datetime.now(UTC)
+    consent = await session.scalar(
+        select(LeadConsent).where(
+            LeadConsent.lead_id == lead.id,
+            LeadConsent.consent_type == consent_type,
+            LeadConsent.source == "getcourse",
+        )
+    )
+    merged_metadata = merge_consent_metadata(
+        existing=consent.metadata_ if consent is not None else {},
+        custom_field=custom_field,
+        metadata=metadata,
+    )
+    if consent is None:
+        session.add(
+            LeadConsent(
+                id=uuid.uuid4(),
+                lead_id=lead.id,
+                consent_type=consent_type,
+                is_granted=True,
+                granted_at=now,
+                source="getcourse",
+                source_custom_field_id=custom_field.id,
+                metadata_=merged_metadata,
+            )
+        )
+        return
+
+    consent.is_granted = True
+    consent.granted_at = consent.granted_at or now
+    consent.revoked_at = None
+    consent.source_custom_field_id = custom_field.id
+    consent.metadata_ = merged_metadata
+
+
+def merge_consent_metadata(
+    existing: dict[str, Any],
+    custom_field: LeadCustomField,
+    metadata: dict[str, Any],
+) -> dict[str, Any]:
+    merged = {**existing, **metadata}
+
+    custom_field_keys = list(merged.get("custom_field_keys", []))
+    if custom_field.field_key not in custom_field_keys:
+        custom_field_keys.append(custom_field.field_key)
+    merged["custom_field_keys"] = custom_field_keys
+
+    offer_url = metadata.get("offer_url")
+    if isinstance(offer_url, str):
+        offer_urls = list(merged.get("offer_urls", []))
+        if offer_url not in offer_urls:
+            offer_urls.append(offer_url)
+        merged["offer_urls"] = offer_urls
+
+    return merged
 
 
 def has_utm_data(normalized: dict[str, Any]) -> bool:
