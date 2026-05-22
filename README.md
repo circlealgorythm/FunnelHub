@@ -1,5 +1,7 @@
 # FunnelHub
 
+Центр управления воронкой.
+
 FunnelHub is a server-side communication system around GetCourse.
 
 GetCourse remains responsible for courses, payments, installments, access, login/password
