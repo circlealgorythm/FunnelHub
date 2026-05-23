@@ -25,6 +25,8 @@
 - Active bot link tokens are reused for repeat webhooks for the same lead and expire after 30 days.
 - A `channel + external_user_id` messenger identity cannot be linked to two different leads.
 - Telegram polling adapter uses aiogram and reads `TELEGRAM_BOT_TOKEN` from environment only.
+- Telegram `/stop` marks the Telegram identity unsubscribed in FunnelHub without deleting the lead.
+- Telegram outbound sends must be recorded in `messages` for traceability.
 - Backend stack: Python 3.12+, FastAPI, PostgreSQL, Redis, SQLAlchemy/Alembic.
 - Admin MVP: server-rendered FastAPI pages with Jinja2/HTMX, mobile-friendly for inbox replies.
 - Telegram: aiogram 3.x.
@@ -65,6 +67,9 @@
 - Added aiogram-based Telegram polling adapter for `/start <token>`.
 - Added `TELEGRAM_BOT_TOKEN` config/env example without storing the actual token.
 - Added tests for Telegram adapter helper behavior.
+- Added Telegram `/status` and `/stop` commands.
+- Added Telegram outbound text sending service with optional URL buttons and `messages` persistence.
+- Added tests for outbound send persistence, unsubscribed identity rejection, unsubscribe behavior, and command response text.
 
 ## Open Questions
 
@@ -129,3 +134,9 @@
 - `docker compose exec -T app ruff check .` passed after Telegram adapter follow-up.
 - `docker compose exec -T app mypy src` passed after Telegram adapter follow-up.
 - `docker compose exec -T app pytest -x` passed after Telegram adapter follow-up: 16 tests passed.
+- `ruff check .` passed after Telegram commands/outbound follow-up.
+- `mypy src` passed after Telegram commands/outbound follow-up.
+- `pytest -x` passed after Telegram commands/outbound follow-up: 22 tests passed.
+- `docker compose exec -T app ruff check .` passed after Telegram commands/outbound follow-up.
+- `docker compose exec -T app mypy src` passed after Telegram commands/outbound follow-up.
+- `docker compose exec -T app pytest -x` passed after Telegram commands/outbound follow-up: 22 tests passed.

@@ -46,10 +46,13 @@ FunnelHub is being set up as a Harness-engineering project. GetCourse keeps cour
 - Added aiogram-based Telegram polling adapter in `src/funnelhub/telegram_bot.py`.
 - Added `TELEGRAM_BOT_TOKEN` config/env example; the actual token remains outside repo files.
 - Telegram adapter handles `/start <token>` and links the Telegram user through the existing linking service.
+- Added Telegram `/status` and `/stop`.
+- Added Telegram outbound text sending service in `src/funnelhub/services/telegram_messaging.py`.
+- Outbound Telegram sends write to `messages`; `/stop` marks `messenger_identities.is_subscribed=false`.
 
 ## Next Recommended Step
 
-Choose the next feature. Recommended next feature: end-to-end local Telegram adapter test, then `funnel-engine`.
+Choose the next feature. Recommended next feature: `funnel-engine` once the funnel scenario is available.
 
 ## Verification
 
@@ -100,3 +103,9 @@ Choose the next feature. Recommended next feature: end-to-end local Telegram ada
 - `docker compose exec -T app ruff check .` passed after Telegram adapter follow-up.
 - `docker compose exec -T app mypy src` passed after Telegram adapter follow-up.
 - `docker compose exec -T app pytest -x` passed after Telegram adapter follow-up: 16 tests passed.
+- `ruff check .` passed after Telegram commands/outbound follow-up.
+- `mypy src` passed after Telegram commands/outbound follow-up.
+- `pytest -x` passed after Telegram commands/outbound follow-up: 22 tests passed.
+- `docker compose exec -T app ruff check .` passed after Telegram commands/outbound follow-up.
+- `docker compose exec -T app mypy src` passed after Telegram commands/outbound follow-up.
+- `docker compose exec -T app pytest -x` passed after Telegram commands/outbound follow-up: 22 tests passed.

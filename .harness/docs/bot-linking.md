@@ -85,6 +85,19 @@ Run the FastAPI app as usual, then run the Telegram polling adapter in a second 
 
 The bot handles `/start <token>` and calls the same internal linking service as `POST /api/messenger/link`.
 
+Implemented Telegram commands:
+
+- `/start <token>`: link Telegram user to the saved lead.
+- `/status`: show whether Telegram is linked and subscribed.
+- `/stop`: mark the Telegram identity as unsubscribed.
+
+Implemented outbound sending service:
+
+- `send_telegram_text_message(...)` sends a text message to a subscribed Telegram identity.
+- URL buttons are supported through simple button descriptors.
+- Each outbound send creates a `messages` row with channel `telegram`, direction `outbound`, body, status, external Telegram message ID when available, and button metadata.
+- If the lead has no subscribed Telegram identity, sending is rejected.
+
 ## Next Work
 
 - Test the Telegram adapter end-to-end against the new test bot.

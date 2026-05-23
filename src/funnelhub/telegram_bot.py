@@ -5,13 +5,18 @@ import logging
 from typing import Any
 
 from aiogram import Bot, Dispatcher, Router
-from aiogram.filters import CommandStart
+from aiogram.filters import Command, CommandStart
 from aiogram.filters.command import CommandObject
 from aiogram.types import Message, User
 
 from funnelhub.config import get_settings
+from funnelhub.db.models import MessengerIdentity
 from funnelhub.db.session import async_session_maker
 from funnelhub.services.bot_linking import link_messenger_identity
+from funnelhub.services.telegram_messaging import (
+    get_telegram_identity_by_user_id,
+    unsubscribe_telegram_identity,
+)
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -49,11 +54,55 @@ async def handle_start(message: Message, command: CommandObject) -> None:
     await message.answer("Telegram привязан. Скоро здесь начнется воронка.")
 
 
+@router.message(Command("status"))
+async def handle_status(message: Message) -> None:
+    telegram_user = message.from_user
+    if telegram_user is None:
+        await message.answer("Не удалось определить Telegram-пользователя.")
+        return
+
+    async with async_session_maker() as session:
+        identity = await get_telegram_identity_by_user_id(session, str(telegram_user.id))
+
+    await message.answer(build_status_text(identity))
+
+
+@router.message(Command("stop"))
+async def handle_stop(message: Message) -> None:
+    telegram_user = message.from_user
+    if telegram_user is None:
+        await message.answer("Не удалось определить Telegram-пользователя.")
+        return
+
+    async with async_session_maker() as session:
+        unsubscribed = await unsubscribe_telegram_identity(session, str(telegram_user.id))
+        await session.commit()
+
+    await message.answer(build_stop_text(unsubscribed))
+
+
 def normalize_start_token(args: str | None) -> str | None:
     if args is None:
         return None
     token = args.strip()
     return token or None
+
+
+def build_status_text(identity: MessengerIdentity | None) -> str:
+    if identity is None:
+        return "Telegram пока не привязан. Откройте бота по ссылке с сайта."
+    if identity.is_subscribed:
+        return "Telegram привязан. Подписка активна."
+    return (
+        "Telegram привязан, но подписка остановлена. "
+        "Нажмите ссылку с сайта, чтобы включить снова."
+    )
+
+
+def build_stop_text(unsubscribed: bool) -> str:
+    if unsubscribed:
+        return "Подписка в Telegram остановлена."
+    return "Telegram пока не привязан. Отписка не требуется."
 
 
 def build_raw_profile(user: User) -> dict[str, Any]:
