@@ -13,6 +13,7 @@ from funnelhub.config import get_settings
 from funnelhub.db.models import MessengerIdentity
 from funnelhub.db.session import async_session_maker
 from funnelhub.services.bot_linking import link_messenger_identity
+from funnelhub.services.funnel_autostart import start_default_funnel_for_lead
 from funnelhub.services.telegram_messaging import (
     get_telegram_identity_by_user_id,
     unsubscribe_telegram_identity,
@@ -35,8 +36,9 @@ async def handle_start(message: Message, command: CommandObject) -> None:
         return
 
     try:
+        settings = get_settings()
         async with async_session_maker() as session:
-            await link_messenger_identity(
+            result = await link_messenger_identity(
                 session=session,
                 token=token,
                 channel="telegram",
@@ -44,6 +46,11 @@ async def handle_start(message: Message, command: CommandObject) -> None:
                 username=telegram_user.username,
                 display_name=telegram_user.full_name,
                 raw_profile=build_raw_profile(telegram_user),
+            )
+            await start_default_funnel_for_lead(
+                session=session,
+                settings=settings,
+                lead_id=result.lead_id,
             )
             await session.commit()
     except ValueError:

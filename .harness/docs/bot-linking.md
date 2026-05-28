@@ -21,6 +21,7 @@ Lead creation still happens at `GET/POST /webhooks/getcourse`. Messenger linking
    - `external_user_id`
    - optional username/display name/raw profile
 7. FunnelHub creates or updates `messenger_identities`.
+8. For Telegram links, FunnelHub starts the default funnel from `DEFAULT_FUNNEL_PATH`.
 
 ## Implemented Endpoints
 
@@ -85,6 +86,8 @@ Run the FastAPI app as usual, then run the Telegram polling adapter in a second 
 
 The bot handles `/start <token>` and calls the same internal linking service as `POST /api/messenger/link`.
 
+After a successful Telegram link, the default funnel is started for the lead. This creates or reuses one `funnel_states` row for the funnel key from the YAML definition. Repeated `/start <token>` calls do not create duplicate funnel states.
+
 Implemented Telegram commands:
 
 - `/start <token>`: link Telegram user to the saved lead.
@@ -101,5 +104,5 @@ Implemented outbound sending service:
 ## Next Work
 
 - Test the Telegram adapter end-to-end against the new test bot.
-- Add first funnel scenario after successful Telegram linking.
+- Replace the placeholder funnel YAML with the real customer scenario.
 - Add VK adapter later after community credentials are available.

@@ -62,6 +62,7 @@ GetCourse остается платформой для курсов, оплат,
 - история касаний;
 - статусы воронки;
 - сегменты и аналитика.
+- будущий knowledge/RAG слой для сценариев, переписок, документов, возражений и подсказок агенту.
 
 Целевой поток:
 
@@ -90,6 +91,7 @@ GetCourse form
 - импорт CSV/XLSX из GetCourse;
 - ручные рассылки из админки;
 - архитектурная готовность к автопостингу и Max.
+- архитектурная готовность к будущему knowledge/RAG слою на PostgreSQL + pgvector.
 
 ## 9. Development Stack
 
@@ -123,6 +125,7 @@ GetCourse form
 - Не хранить пароли GetCourse на нашем сервере.
 - Не добавлять React в MVP без отдельного решения.
 - Не усложнять inbox до полноценной CRM.
+- Не использовать RAG как основной способ чтения структурированной операционной базы лидов; для лидов, контактов, согласий, статусов, сообщений и подписок использовать SQL, read-only tools, админские API, отчеты и фильтры.
 - Не редактировать `.harness/feature-list.json` параллельно с другой фичей.
 
 ## 12. Известные риски
@@ -168,5 +171,6 @@ Multi-agent: Planner -> Implementer -> Verifier. Контракты ролей -
 7. Simple inbox for manual replies.
 8. Import/export from GetCourse.
 9. Manual broadcasts.
-10. Autoposting.
-11. Stabilization and production hardening.
+10. Knowledge/RAG layer for unstructured knowledge on PostgreSQL + pgvector.
+11. Autoposting.
+12. Stabilization and production hardening.

@@ -15,6 +15,7 @@ from funnelhub.services.bot_linking import (
     get_active_bot_link_token,
     link_messenger_identity,
 )
+from funnelhub.services.funnel_autostart import start_default_funnel_for_lead
 
 router = APIRouter(tags=["messenger-linking"])
 
@@ -128,6 +129,7 @@ async def join_page(
 async def link_messenger(
     payload: MessengerLinkRequest,
     session: Annotated[AsyncSession, Depends(get_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
 ) -> MessengerLinkResponse:
     try:
         result = await link_messenger_identity(
@@ -139,6 +141,12 @@ async def link_messenger(
             display_name=payload.display_name,
             raw_profile=payload.raw_profile,
         )
+        if payload.channel == "telegram":
+            await start_default_funnel_for_lead(
+                session=session,
+                settings=settings,
+                lead_id=result.lead_id,
+            )
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,

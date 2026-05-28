@@ -8,11 +8,14 @@
     {"id": "core-data-model", "title": "Core data model", "status": "completed"},
     {"id": "getcourse-webhook", "title": "GetCourse webhook ingestion", "status": "completed"},
     {"id": "bot-linking", "title": "Telegram/VK bot linking", "status": "completed"},
-    {"id": "funnel-engine", "title": "Scheduled funnel engine", "status": "pending"},
+    {"id": "funnel-engine", "title": "Scheduled funnel engine", "status": "completed"},
+    {"id": "funnel-runner", "title": "Background funnel runner", "status": "completed"},
+    {"id": "funnel-autostart", "title": "Start default funnel after Telegram linking", "status": "completed"},
     {"id": "email-provider", "title": "Email provider integration", "status": "pending"},
     {"id": "simple-inbox", "title": "Simple mobile inbox", "status": "pending"},
     {"id": "getcourse-import", "title": "GetCourse CSV/XLSX import", "status": "pending"},
     {"id": "manual-broadcasts", "title": "Manual broadcasts", "status": "pending"},
+    {"id": "knowledge-rag", "title": "Knowledge/RAG layer with pgvector", "status": "pending"},
     {"id": "autoposting", "title": "Autoposting", "status": "pending"}
   ]
 }

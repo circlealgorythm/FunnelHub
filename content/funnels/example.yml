@@ -1,0 +1,15 @@
+key: example_onboarding
+version: 1
+title: Example onboarding funnel
+steps:
+  - key: welcome
+    delay: 0m
+    channel: telegram
+    text: "Тестовое приветствие. Реальный сценарий будет добавлен позже."
+  - key: follow_up
+    delay: 1d
+    channel: telegram
+    text: "Тестовое продолжение через день."
+    buttons:
+      - text: "Открыть сайт"
+        url: "https://example.com"

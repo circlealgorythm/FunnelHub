@@ -6,7 +6,7 @@ FunnelHub is being set up as a Harness-engineering project. GetCourse keeps cour
 
 ## Current Feature
 
-<нет>
+`<нет>`
 
 ## Last Actions
 
@@ -49,10 +49,30 @@ FunnelHub is being set up as a Harness-engineering project. GetCourse keeps cour
 - Added Telegram `/status` and `/stop`.
 - Added Telegram outbound text sending service in `src/funnelhub/services/telegram_messaging.py`.
 - Outbound Telegram sends write to `messages`; `/stop` marks `messenger_identities.is_subscribed=false`.
+- Added future `knowledge-rag` feature to the roadmap after manual broadcasts and before autoposting.
+- Documented RAG architecture in `.harness/docs/knowledge-rag.md`: structured operational data stays SQL/API/report driven; RAG is for unstructured scenario, inbox, product, objections, documents, policies, and operator knowledge.
+- Preferred future implementation: PostgreSQL + pgvector, separated from the core lead schema.
+- Implemented `funnel-engine` skeleton in `src/funnelhub/services/funnel_engine.py`.
+- Funnel definitions now load from YAML/JSON data files and are validated before use.
+- Added placeholder scenario in `content/funnels/example.yml`; real customer script content is still pending.
+- Funnel scheduling currently uses existing `funnel_states`: start state, due-state lookup, one-step send, step advance, and completion.
+- Added dry-run sender interface so Telegram/email adapters can be connected later without hardcoding channel logic into the engine.
+- Added `.harness/docs/funnel-engine.md` and tests in `tests/test_funnel_engine.py`.
+- Added `PyYAML`/`types-PyYAML` and copied `content/` into the Docker image.
+- Implemented Telegram funnel runner service in `src/funnelhub/services/funnel_runner.py`.
+- Added worker entrypoint `python -m funnelhub.funnel_worker`.
+- Added Docker Compose `funnel-worker` service under the `worker` profile, so it does not start during normal local `docker compose up`.
+- Runner sends due Telegram steps through `send_telegram_text_message(...)`, records outbound `messages`, advances `funnel_states`, and rolls back failed states for retry.
+- Added runner env settings: `DEFAULT_FUNNEL_PATH`, `FUNNEL_RUNNER_INTERVAL_SECONDS`, and `FUNNEL_RUNNER_BATCH_SIZE`.
+- Added runner test in `tests/test_funnel_runner.py`.
+- Implemented default funnel autostart for Telegram linking.
+- `POST /api/messenger/link` starts the default funnel after successful Telegram linking.
+- Telegram `/start <token>` starts the same default funnel after successful linking.
+- Repeated Telegram linking reuses the existing `funnel_states` row and does not create duplicates.
 
 ## Next Recommended Step
 
-Choose the next feature. Recommended next feature: `funnel-engine` once the funnel scenario is available.
+Recommended next feature: replace the placeholder YAML with the real customer scenario when it arrives, or proceed to the next MVP block: email-provider integration.
 
 ## Verification
 
@@ -109,3 +129,16 @@ Choose the next feature. Recommended next feature: `funnel-engine` once the funn
 - `docker compose exec -T app ruff check .` passed after Telegram commands/outbound follow-up.
 - `docker compose exec -T app mypy src` passed after Telegram commands/outbound follow-up.
 - `docker compose exec -T app pytest -x` passed after Telegram commands/outbound follow-up: 22 tests passed.
+- 2026-05-27 after Windows reinstall check: Docker 29.5.2 and Docker Compose v5.1.4 are available.
+- 2026-05-27 after Windows reinstall check: `.env`, `.env.example`, `Dockerfile`, and `docker-compose.yml` exist; required `.env` keys are present without printing secret values.
+- 2026-05-27 after Windows reinstall check: `docker compose config --quiet` passed.
+- 2026-05-27 after Windows reinstall check: `docker compose up -d --build` passed; app, PostgreSQL, and Redis are running.
+- 2026-05-27 after Windows reinstall check: `docker compose exec -T app alembic current` returned `0002_bot_link_tokens (head)` and `alembic upgrade head` passed.
+- 2026-05-27 after Windows reinstall check: `docker compose exec -T app ruff check .`, `docker compose exec -T app mypy src`, and `docker compose exec -T app pytest -x` passed; pytest reported 22 tests passed.
+- 2026-05-27 after Windows reinstall check: `/health` returned OK, webhook -> join page -> messenger link smoke passed, and PostgreSQL contains all 15 expected domain tables.
+- 2026-05-28 local `ruff check .`, `mypy src`, and `pytest -x` passed after `funnel-engine`; pytest reported 29 tests passed.
+- 2026-05-28 Docker `ruff check .`, `mypy src`, and `pytest -x` passed after `funnel-engine`; pytest reported 29 tests passed.
+- 2026-05-28 local `ruff check .`, `mypy src`, and `pytest -x` passed after `funnel-runner`; pytest reported 30 tests passed.
+- 2026-05-28 Docker `docker compose config --quiet`, `docker compose --profile worker config --quiet`, `ruff check .`, `mypy src`, and `pytest -x` passed after `funnel-runner`; pytest reported 30 tests passed.
+- 2026-05-28 local `ruff check .`, `mypy src`, and `pytest -x` passed after `funnel-autostart`; pytest reported 31 tests passed.
+- 2026-05-28 Docker `docker compose config --quiet`, `docker compose --profile worker config --quiet`, `ruff check .`, `mypy src`, and `pytest -x` passed after `funnel-autostart`; pytest reported 31 tests passed.

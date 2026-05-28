@@ -22,6 +22,13 @@ class Settings(BaseSettings):
         default=None, validation_alias="TELEGRAM_BOT_USERNAME"
     )
     telegram_bot_token: str | None = Field(default=None, validation_alias="TELEGRAM_BOT_TOKEN")
+    default_funnel_path: str = Field(
+        default="content/funnels/example.yml", validation_alias="DEFAULT_FUNNEL_PATH"
+    )
+    funnel_runner_interval_seconds: int = Field(
+        default=60, validation_alias="FUNNEL_RUNNER_INTERVAL_SECONDS"
+    )
+    funnel_runner_batch_size: int = Field(default=100, validation_alias="FUNNEL_RUNNER_BATCH_SIZE")
 
 
 @lru_cache

@@ -10,6 +10,7 @@ from sqlalchemy import delete, func, select
 from funnelhub.db.base import Base
 from funnelhub.db.models import (
     BotLinkToken,
+    FunnelState,
     Lead,
     LeadConsent,
     LeadContact,
@@ -238,6 +239,49 @@ async def test_messenger_link_binds_telegram_identity_to_lead() -> None:
         )
         assert bot_link_token is not None
         assert bot_link_token.used_at is not None
+
+        funnel_state = await session.scalar(
+            select(FunnelState).where(
+                FunnelState.lead_id == lead_id,
+                FunnelState.funnel_key == "example_onboarding",
+            )
+        )
+        assert funnel_state is not None
+        assert funnel_state.status == "active"
+        assert funnel_state.current_step_key == "welcome"
+
+
+async def test_repeated_telegram_link_reuses_default_funnel_state() -> None:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        webhook_response = await client.get(
+            "/webhooks/getcourse",
+            params={"gc_user_id": TEST_GC_ID, "email": TEST_EMAIL},
+        )
+        token = webhook_response.json()["bot_link_token"]
+        payload = {
+            "token": token,
+            "channel": "telegram",
+            "external_user_id": "telegram-123",
+        }
+        first_link_response = await client.post("/api/messenger/link", json=payload)
+        second_link_response = await client.post("/api/messenger/link", json=payload)
+
+    assert first_link_response.status_code == 200
+    assert first_link_response.json()["created"] is True
+    assert second_link_response.status_code == 200
+    assert second_link_response.json()["created"] is False
+
+    lead_id = uuid.UUID(webhook_response.json()["lead_id"])
+    async with async_session_maker() as session:
+        funnel_count = await session.scalar(
+            select(func.count())
+            .select_from(FunnelState)
+            .where(
+                FunnelState.lead_id == lead_id,
+                FunnelState.funnel_key == "example_onboarding",
+            )
+        )
+    assert funnel_count == 1
 
 
 async def test_messenger_link_rejects_unknown_token() -> None:

@@ -13,8 +13,25 @@ services:
     volumes:
       - ./alembic.ini:/app/alembic.ini
       - ./migrations:/app/migrations
+      - ./content:/app/content
       - ./src:/app/src
       - ./tests:/app/tests
+
+  funnel-worker:
+    profiles:
+      - worker
+    build: .
+    command: python -m funnelhub.funnel_worker
+    env_file:
+      - .env.example
+    depends_on:
+      - postgres
+      - redis
+    volumes:
+      - ./alembic.ini:/app/alembic.ini
+      - ./migrations:/app/migrations
+      - ./content:/app/content
+      - ./src:/app/src
 
   postgres:
     image: postgres:16-alpine

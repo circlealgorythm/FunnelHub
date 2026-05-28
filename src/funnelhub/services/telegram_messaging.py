@@ -16,9 +16,10 @@ from funnelhub.db.models import Message, MessengerIdentity
 class TelegramMessageClient(Protocol):
     async def send_message(
         self,
-        chat_id: str,
+        chat_id: int | str,
         text: str,
-        reply_markup: InlineKeyboardMarkup | None = None,
+        *,
+        reply_markup: Any | None = None,
     ) -> Any: ...
 
 
