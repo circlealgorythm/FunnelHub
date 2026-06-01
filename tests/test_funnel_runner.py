@@ -38,6 +38,23 @@ class FakeTelegramBot:
         return FakeSentMessage(message_id=888)
 
 
+class FakeVkClient:
+    def __init__(self) -> None:
+        self.peer_id: str | None = None
+        self.message: str | None = None
+
+    async def send_message(
+        self,
+        peer_id: int | str,
+        message: str,
+        *,
+        keyboard: dict[str, object] | None = None,
+    ) -> dict[str, int]:
+        self.peer_id = str(peer_id)
+        self.message = message
+        return {"response": 889}
+
+
 @pytest.fixture
 async def prepare_database() -> AsyncGenerator[None]:
     async with engine.begin() as connection:
@@ -78,6 +95,25 @@ async def create_lead_with_telegram_identity() -> uuid.UUID:
         return lead.id
 
 
+async def create_lead_with_vk_identity() -> uuid.UUID:
+    async with async_session_maker() as session:
+        lead = Lead(id=uuid.uuid4(), getcourse_user_id=TEST_GC_ID, raw_getcourse_data={})
+        session.add(lead)
+        await session.flush()
+        session.add(
+            MessengerIdentity(
+                id=uuid.uuid4(),
+                lead_id=lead.id,
+                channel="vk",
+                external_user_id="vk-700",
+                is_subscribed=True,
+                raw_profile={},
+            )
+        )
+        await session.commit()
+        return lead.id
+
+
 def build_definition() -> FunnelDefinition:
     return FunnelDefinition.model_validate(
         {
@@ -96,6 +132,23 @@ def build_definition() -> FunnelDefinition:
                     "delay": "1d",
                     "channel": "telegram",
                     "text": "Follow up",
+                },
+            ],
+        }
+    )
+
+
+def build_messenger_definition() -> FunnelDefinition:
+    return FunnelDefinition.model_validate(
+        {
+            "key": "runner_test_messenger_funnel",
+            "version": 1,
+            "steps": [
+                {
+                    "key": "welcome",
+                    "delay": "0m",
+                    "channel": "messenger",
+                    "text": "Welcome from messenger runner",
                 },
             ],
         }
@@ -153,3 +206,43 @@ async def test_run_due_funnel_once_sends_telegram_step_and_advances_state(
         assert state.current_step_key == "follow_up"
         assert state.next_run_at is not None
         assert state.next_run_at > now
+
+
+async def test_run_due_funnel_once_sends_messenger_step_to_vk_identity(
+    prepare_database: None,
+) -> None:
+    lead_id = await create_lead_with_vk_identity()
+    definition = build_messenger_definition()
+    now = datetime(2026, 5, 28, 12, 0, tzinfo=UTC)
+    vk_client = FakeVkClient()
+
+    async with async_session_maker() as session:
+        await start_funnel_for_lead(session, lead_id, definition, now=now)
+        await session.commit()
+
+    async with async_session_maker() as session:
+        stats = await run_due_funnel_once(
+            session=session,
+            definition=definition,
+            vk_client=vk_client,
+            now=now,
+        )
+
+    assert stats.due == 1
+    assert stats.sent == 1
+    assert stats.skipped == 0
+    assert stats.failed == 0
+    assert vk_client.peer_id == "vk-700"
+    assert vk_client.message == "Welcome from messenger runner"
+
+    async with async_session_maker() as session:
+        message = await session.scalar(
+            select(Message).where(
+                Message.lead_id == lead_id,
+                Message.channel == "vk",
+                Message.direction == "outbound",
+            )
+        )
+        assert message is not None
+        assert message.status == "sent"
+        assert message.external_message_id == "889"

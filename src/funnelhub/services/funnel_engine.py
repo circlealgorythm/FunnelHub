@@ -15,18 +15,43 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from funnelhub.db.models import FunnelState
 
-SUPPORTED_CHANNELS = {"telegram", "email"}
+SUPPORTED_CHANNELS = {"messenger", "telegram", "vk", "email"}
 
 
 class FunnelButton(BaseModel):
     text: str = Field(min_length=1, max_length=255)
-    url: str = Field(min_length=1, max_length=2048)
+    url: str | None = Field(default=None, min_length=1, max_length=2048)
+
+
+class FunnelQuestionOption(BaseModel):
+    key: str = Field(min_length=1, max_length=255)
+    text: str = Field(min_length=1, max_length=255)
+
+
+class FunnelQuestion(BaseModel):
+    key: str = Field(min_length=1, max_length=255)
+    text: str = Field(min_length=1)
+    options: list[FunnelQuestionOption] = Field(min_length=1)
+    reminder_delay: str = Field(default="5m")
+
+    @field_validator("reminder_delay")
+    @classmethod
+    def validate_reminder_delay(cls, value: str) -> str:
+        parse_delay(value)
+        return value
+
+
+class FunnelQuestionnaire(BaseModel):
+    questions: dict[str, FunnelQuestion] = Field(default_factory=dict)
+    personalized_responses: dict[str, dict[str, str]] = Field(default_factory=dict)
 
 
 class FunnelStep(BaseModel):
     key: str = Field(min_length=1, max_length=255)
     delay: str = Field(default="0m")
-    channel: Literal["telegram", "email"]
+    channel: Literal["messenger", "telegram", "vk", "email"]
+    kind: Literal["message", "question"] = "message"
+    question_key: str | None = Field(default=None, min_length=1, max_length=255)
     text: str = Field(min_length=1)
     buttons: list[FunnelButton] = Field(default_factory=list)
 
@@ -41,6 +66,7 @@ class FunnelDefinition(BaseModel):
     key: str = Field(min_length=1, max_length=255)
     version: int = Field(default=1, ge=1)
     title: str | None = Field(default=None, max_length=512)
+    questionnaire: FunnelQuestionnaire | None = None
     steps: list[FunnelStep] = Field(min_length=1)
 
     @field_validator("steps")
@@ -176,9 +202,18 @@ async def run_due_funnel_step(
     step_index = definition.step_index(state.current_step_key)
     step = definition.steps[step_index]
     await sender.send(FunnelStepSend(lead_id=state.lead_id, funnel_key=definition.key, step=step))
+    metadata = dict(state.metadata_ or {})
+    if step.kind == "question" and step.question_key is not None:
+        metadata["pending_question_key"] = step.question_key
+        metadata["last_question_sent_at"] = current_time.isoformat()
 
     next_index = step_index + 1
     if next_index >= len(definition.steps):
+        state.metadata_ = build_state_metadata(
+            definition=definition,
+            step_index=step_index,
+            existing_metadata=metadata,
+        )
         complete_state(state, current_time)
         await session.flush()
         return FunnelRunResult(
@@ -193,7 +228,11 @@ async def run_due_funnel_step(
     next_step = definition.steps[next_index]
     state.current_step_key = next_step.key
     state.next_run_at = current_time + parse_delay(next_step.delay)
-    state.metadata_ = build_state_metadata(definition=definition, step_index=next_index)
+    state.metadata_ = build_state_metadata(
+        definition=definition,
+        step_index=next_index,
+        existing_metadata=metadata,
+    )
     await session.flush()
     return FunnelRunResult(
         lead_id=state.lead_id,
@@ -212,11 +251,19 @@ def complete_state(state: FunnelState, completed_at: datetime) -> None:
     state.completed_at = completed_at
 
 
-def build_state_metadata(definition: FunnelDefinition, step_index: int) -> dict[str, Any]:
-    return {
+def build_state_metadata(
+    definition: FunnelDefinition,
+    step_index: int,
+    existing_metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    metadata = dict(existing_metadata or {})
+    metadata.update(
+        {
         "definition_version": definition.version,
         "step_index": step_index,
-    }
+        }
+    )
+    return metadata
 
 
 def parse_delay(value: str) -> timedelta:

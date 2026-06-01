@@ -21,7 +21,7 @@ Lead creation still happens at `GET/POST /webhooks/getcourse`. Messenger linking
    - `external_user_id`
    - optional username/display name/raw profile
 7. FunnelHub creates or updates `messenger_identities`.
-8. For Telegram links, FunnelHub starts the default funnel from `DEFAULT_FUNNEL_PATH`.
+8. For Telegram/VK links, FunnelHub starts the default funnel from `DEFAULT_FUNNEL_PATH`.
 
 ## Implemented Endpoints
 
@@ -70,12 +70,18 @@ Telegram bot tokens must not be committed to the repository or Harness docs.
 The Telegram adapter reads its token from `TELEGRAM_BOT_TOKEN`.
 
 The local join page can show a Telegram deep link when `TELEGRAM_BOT_USERNAME` is set. The token itself is not needed for that page.
+The same page can show a VK deep link when `VK_GROUP_SCREEN_NAME` is set.
 
 For local development, create a gitignored `.env` file from `.env.example` and fill:
 
 ```text
 TELEGRAM_BOT_USERNAME=<bot username without @>
 TELEGRAM_BOT_TOKEN=<bot token from BotFather>
+VK_GROUP_SCREEN_NAME=<VK community screen name without @>
+VK_GROUP_ACCESS_TOKEN=<VK community access token>
+VK_CALLBACK_SECRET=<VK Callback API secret>
+VK_CONFIRMATION_CODE=<VK Callback API confirmation string>
+VK_API_VERSION=5.199
 ```
 
 Run the FastAPI app as usual, then run the Telegram polling adapter in a second terminal:
@@ -87,6 +93,9 @@ Run the FastAPI app as usual, then run the Telegram polling adapter in a second 
 The bot handles `/start <token>` and calls the same internal linking service as `POST /api/messenger/link`.
 
 After a successful Telegram link, the default funnel is started for the lead. This creates or reuses one `funnel_states` row for the funnel key from the YAML definition. Repeated `/start <token>` calls do not create duplicate funnel states.
+After a successful VK link, the same default funnel is started. Repeated VK starts reuse the existing state.
+
+Incoming Telegram/VK text after linking is also passed to the active default funnel questionnaire. This is how the two initial answers are stored and how the personalized response is sent when both answers are known.
 
 Implemented Telegram commands:
 
@@ -97,9 +106,28 @@ Implemented Telegram commands:
 Implemented outbound sending service:
 
 - `send_telegram_text_message(...)` sends a text message to a subscribed Telegram identity.
+- `send_vk_text_message(...)` sends a text message to a subscribed VK identity through `messages.send`.
 - URL buttons are supported through simple button descriptors.
-- Each outbound send creates a `messages` row with channel `telegram`, direction `outbound`, body, status, external Telegram message ID when available, and button metadata.
-- If the lead has no subscribed Telegram identity, sending is rejected.
+- Each outbound send creates a `messages` row with the concrete channel, direction `outbound`, body, status, external platform message ID when available, and button metadata.
+- If the lead has no subscribed identity in the target channel, sending is rejected.
+
+## VK Callback API
+
+Implemented endpoint:
+
+- `POST /webhooks/vk`
+
+Production endpoint:
+
+- `https://bot.aisukam.ru/webhooks/vk`
+
+Supported VK events:
+
+- `confirmation`: returns `VK_CONFIRMATION_CODE`.
+- `message_new`: extracts a bot-link token from `message.ref`, JSON `message.payload`, or text like `/start <token>`, links the VK user to the lead, and starts the default funnel.
+- `message_new` with `/stop`, `stop`, `стоп`, or `отписаться`: marks the VK identity unsubscribed.
+
+VK outbound delivery uses the community access token from `VK_GROUP_ACCESS_TOKEN`.
 
 ## Next Work
 

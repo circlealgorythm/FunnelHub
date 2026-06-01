@@ -87,11 +87,14 @@ def test_parse_delay() -> None:
 
 
 def test_load_funnel_definition_from_yaml() -> None:
-    definition = load_funnel_definition(Path("content/funnels/example.yml"))
+    definition = load_funnel_definition(Path("content/funnels/aisu_consultation.yml"))
 
-    assert definition.key == "example_onboarding"
+    assert definition.key == "aisu_consultation"
     assert definition.version == 1
-    assert [step.key for step in definition.steps] == ["welcome", "follow_up"]
+    assert definition.questionnaire is not None
+    assert definition.questionnaire.questions["topic"].options[0].text == "Деньги"
+    assert definition.steps[0].key == "welcome"
+    assert definition.steps[1].kind == "question"
 
 
 async def test_start_funnel_for_lead_creates_state(

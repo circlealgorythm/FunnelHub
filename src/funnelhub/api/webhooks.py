@@ -2,14 +2,15 @@ from __future__ import annotations
 
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from funnelhub.config import Settings, get_settings
 from funnelhub.db.session import get_session
 from funnelhub.services.bot_linking import build_join_url
 from funnelhub.services.getcourse_webhook import ingest_getcourse_webhook
+from funnelhub.vk_bot import handle_vk_message_new
 
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
 
@@ -20,6 +21,13 @@ class GetCourseWebhookResponse(BaseModel):
     created: bool
     bot_link_token: str
     join_url: str
+
+
+class VkCallbackEvent(BaseModel):
+    type: str = Field(min_length=1)
+    group_id: int | None = None
+    secret: str | None = None
+    object: dict[str, Any] = Field(default_factory=dict)
 
 
 @router.api_route(
@@ -56,6 +64,44 @@ async def getcourse_webhook(
         bot_link_token=result.bot_link_token,
         join_url=build_join_url(settings, result.bot_link_token),
     )
+
+
+@router.post("/vk", status_code=status.HTTP_200_OK)
+async def vk_callback_webhook(
+    event: VkCallbackEvent,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> Response:
+    validate_vk_secret(event.secret, settings)
+
+    if event.type == "confirmation":
+        if not settings.vk_confirmation_code:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="VK_CONFIRMATION_CODE is not configured.",
+            )
+        return Response(content=settings.vk_confirmation_code, media_type="text/plain")
+
+    if event.type == "message_new":
+        try:
+            await handle_vk_message_new(
+                session=session,
+                settings=settings,
+                event=event.model_dump(),
+            )
+        except ValueError:
+            await session.rollback()
+            return Response(content="ok", media_type="text/plain")
+
+        await session.commit()
+        return Response(content="ok", media_type="text/plain")
+
+    return Response(content="ok", media_type="text/plain")
+
+
+def validate_vk_secret(secret: str | None, settings: Settings) -> None:
+    if settings.vk_callback_secret and secret != settings.vk_callback_secret:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid VK secret.")
 
 
 async def _extract_payload(request: Request) -> dict[str, Any]:

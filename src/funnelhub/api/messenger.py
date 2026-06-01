@@ -12,6 +12,7 @@ from funnelhub.config import Settings, get_settings
 from funnelhub.db.session import get_session
 from funnelhub.services.bot_linking import (
     build_telegram_deep_link,
+    build_vk_deep_link,
     get_active_bot_link_token,
     link_messenger_identity,
 )
@@ -52,6 +53,12 @@ async def join_page(
         f'<a class="button" href="{html.escape(telegram_link)}">Telegram</a>'
         if telegram_link is not None
         else '<span class="button disabled">Telegram</span>'
+    )
+    vk_link = build_vk_deep_link(settings, token)
+    vk_markup = (
+        f'<a class="button" href="{html.escape(vk_link)}">VK</a>'
+        if vk_link is not None
+        else '<span class="button disabled">VK</span>'
     )
     return HTMLResponse(
         f"""<!doctype html>
@@ -113,7 +120,7 @@ async def join_page(
 <body>
   <main>
     <h1>Выберите канал</h1>
-    <div class="actions">{telegram_markup}</div>
+    <div class="actions">{telegram_markup}{vk_markup}</div>
     <code>{escaped_token}</code>
   </main>
 </body>
@@ -141,7 +148,7 @@ async def link_messenger(
             display_name=payload.display_name,
             raw_profile=payload.raw_profile,
         )
-        if payload.channel == "telegram":
+        if payload.channel in {"telegram", "vk"}:
             await start_default_funnel_for_lead(
                 session=session,
                 settings=settings,

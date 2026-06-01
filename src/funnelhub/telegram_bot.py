@@ -13,7 +13,10 @@ from funnelhub.config import get_settings
 from funnelhub.db.models import MessengerIdentity
 from funnelhub.db.session import async_session_maker
 from funnelhub.services.bot_linking import link_messenger_identity
+from funnelhub.services.funnel_answers import handle_funnel_text_reply
 from funnelhub.services.funnel_autostart import start_default_funnel_for_lead
+from funnelhub.services.funnel_engine import load_funnel_definition
+from funnelhub.services.funnel_runner import MessengerFunnelStepSender
 from funnelhub.services.telegram_messaging import (
     get_telegram_identity_by_user_id,
     unsubscribe_telegram_identity,
@@ -86,6 +89,32 @@ async def handle_stop(message: Message) -> None:
         await session.commit()
 
     await message.answer(build_stop_text(unsubscribed))
+
+
+@router.message()
+async def handle_text_answer(message: Message) -> None:
+    telegram_user = message.from_user
+    if telegram_user is None or message.text is None:
+        return
+
+    settings = get_settings()
+    definition = load_funnel_definition(settings.default_funnel_path)
+    async with async_session_maker() as session:
+        sender = MessengerFunnelStepSender(
+            session=session,
+            telegram_bot=message.bot,
+            vk_client=None,
+        )
+        handled = await handle_funnel_text_reply(
+            session=session,
+            definition=definition,
+            channel="telegram",
+            external_user_id=str(telegram_user.id),
+            text=message.text,
+            sender=sender,
+        )
+        if handled:
+            await session.commit()
 
 
 def normalize_start_token(args: str | None) -> str | None:

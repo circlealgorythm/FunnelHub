@@ -6,7 +6,12 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Protocol
 
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import (
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    KeyboardButton,
+    ReplyKeyboardMarkup,
+)
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -30,6 +35,14 @@ class TelegramUrlButton:
 
 
 @dataclass(frozen=True)
+class TelegramTextButton:
+    text: str
+
+
+TelegramButton = TelegramUrlButton | TelegramTextButton
+
+
+@dataclass(frozen=True)
 class TelegramSendResult:
     message_id: uuid.UUID
     external_message_id: str | None
@@ -40,7 +53,7 @@ async def send_telegram_text_message(
     bot: TelegramMessageClient,
     lead_id: uuid.UUID,
     text: str,
-    url_buttons: Sequence[TelegramUrlButton] | None = None,
+    url_buttons: Sequence[TelegramButton] | None = None,
 ) -> TelegramSendResult:
     identity = await get_subscribed_telegram_identity(session, lead_id)
     if identity is None:
@@ -129,28 +142,38 @@ async def unsubscribe_telegram_identity(
 
 
 def build_url_keyboard(
-    url_buttons: Sequence[TelegramUrlButton] | None,
-) -> InlineKeyboardMarkup | None:
+    url_buttons: Sequence[TelegramButton] | None,
+) -> InlineKeyboardMarkup | ReplyKeyboardMarkup | None:
     if not url_buttons:
         return None
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text=button.text, url=button.url)] for button in url_buttons
-        ]
+    url_only_buttons = [
+        button for button in url_buttons if isinstance(button, TelegramUrlButton)
+    ]
+    if len(url_only_buttons) == len(url_buttons):
+        return InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text=button.text, url=button.url)]
+                for button in url_only_buttons
+            ]
+        )
+    return ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text=button.text)] for button in url_buttons],
+        resize_keyboard=True,
+        one_time_keyboard=True,
     )
 
 
 def build_message_metadata(
-    url_buttons: Sequence[TelegramUrlButton] | None,
+    url_buttons: Sequence[TelegramButton] | None,
 ) -> dict[str, Any]:
     if not url_buttons:
         return {}
     return {
         "buttons": [
             {
-                "type": "url",
+                "type": "url" if isinstance(button, TelegramUrlButton) else "text",
                 "text": button.text,
-                "url": button.url,
+                "url": button.url if isinstance(button, TelegramUrlButton) else None,
             }
             for button in url_buttons
         ]

@@ -22,8 +22,17 @@ class Settings(BaseSettings):
         default=None, validation_alias="TELEGRAM_BOT_USERNAME"
     )
     telegram_bot_token: str | None = Field(default=None, validation_alias="TELEGRAM_BOT_TOKEN")
+    vk_group_screen_name: str | None = Field(default=None, validation_alias="VK_GROUP_SCREEN_NAME")
+    vk_group_access_token: str | None = Field(
+        default=None, validation_alias="VK_GROUP_ACCESS_TOKEN"
+    )
+    vk_callback_secret: str | None = Field(default=None, validation_alias="VK_CALLBACK_SECRET")
+    vk_confirmation_code: str | None = Field(
+        default=None, validation_alias="VK_CONFIRMATION_CODE"
+    )
+    vk_api_version: str = Field(default="5.199", validation_alias="VK_API_VERSION")
     default_funnel_path: str = Field(
-        default="content/funnels/example.yml", validation_alias="DEFAULT_FUNNEL_PATH"
+        default="content/funnels/aisu_consultation.yml", validation_alias="DEFAULT_FUNNEL_PATH"
     )
     funnel_runner_interval_seconds: int = Field(
         default=60, validation_alias="FUNNEL_RUNNER_INTERVAL_SECONDS"

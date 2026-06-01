@@ -18,37 +18,51 @@ Implemented now:
 - completion after the last step.
 - Telegram runner pass that picks due states for one funnel definition;
 - Telegram sender adapter that dispatches funnel steps through `send_telegram_text_message(...)`;
+- VK sender adapter that dispatches funnel steps through `send_vk_text_message(...)`;
+- shared `messenger` funnel channel that routes a step to the lead's subscribed Telegram/VK identity;
+- non-blocking questionnaire steps with text buttons;
+- late answer handling for Telegram/VK incoming messages;
+- personalized response after the two questionnaire answers are collected;
+- pending-question reminders stored in `funnel_states.metadata`;
 - Docker Compose `worker` profile for running `python -m funnelhub.funnel_worker`.
-- automatic default funnel start after successful Telegram linking.
+- automatic default funnel start after successful Telegram/VK linking.
 
 Not implemented yet:
 
 - email channel execution;
-- branching conditions;
-- real customer scenario content.
+- arbitrary branching beyond the current two-question personalization;
+- video asset replacement workflow.
 
 ## Scenario Format
 
 Example file:
 
-`content/funnels/example.yml`
+`content/funnels/aisu_consultation.yml`
 
 ```yaml
-key: example_onboarding
+key: aisu_consultation
 version: 1
-title: Example onboarding funnel
+title: Aisu consultation messenger funnel
+questionnaire:
+  questions:
+    topic:
+      text: "Что для вас актуальнее всего сейчас?"
+      options:
+        - key: money
+          text: "Деньги"
 steps:
   - key: welcome
     delay: 0m
-    channel: telegram
-    text: "Тестовое приветствие. Реальный сценарий будет добавлен позже."
-  - key: follow_up
-    delay: 1d
-    channel: telegram
-    text: "Тестовое продолжение через день."
+    channel: messenger
+    text: "Ваша заявка на консультацию принята! ..."
+  - key: question_topic
+    delay: 1m
+    channel: messenger
+    kind: question
+    question_key: topic
+    text: "Что для вас актуальнее всего сейчас?"
     buttons:
-      - text: "Открыть сайт"
-        url: "https://example.com"
+      - text: "Деньги"
 ```
 
 Delay format:
@@ -59,7 +73,9 @@ Delay format:
 
 Supported channels for now:
 
+- `messenger`
 - `telegram`
+- `vk`
 - `email`
 
 ## State Rules
@@ -70,10 +86,15 @@ Supported channels for now:
 - `next_run_at` is calculated from the step `delay`.
 - After sending a due step, the engine advances to the next step.
 - After the final step, state becomes `completed`.
+- A `question` step sends text buttons but does not block the scheduled chain.
+- Questionnaire answers are stored under `metadata.answers`.
+- If the first answer is received, the second question is sent immediately.
+- If the second answer is received later, the personalized response is sent immediately and the scheduled chain remains at its current position.
+- If a question is pending, the runner can repeat it after the configured `reminder_delay`.
 
 ## Next Work
 
-- Replace `content/funnels/example.yml` with the real customer scenario when available.
+- Replace the three lesson video/page links when final video assets are ready.
 
 ## Runner
 
@@ -101,9 +122,16 @@ Docker profile:
 docker compose --profile worker up funnel-worker
 ```
 
+Production:
+
+- `docker-compose.prod.yml` runs `app`, `telegram-bot`, `funnel-worker`, `postgres`, and `redis`.
+- Host Caddy on the VPS terminates HTTPS for `bot.aisukam.ru` and reverse-proxies to the app on `127.0.0.1:8000`.
+
 Environment:
 
 - `DEFAULT_FUNNEL_PATH` defaults to `content/funnels/example.yml`;
 - `FUNNEL_RUNNER_INTERVAL_SECONDS` defaults to `60`;
 - `FUNNEL_RUNNER_BATCH_SIZE` defaults to `100`;
-- `TELEGRAM_BOT_TOKEN` is required for the worker.
+- `TELEGRAM_BOT_TOKEN` is required for Telegram sends.
+- `VK_GROUP_ACCESS_TOKEN` is required for VK sends.
+- At least one messenger token is required for the worker.

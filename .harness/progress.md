@@ -36,6 +36,15 @@
 - Funnel runner commits successful step sends one state at a time and rolls back failed states so they stay due for a later retry.
 - Successful Telegram linking starts the configured default funnel in the same transaction, so the lead is ready for the worker immediately after `/start <token>`.
 - Repeated Telegram linking reuses the existing `funnel_states` row through the `lead_id + funnel_key` rule.
+- VK linking starts the same configured default funnel as Telegram linking.
+- Funnel steps can use channel `messenger` to route through the lead's subscribed Telegram or VK identity.
+- VK integration uses VK Callback API for inbound `confirmation` and `message_new` events, and VK `messages.send` for outbound messages.
+- VK credentials and callback secret/confirmation values must stay in environment variables, not repository files.
+- Production callback host `bot.aisukam.ru` points to the VPS and Caddy proxies HTTPS traffic to the production FunnelHub app on `127.0.0.1:8000`.
+- The real consultation scenario lives in `content/funnels/aisu_consultation.yml` and is the default funnel path.
+- The scenario questionnaire is non-blocking: the scheduled content chain continues while unanswered questions can be repeated.
+- Questionnaire answers and pending-question metadata are stored in the existing `funnel_states.metadata` JSONB field; no new table is needed yet.
+- Telegram/VK incoming text can complete the questionnaire and trigger an immediate personalized response without rewinding or pausing the scheduled chain.
 - Future agent/RAG work must not be the primary access path for structured lead operations; leads, contacts, consents, statuses, messages, subscriptions, funnel states, and events should be handled through SQL, read-only tools, admin APIs, reports, and filters.
 - Future RAG is for unstructured knowledge: scenario texts, inbox conversations, product knowledge, objections, offers, policies, documents, operator instructions, and future agent answer drafts.
 - Future RAG implementation should use PostgreSQL + `pgvector` for MVP, not a separate Pinecone/Qdrant/Milvus service.
@@ -106,11 +115,37 @@
 - Wired Telegram autostart into both `POST /api/messenger/link` and Telegram `/start <token>`.
 - Added tests that Telegram linking creates one default `funnel_states` row and repeated linking does not duplicate it.
 - Updated bot-linking and funnel-engine docs with Telegram autostart behavior.
+- Added VK settings for community screen name, access token, callback secret, confirmation code, and API version.
+- Added VK deep link generation for the local `/join/{token}` page.
+- Added `POST /webhooks/vk` for VK Callback API `confirmation` and `message_new` events.
+- Added VK token extraction from `message.ref`, JSON `message.payload`, and `/start <token>` text.
+- Added VK `/stop`/`стоп` unsubscribe handling.
+- Added VK outbound text sending service with URL keyboard support and `messages` persistence.
+- Extended the funnel runner to send `telegram`, `vk`, and shared `messenger` steps through configured channel adapters.
+- Changed `content/funnels/example.yml` to use shared `messenger` channel steps.
+- Added VK service, VK webhook, and messenger-runner tests.
+- Added production Compose/Caddy scaffolding for later deployment.
+- Configured temporary Caddy-only HTTPS on the VPS for `bot.aisukam.ru` without deploying FunnelHub.
+- Added real Aisu consultation funnel YAML from `Scene.tmd`.
+- Added question/text-button support to funnel steps and messenger keyboards.
+- Added Telegram/VK incoming answer handling for the two-question questionnaire.
+- Added pending question reminders through the funnel runner.
+- Set the default funnel path to `content/funnels/aisu_consultation.yml`.
+- Added tests for questionnaire answer handling, reminders, and the real scenario definition.
+- Deployed FunnelHub to the VPS at `/opt/funnelhub`.
+- Installed Docker and Docker Compose on the VPS.
+- Started production Docker services: `app`, `telegram-bot`, `funnel-worker`, `postgres`, and `redis`.
+- Applied Alembic migrations on production PostgreSQL through `0002_bot_link_tokens`.
+- Switched host Caddy from the temporary VK confirmation responder to reverse proxying the real app.
+- Smoke-tested production health, GetCourse webhook, join page, and VK confirmation response.
 
 ## Open Questions
 
 - Email provider choice.
-- Final funnel length and content.
+- Final replacement URLs/files for the three video lessons.
+- Production VK community credentials and Callback API endpoint setup.
+- Configure GetCourse production webhook to `https://bot.aisukam.ru/webhooks/getcourse`.
+- Run manual Telegram and VK end-to-end user-path checks from a real phone/account.
 - Confirm whether the production GetCourse webhook should send all eight consent checkbox fields or only the field relevant to the active form/offer.
 - Production domain name.
 - Need GetCourse custom field ID/name mapping if available, because XLSX exports can contain blank/headerless columns that are actually custom fields.
@@ -217,3 +252,26 @@
 - 2026-05-28 `docker compose exec -T app ruff check .` passed after `funnel-autostart`.
 - 2026-05-28 `docker compose exec -T app mypy src` passed after `funnel-autostart`: no issues in 19 source files.
 - 2026-05-28 `docker compose exec -T app pytest -x` passed after `funnel-autostart`: 31 tests passed.
+- 2026-05-31 `ruff check .` passed after VK integration.
+- 2026-05-31 `mypy src` passed after VK integration: no issues in 21 source files.
+- 2026-05-31 `pytest -x` passed after VK integration: 46 tests passed.
+- 2026-05-31 `docker compose config --quiet` passed after VK integration.
+- 2026-05-31 `docker compose -f docker-compose.prod.yml config --quiet` passed after adding production Compose/Caddy scaffolding.
+- 2026-05-31 VPS SSH check passed: Ubuntu 24.04.4 LTS, root access.
+- 2026-05-31 VPS Caddy installed and active; UFW allows 22/80/443.
+- 2026-05-31 `https://bot.aisukam.ru/health` returned `ok`.
+- 2026-05-31 `https://bot.aisukam.ru/webhooks/vk` returned the VK confirmation string `dbcd0b9d`.
+- 2026-06-01 `ruff check .` passed after real scenario/questionnaire integration.
+- 2026-06-01 `mypy src` passed after real scenario/questionnaire integration: no issues in 22 source files.
+- 2026-06-01 `pytest -x` passed after real scenario/questionnaire integration: 49 tests passed.
+- 2026-06-01 `docker compose config --quiet` passed after real scenario/questionnaire integration.
+- 2026-06-01 `docker compose -f docker-compose.prod.yml config --quiet` passed after real scenario/questionnaire integration.
+- 2026-06-01 VPS Docker installed: Docker 29.1.3 and Docker Compose 2.40.3.
+- 2026-06-01 production `docker compose -f docker-compose.prod.yml up -d --build` passed on VPS.
+- 2026-06-01 production `alembic upgrade head` passed on VPS; current revision `0002_bot_link_tokens`.
+- 2026-06-01 production Caddy reload passed with reverse proxy to `127.0.0.1:8000`.
+- 2026-06-01 production `https://bot.aisukam.ru/health` returned `{"status":"ok","service":"FunnelHub"}`.
+- 2026-06-01 production GetCourse smoke webhook returned `status: ok`, `created: true`, and a public `join_url`.
+- 2026-06-01 production join page returned HTTP 200 and rendered Telegram/VK deep links.
+- 2026-06-01 production VK confirmation POST returned `dbcd0b9d`.
+- 2026-06-01 production services were running: `app`, `telegram-bot`, `funnel-worker`, `postgres`, `redis`.

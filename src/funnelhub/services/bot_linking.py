@@ -138,5 +138,14 @@ def build_telegram_deep_link(settings: Settings, token: str) -> str | None:
     return f"https://t.me/{username}?start={token}"
 
 
+def build_vk_deep_link(settings: Settings, token: str) -> str | None:
+    if not settings.vk_group_screen_name:
+        return None
+    screen_name = settings.vk_group_screen_name.strip().lstrip("@")
+    if not screen_name:
+        return None
+    return f"https://vk.me/{screen_name}?ref={token}"
+
+
 def generate_bot_link_token() -> str:
     return secrets.token_urlsafe(24)

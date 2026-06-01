@@ -1,0 +1,68 @@
+name: funnelhub
+
+services:
+  app:
+    build: .
+    env_file:
+      - .env
+    environment:
+      APP_ENV: production
+      APP_DEBUG: "false"
+      DATABASE_URL: postgresql+asyncpg://funnelhub:funnelhub@postgres:5432/funnelhub
+      REDIS_URL: redis://redis:6379/0
+      PUBLIC_BASE_URL: https://bot.aisukam.ru
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      - postgres
+      - redis
+    restart: unless-stopped
+
+  telegram-bot:
+    build: .
+    command: python -m funnelhub.telegram_bot
+    env_file:
+      - .env
+    environment:
+      APP_ENV: production
+      APP_DEBUG: "false"
+      DATABASE_URL: postgresql+asyncpg://funnelhub:funnelhub@postgres:5432/funnelhub
+      REDIS_URL: redis://redis:6379/0
+      PUBLIC_BASE_URL: https://bot.aisukam.ru
+    depends_on:
+      - postgres
+      - redis
+    restart: unless-stopped
+
+  funnel-worker:
+    build: .
+    command: python -m funnelhub.funnel_worker
+    env_file:
+      - .env
+    environment:
+      APP_ENV: production
+      APP_DEBUG: "false"
+      DATABASE_URL: postgresql+asyncpg://funnelhub:funnelhub@postgres:5432/funnelhub
+      REDIS_URL: redis://redis:6379/0
+      PUBLIC_BASE_URL: https://bot.aisukam.ru
+    depends_on:
+      - postgres
+      - redis
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: funnelhub
+      POSTGRES_USER: funnelhub
+      POSTGRES_PASSWORD: funnelhub
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+
+volumes:
+  postgres_data:

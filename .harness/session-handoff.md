@@ -69,10 +69,47 @@ FunnelHub is being set up as a Harness-engineering project. GetCourse keeps cour
 - `POST /api/messenger/link` starts the default funnel after successful Telegram linking.
 - Telegram `/start <token>` starts the same default funnel after successful linking.
 - Repeated Telegram linking reuses the existing `funnel_states` row and does not create duplicates.
+- Implemented VK parity for the current messenger layer.
+- Added VK environment settings: `VK_GROUP_SCREEN_NAME`, `VK_GROUP_ACCESS_TOKEN`, `VK_CALLBACK_SECRET`, `VK_CONFIRMATION_CODE`, and `VK_API_VERSION`.
+- `/join/{token}` can now render a VK deep link via `https://vk.me/<screen_name>?ref=<token>`.
+- `POST /api/messenger/link` starts the default funnel for VK as well as Telegram.
+- Added `POST /webhooks/vk` for VK Callback API `confirmation` and `message_new`.
+- VK `message_new` can link a lead from `message.ref`, JSON `message.payload`, or `/start <token>` text.
+- VK `message_new` with `/stop`, `stop`, `стоп`, or `отписаться` unsubscribes the VK identity.
+- Added VK outbound sending through `messages.send` with URL keyboard support and `messages` persistence.
+- Funnel definitions now support `messenger`, `telegram`, `vk`, and `email` channels. `messenger` routes through the subscribed Telegram/VK identity.
+- `content/funnels/example.yml` now uses `channel: messenger`, so the same placeholder funnel can run in Telegram or VK.
+- Added `docker-compose.prod.yml` and `Caddyfile` scaffolding for later production deployment.
+- User asked not to deploy FunnelHub yet; only HTTPS/VK approval preparation was performed.
+- Connected to VPS `31.129.110.56` via SSH from `.env`; server is Ubuntu 24.04.4 LTS.
+- Installed Caddy/UFW on the VPS, allowed ports 22/80/443, and enabled Caddy.
+- Configured temporary Caddy response for `bot.aisukam.ru`: `/health` returns `ok`, `/webhooks/vk` returns VK confirmation string `dbcd0b9d`.
+- Let's Encrypt certificate for `bot.aisukam.ru` was issued by Caddy and HTTPS works.
+- User later approved production deployment.
+- Updated `docker-compose.prod.yml` to run `app`, `telegram-bot`, `funnel-worker`, `postgres`, and `redis`; host Caddy remains outside Docker and proxies to `127.0.0.1:8000`.
+- Uploaded the current project to `/opt/funnelhub` on VPS `31.129.110.56`.
+- Installed Docker 29.1.3 and Docker Compose 2.40.3 on the VPS.
+- Built and started the production Docker stack.
+- Applied production Alembic migrations through `0002_bot_link_tokens`.
+- Switched `/etc/caddy/Caddyfile` from temporary VK confirmation responder to reverse proxying the real FunnelHub app.
+- Production `https://bot.aisukam.ru/health` now returns the real FastAPI health response.
+- Production GetCourse smoke webhook created a test lead and returned a public `join_url`.
+- Production join page rendered Telegram and VK deep links.
+- Production VK confirmation POST returned `dbcd0b9d`.
+- Production logs show Telegram polling started for `@vedicschool_aisu_bot`; worker pass logs are healthy after migrations.
+- Added real consultation scenario in `content/funnels/aisu_consultation.yml`.
+- Set default funnel path to `content/funnels/aisu_consultation.yml`.
+- The real scenario has 26 scheduled messenger steps. Long messages were split below platform-size limits.
+- Added questionnaire support: `kind: question`, text buttons, stored answers, pending question metadata, and delayed reminders.
+- The first questionnaire answer sends the second question immediately; the second answer sends the personalized response immediately.
+- If answers arrive late, the scheduled chain continues from the current position and is not rewound.
+- Telegram and VK incoming text now route into questionnaire answer handling after link/start.
+- CTA buttons from the scenario point to `https://aisukam.ru/courses`.
+- Three lesson video/page links are present from the current scenario and can be replaced later when final video assets are ready.
 
 ## Next Recommended Step
 
-Recommended next feature: replace the placeholder YAML with the real customer scenario when it arrives, or proceed to the next MVP block: email-provider integration.
+Recommended next feature: configure GetCourse to call `https://bot.aisukam.ru/webhooks/getcourse`, then run a real Telegram/VK user-path smoke from a phone/account before restarting ads.
 
 ## Verification
 
@@ -142,3 +179,8 @@ Recommended next feature: replace the placeholder YAML with the real customer sc
 - 2026-05-28 Docker `docker compose config --quiet`, `docker compose --profile worker config --quiet`, `ruff check .`, `mypy src`, and `pytest -x` passed after `funnel-runner`; pytest reported 30 tests passed.
 - 2026-05-28 local `ruff check .`, `mypy src`, and `pytest -x` passed after `funnel-autostart`; pytest reported 31 tests passed.
 - 2026-05-28 Docker `docker compose config --quiet`, `docker compose --profile worker config --quiet`, `ruff check .`, `mypy src`, and `pytest -x` passed after `funnel-autostart`; pytest reported 31 tests passed.
+- 2026-05-31 local `ruff check .`, `mypy src`, `pytest -x`, and `docker compose config --quiet` passed after VK integration; pytest reported 46 tests passed.
+- 2026-05-31 `docker compose -f docker-compose.prod.yml config --quiet` passed.
+- 2026-05-31 VPS HTTPS smoke passed: `https://bot.aisukam.ru/health` returned `ok`; `/webhooks/vk` returned `dbcd0b9d`.
+- 2026-06-01 local `ruff check .`, `mypy src`, `pytest -x`, `docker compose config --quiet`, and `docker compose -f docker-compose.prod.yml config --quiet` passed after real scenario integration; pytest reported 49 tests passed.
+- 2026-06-01 production deploy passed: Docker stack up, migrations applied, Caddy reverse proxy active, health/webhook/join/VK-confirmation smoke checks passed.
