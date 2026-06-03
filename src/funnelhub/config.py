@@ -72,6 +72,12 @@ class Settings(BaseSettings):
     inbox_notify_telegram_chat_id: str | None = Field(
         default=None, validation_alias="INBOX_NOTIFY_TELEGRAM_CHAT_ID"
     )
+    email_provider: str = Field(default="disabled", validation_alias="EMAIL_PROVIDER")
+    email_from_email: str | None = Field(default=None, validation_alias="EMAIL_FROM_EMAIL")
+    email_from_name: str = Field(default="FunnelHub", validation_alias="EMAIL_FROM_NAME")
+    email_default_subject: str = Field(
+        default="Сообщение от Aisu Kam", validation_alias="EMAIL_DEFAULT_SUBJECT"
+    )
 
 
 @lru_cache

@@ -63,9 +63,9 @@ async def test_login_rejects_invalid_password(monkeypatch) -> None:  # type: ign
 
 
 async def test_login_returns_503_when_not_configured(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    monkeypatch.delenv("INBOX_ADMIN_USERNAME", raising=False)
-    monkeypatch.delenv("INBOX_ADMIN_PASSWORD_HASH", raising=False)
-    monkeypatch.delenv("INBOX_SESSION_SECRET", raising=False)
+    monkeypatch.setenv("INBOX_ADMIN_USERNAME", "")
+    monkeypatch.setenv("INBOX_ADMIN_PASSWORD_HASH", "")
+    monkeypatch.setenv("INBOX_SESSION_SECRET", "")
     get_settings.cache_clear()
     try:
         async with AsyncClient(

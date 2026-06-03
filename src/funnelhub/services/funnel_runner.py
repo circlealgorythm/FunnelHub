@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from funnelhub.db.models import FunnelState, MessengerIdentity
+from funnelhub.services.email_messaging import EmailProviderClient, send_email_text_message
 from funnelhub.services.funnel_answers import send_pending_question_reminder
 from funnelhub.services.funnel_engine import (
     FunnelButton,
@@ -47,15 +48,26 @@ class MessengerFunnelStepSender:
         session: AsyncSession,
         telegram_bot: TelegramMessageClient | None,
         vk_client: VkMessageClient | None,
+        email_client: EmailProviderClient | None = None,
+        public_base_url: str = "http://localhost:8000",
+        email_from_email: str | None = None,
+        email_from_name: str | None = None,
+        email_default_subject: str = "Сообщение от Aisu Kam",
     ) -> None:
         self._session = session
         self._telegram_bot = telegram_bot
         self._vk_client = vk_client
+        self._email_client = email_client
+        self._public_base_url = public_base_url
+        self._email_from_email = email_from_email
+        self._email_from_name = email_from_name
+        self._email_default_subject = email_default_subject
 
     async def send(self, payload: FunnelStepSend) -> None:
         step = payload.step
         if step.channel == "email":
-            raise ValueError("Email funnel steps are not supported by the messenger runner.")
+            await self._send_email(payload)
+            return
         if step.channel == "telegram":
             await self._send_telegram(payload)
             return
@@ -78,6 +90,26 @@ class MessengerFunnelStepSender:
                 return
 
         raise ValueError(f"Unsupported funnel step channel: {step.channel}")
+
+    async def _send_email(self, payload: FunnelStepSend) -> None:
+        if self._email_client is None:
+            raise ValueError("Email client is not configured.")
+
+        await send_email_text_message(
+            session=self._session,
+            client=self._email_client,
+            lead_id=payload.lead_id,
+            subject=payload.step.subject or self._email_default_subject,
+            text=build_email_body(payload.step.text, payload.step.buttons),
+            public_base_url=self._public_base_url,
+            from_email=self._email_from_email,
+            from_name=self._email_from_name,
+            metadata={
+                "funnel_key": payload.funnel_key,
+                "step_key": payload.step.key,
+                **build_email_button_metadata(payload.step.buttons),
+            },
+        )
 
     async def _send_telegram(self, payload: FunnelStepSend) -> None:
         await self.send_text(
@@ -191,6 +223,11 @@ async def run_due_funnel_once(
     definition: FunnelDefinition,
     bot: TelegramMessageClient | None = None,
     vk_client: VkMessageClient | None = None,
+    email_client: EmailProviderClient | None = None,
+    public_base_url: str = "http://localhost:8000",
+    email_from_email: str | None = None,
+    email_from_name: str | None = None,
+    email_default_subject: str = "Сообщение от Aisu Kam",
     now: datetime | None = None,
     limit: int = 100,
 ) -> FunnelRunnerStats:
@@ -204,6 +241,11 @@ async def run_due_funnel_once(
         session=session,
         telegram_bot=bot,
         vk_client=vk_client,
+        email_client=email_client,
+        public_base_url=public_base_url,
+        email_from_email=email_from_email,
+        email_from_name=email_from_name,
+        email_default_subject=email_default_subject,
     )
     sent = 0
     skipped = 0
@@ -271,3 +313,29 @@ def build_vk_buttons(buttons: list[FunnelButton]) -> list[VkUrlButton | VkTextBu
         else:
             result.append(VkUrlButton(text=button.text, url=button.url))
     return result
+
+
+def build_email_body(text: str, buttons: list[FunnelButton]) -> str:
+    url_lines = [
+        f"{button.text}: {button.url}"
+        for button in buttons
+        if button.url is not None
+    ]
+    if not url_lines:
+        return text
+    return f"{text.rstrip()}\n\n" + "\n".join(url_lines)
+
+
+def build_email_button_metadata(buttons: list[FunnelButton]) -> dict[str, object]:
+    if not buttons:
+        return {}
+    return {
+        "buttons": [
+            {
+                "type": "url" if button.url is not None else "text",
+                "text": button.text,
+                "url": button.url,
+            }
+            for button in buttons
+        ]
+    }

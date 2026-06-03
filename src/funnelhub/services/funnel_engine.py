@@ -52,6 +52,7 @@ class FunnelStep(BaseModel):
     channel: Literal["messenger", "telegram", "vk", "email"]
     kind: Literal["message", "question"] = "message"
     question_key: str | None = Field(default=None, min_length=1, max_length=255)
+    subject: str | None = Field(default=None, min_length=1, max_length=255)
     text: str = Field(min_length=1)
     buttons: list[FunnelButton] = Field(default_factory=list)
 

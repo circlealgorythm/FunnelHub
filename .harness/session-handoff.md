@@ -6,7 +6,17 @@ FunnelHub is being set up as a Harness-engineering project. GetCourse keeps cour
 
 ## Current Feature
 
-`simple-inbox` is in progress. Local backend/API and local React app MVP are implemented and verified. Production deploy/connect is intentionally pending. Current subtask `3. База inside Inbox` is implemented locally; user asked to stop here and deploy in the next stage.
+`email-provider` is in progress. The provider-agnostic email layer is implemented locally: internal provider protocol, debug provider, subscription checks, unsubscribe links, email message history, unsubscribe endpoint, and funnel runner support for `channel: email`. A concrete external provider adapter is still pending.
+
+## Production Access
+
+Production SSH access is already in the local git-ignored `.env` file:
+
+- `SSH_HOST`
+- `SSH_USER`
+- `SSH_PASSWORD`
+
+Do not ask the user for the VPS access again unless these variables are missing or invalid. Do not print or commit their values. For deploy automation from this Windows workspace, use `paramiko` with these variables; OpenSSH key login may fail because the production access currently relies on the password variables in `.env`.
 
 ## Last Actions
 
@@ -180,11 +190,16 @@ FunnelHub is being set up as a Harness-engineering project. GetCourse keeps cour
   - `inbox-app/src/App.tsx` has a second `База` view with lead search/table, detail panel, CSV export, and CSV upload.
   - `inbox-app/src/styles.css` includes desktop/mobile layout for the database table and detail panel.
   - `tests/test_inbox_database.py` covers list/search, CSV export, CSV import, and authenticated API access.
-- Do not deploy until the user explicitly gives the next command.
+- Deployed Inbox to `https://bot.aisukam.ru/inbox`:
+  - React build is served by FastAPI from `inbox-app/dist` at `/inbox`.
+  - Vite build uses `base: /inbox/`; frontend API calls are same-origin `/api/...`.
+  - Production `.env` has Inbox admin auth, session secret, notification bot settings, and `INBOX_APP_URL=https://bot.aisukam.ru/inbox`.
+  - Migration `0003_inbox_statuses` has been applied on production.
+  - `app`, `telegram-bot`, and `funnel-worker` were rebuilt/recreated.
 
 ## Next Recommended Step
 
-Recommended next step: deploy the local Inbox/auth/notifications/database work to production when the user gives the command, then configure production env values and run a real lead/inbound-message smoke. For production auth setup, generate `INBOX_ADMIN_PASSWORD_HASH` with: `$env:PYTHONPATH="src"; python -c "from funnelhub.services.auth import hash_password; print(hash_password('CHANGE_ME'))"`. Replace `CHANGE_ME` before production use.
+Recommended next step: run a real lead/inbound-message smoke through Telegram/VK, verify the conversation appears in production Inbox, verify the admin notification arrives, and send one manual reply from Inbox. The generated production admin credentials were given to the user in the deploy completion response.
 
 ## Verification
 
@@ -346,3 +361,40 @@ Recommended next step: deploy the local Inbox/auth/notifications/database work t
 - 2026-06-03 local full `pytest -x` passed after Inbox database section: 84 tests passed.
 - 2026-06-03 `npm run build` passed in `inbox-app/` after adding the `База` section.
 - 2026-06-03 browser verification passed locally for Inbox `База`: login, desktop database view, and mobile database layout rendered correctly. Local dev servers on ports 8000/5173 were stopped after verification.
+- 2026-06-03 local `npm run build` passed after configuring the React app for `/inbox` production serving.
+- 2026-06-03 local FastAPI static serving smoke passed: `GET http://127.0.0.1:8000/inbox` returned HTTP 200 and referenced `/inbox/assets/...`.
+- 2026-06-03 local `ruff check .`, `mypy src`, `pytest -x`, `npm run build`, and `docker compose -f docker-compose.prod.yml config --quiet` passed before production deploy; pytest reported 84 tests passed.
+- 2026-06-03 production deploy completed for Inbox/auth/notifications/database and `/inbox` static serving. Archive included untracked Inbox files and `inbox-app/dist`, was extracted to `/opt/funnelhub`, Docker images were rebuilt, migration `0003_inbox_statuses` applied, and `app`, `telegram-bot`, and `funnel-worker` were recreated.
+- 2026-06-03 production `.env` was configured with Inbox admin auth, session secret, notification bot settings, and `INBOX_APP_URL=https://bot.aisukam.ru/inbox`.
+- 2026-06-03 production smoke passed: public `https://bot.aisukam.ru/inbox` returned HTTP 200 with `/inbox/assets/...`, `POST /api/auth/login` returned HTTP 200 using generated admin credentials, and authenticated `GET /api/inbox/database/leads?limit=5` returned HTTP 200 with an `items` field.
+- 2026-06-03 production service check passed after deploy: `app`, `telegram-bot`, `funnel-worker`, `postgres`, and `redis` were running; latest logs showed app startup, Telegram polling, and a clean funnel-worker pass.
+- Started `email-provider` as a provider-agnostic MVP.
+- Added `src/funnelhub/services/email_messaging.py` with `EmailProviderClient`, `DebugEmailProviderClient`, `send_email_text_message(...)`, lazy unsubscribe token generation, unsubscribe footer injection, outbound `messages` persistence, and provider failure marking.
+- Added public `GET /email/unsubscribe/{token}` in `src/funnelhub/api/email.py`; it updates `email_subscriptions`, logs `email.unsubscribed`, and is idempotent.
+- Extended funnel steps with optional `subject` and wired `channel: email` into `run_due_funnel_once(...)` via optional `email_client`.
+- Added `EMAIL_PROVIDER`, `EMAIL_FROM_EMAIL`, `EMAIL_FROM_NAME`, and `EMAIL_DEFAULT_SUBJECT` settings/env example.
+- Added `.harness/docs/email-provider.md` and updated `.harness/docs/funnel-engine.md`.
+- Verification passed locally after the email layer: focused email pytest reported 11 tests passed; full `ruff check .`, `mypy src`, and `pytest -x` passed with 90 tests; `docker compose -f docker-compose.prod.yml config --quiet` exited successfully with local unset-variable warnings.
+- Extended Inbox `База` lead detail for the GetCourse-style fields from the screenshots:
+  - `src/funnelhub/services/getcourse_webhook.py` now accepts registration type, GetCourse created/last-activity timestamps, `gc_system_user_utm_*`, `VK-ID`, GetCourse group IDs, partner/manager fields, birthday/age/gender/note, and mailing categories.
+  - These values are stored without a migration via existing `leads`, `lead_utm`, `lead_custom_fields`, `lead_external_ids`, and raw payload JSONB.
+  - `src/funnelhub/services/inbox_database.py` and `src/funnelhub/api/inbox.py` now expose structured detail sections: profile fields, contacts, messenger identities, external IDs, UTM snapshots, custom fields, consents, email subscriptions, funnel states, recent messages, and raw GetCourse JSON.
+  - `inbox-app/src/App.tsx` renders these sections as accordions and the database export button now downloads XLSX.
+  - Added `/api/inbox/database/leads/export.xlsx` with human-readable Russian column headers while keeping the old CSV endpoint.
+- Verification passed after Inbox extended fields/XLSX work:
+  - `ruff check .` passed.
+  - `mypy src` passed.
+  - `pytest tests/test_getcourse_webhook.py tests/test_inbox_database.py -q` passed: 27 tests.
+  - `pytest -x` passed: 93 tests.
+  - `npm run build` passed in `inbox-app/`.
+  - `docker compose -f docker-compose.prod.yml config --quiet` passed with local unset-variable warnings.
+- Production deploy completed for the combined email-layer plus Inbox extended fields/XLSX release:
+  - Uploaded archive with untracked email files and `inbox-app/dist` to `/opt/funnelhub`.
+  - Preserved production `.env` but forced `EMAIL_PROVIDER=disabled`; real email provider remains unconnected.
+  - Rebuilt and recreated `app`, `telegram-bot`, and `funnel-worker`.
+  - Production Alembic current is `0003_inbox_statuses (head)`.
+  - Public `https://bot.aisukam.ru/health` returned HTTP 200 with `{"status":"ok","service":"FunnelHub"}`.
+  - Public `https://bot.aisukam.ru/inbox` returned HTTP 200 and referenced `/inbox/assets/...`.
+  - Unauthenticated `https://bot.aisukam.ru/api/inbox/database/leads/export.xlsx` returned HTTP 401, confirming the new XLSX route exists behind auth.
+  - Logs showed Telegram polling started and funnel-worker completed a clean pass.
+  - Production rollback smoke called `ingest_getcourse_webhook(...)` with extended GetCourse fields, verified `getcourse_groups`/`vk_id`, `form`/`getcourse_system` UTM snapshots, and non-empty XLSX bytes, then rolled back without persisting the smoke lead.

@@ -20,6 +20,7 @@ Implemented now:
 - Telegram sender adapter that dispatches funnel steps through `send_telegram_text_message(...)`;
 - VK sender adapter that dispatches funnel steps through `send_vk_text_message(...)`;
 - shared `messenger` funnel channel that routes a step to the lead's subscribed Telegram/VK identity;
+- email funnel steps through the provider-agnostic email sender when an email client is configured;
 - non-blocking questionnaire steps with text buttons;
 - late answer handling for Telegram/VK incoming messages;
 - personalized response after the two questionnaire answers are collected;
@@ -29,7 +30,7 @@ Implemented now:
 
 Not implemented yet:
 
-- email channel execution;
+- concrete external email provider adapter;
 - arbitrary branching beyond the current two-question personalization;
 - video asset replacement workflow.
 
@@ -111,6 +112,7 @@ It:
 - records outbound messages in `messages`;
 - commits successful state advancement;
 - rolls back failed states so they remain due for a later retry.
+- can send `channel: email` steps when an email provider client is configured.
 
 CLI entrypoint:
 
@@ -136,4 +138,5 @@ Environment:
 - `FUNNEL_RUNNER_BATCH_SIZE` defaults to `100`;
 - `TELEGRAM_BOT_TOKEN` is required for Telegram sends.
 - `VK_GROUP_ACCESS_TOKEN` is required for VK sends.
-- At least one messenger token is required for the worker.
+- `EMAIL_PROVIDER=debug` enables dry-run email sends without external credentials.
+- At least one Telegram, VK, or email provider configuration is required for the worker.

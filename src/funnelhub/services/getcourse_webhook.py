@@ -19,9 +19,61 @@ from funnelhub.db.models import (
     LeadUtm,
 )
 from funnelhub.services.bot_linking import create_or_get_active_bot_link_token
+from funnelhub.services.email_messaging import ensure_email_unsubscribe_token
 
 EMPTY_VALUES = {"", "(empty)", "none", "null"}
 UTM_KEYS = ("utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content", "utm_group")
+GC_SYSTEM_UTM_KEYS = (
+    "gc_system_user_utm_source",
+    "gc_system_user_utm_medium",
+    "gc_system_user_utm_campaign",
+    "gc_system_user_utm_term",
+    "gc_system_user_utm_content",
+)
+PROFILE_FIELD_ALIASES = {
+    "registration_type": ("registration_type", "registration", "Тип регистрации"),
+    "getcourse_created_at": ("getcourse_created_at", "created_at", "created", "Создан"),
+    "getcourse_last_activity_at": (
+        "getcourse_last_activity_at",
+        "last_activity_at",
+        "last_activity",
+        "Последняя активность",
+    ),
+    "source": ("source", "Источник", "Откуда пришел"),
+}
+KNOWN_ADDITIONAL_FIELD_ALIASES = {
+    "birth_date": ("birth_date", "birthday", "Дата рождения", "День рождения"),
+    "age": ("age", "Возраст"),
+    "gender": ("gender", "Пол"),
+    "note": ("note", "comment", "Примечание"),
+    "partner": ("partner", "От партнера"),
+    "partner_id": ("partner_id", "ID партнера"),
+    "partner_email": ("partner_email", "Email партнера"),
+    "partner_name": ("partner_name", "ФИО партнера"),
+    "manager_name": ("manager_name", "ФИО менеджера"),
+    "vk_id": ("vk_id", "vk_user_id", "VK-ID"),
+    "getcourse_groups": (
+        "getcourse_groups",
+        "group_ids",
+        "groups",
+        "id групп пользователя/дата добавления",
+    ),
+    "mailing_categories": ("mailing_categories", "Категории рассылок"),
+}
+ADDITIONAL_FIELD_LABELS = {
+    "birth_date": "Дата рождения",
+    "age": "Возраст",
+    "gender": "Пол",
+    "note": "Примечание",
+    "partner": "От партнера",
+    "partner_id": "ID партнера",
+    "partner_email": "Email партнера",
+    "partner_name": "ФИО партнера",
+    "manager_name": "ФИО менеджера",
+    "vk_id": "VK-ID",
+    "getcourse_groups": "Группы GetCourse",
+    "mailing_categories": "Категории рассылок",
+}
 PRIVACY_POLICY_URL = "https://shamanaisu.getcourse.ru/politica"
 CONSENT_CUSTOM_FIELD_MAPPING = {
     "custom_10558670": "https://shamanaisu.getcourse.ru/oferta",
@@ -69,6 +121,7 @@ async def ingest_getcourse_webhook(
     await session.flush()
 
     await upsert_getcourse_external_id(session, lead, normalized)
+    await upsert_optional_external_ids(session, lead, normalized)
     await upsert_contact(
         session=session,
         lead=lead,
@@ -87,14 +140,30 @@ async def ingest_getcourse_webhook(
     custom_fields = await upsert_custom_fields(session, lead, normalized)
     await upsert_consents(session, lead, custom_fields)
 
-    if has_utm_data(normalized):
+    if has_utm_data(normalized["gc_system_utm"]):
         session.add(
             LeadUtm(
                 id=uuid.uuid4(),
                 lead_id=lead.id,
                 source_kind="getcourse_system",
-                utm_source=normalized["utm_source"],
-                utm_medium=normalized["utm_medium"],
+                utm_source=normalized["gc_system_utm"]["utm_source"],
+                utm_medium=normalized["gc_system_utm"]["utm_medium"],
+                utm_campaign=normalized["gc_system_utm"]["utm_campaign"],
+                utm_term=normalized["gc_system_utm"]["utm_term"],
+                utm_content=normalized["gc_system_utm"]["utm_content"],
+                utm_group=None,
+                raw_data=normalized["raw_payload"],
+            )
+        )
+
+    if has_utm_data(normalized["utm"]):
+        session.add(
+            LeadUtm(
+                id=uuid.uuid4(),
+                lead_id=lead.id,
+                source_kind="form",
+                utm_source=normalized["utm"]["utm_source"],
+                utm_medium=normalized["utm"]["utm_medium"],
                 utm_campaign=normalized["utm_campaign"],
                 utm_term=normalized["utm_term"],
                 utm_content=normalized["utm_content"],
@@ -124,15 +193,26 @@ async def ingest_getcourse_webhook(
 def normalize_getcourse_payload(payload: dict[str, Any]) -> dict[str, Any]:
     raw_payload = {str(key): _json_safe(value) for key, value in payload.items()}
 
-    email = clean_text(payload.get("email"))
-    phone = clean_text(payload.get("phone"))
-    first_name = clean_text(payload.get("first_name"))
-    last_name = clean_text(payload.get("last_name"))
-    full_name = clean_text(payload.get("name")) or join_name(first_name, last_name)
+    email = clean_text(first_payload_value(payload, ("email", "Email", "E-mail")))
+    phone = clean_text(first_payload_value(payload, ("phone", "Телефон", "Phone")))
+    first_name = clean_text(first_payload_value(payload, ("first_name", "Имя пользователя")))
+    last_name = clean_text(first_payload_value(payload, ("last_name", "Фамилия")))
+    full_name = clean_text(
+        first_payload_value(payload, ("name", "full_name", "Имя", "ФИО"))
+    ) or join_name(first_name, last_name)
+    regular_utm = {key: clean_text(payload.get(key)) for key in UTM_KEYS}
+    gc_system_utm = {
+        target_key: clean_text(payload.get(source_key))
+        for target_key, source_key in zip(UTM_KEYS[:5], GC_SYSTEM_UTM_KEYS, strict=True)
+    }
+    additional_fields = extract_custom_fields(payload)
+    additional_fields.update(extract_known_additional_fields(payload))
 
     return {
         "raw_payload": raw_payload,
-        "getcourse_user_id": parse_int(payload.get("gc_user_id")),
+        "getcourse_user_id": parse_int(
+            first_payload_value(payload, ("gc_user_id", "getcourse_user_id", "id", "ID"))
+        ),
         "email": email,
         "normalized_email": normalize_email(email),
         "phone": phone,
@@ -140,11 +220,24 @@ def normalize_getcourse_payload(payload: dict[str, Any]) -> dict[str, Any]:
         "first_name": first_name,
         "last_name": last_name,
         "full_name": full_name,
-        "city": clean_text(payload.get("city")),
-        "country": clean_text(payload.get("country")),
-        "source": clean_text(payload.get("source")) or clean_text(payload.get("utm_source")),
-        "custom_fields": extract_custom_fields(payload),
-        **{key: clean_text(payload.get(key)) for key in UTM_KEYS},
+        "city": clean_text(first_payload_value(payload, ("city", "Город", "City"))),
+        "country": clean_text(first_payload_value(payload, ("country", "Страна", "Country"))),
+        "registration_type": clean_text(
+            first_payload_value(payload, PROFILE_FIELD_ALIASES["registration_type"])
+        ),
+        "getcourse_created_at": parse_datetime(
+            first_payload_value(payload, PROFILE_FIELD_ALIASES["getcourse_created_at"])
+        ),
+        "getcourse_last_activity_at": parse_datetime(
+            first_payload_value(payload, PROFILE_FIELD_ALIASES["getcourse_last_activity_at"])
+        ),
+        "source": clean_text(first_payload_value(payload, PROFILE_FIELD_ALIASES["source"]))
+        or regular_utm["utm_source"]
+        or gc_system_utm["utm_source"],
+        "custom_fields": additional_fields,
+        "utm": regular_utm,
+        "gc_system_utm": gc_system_utm,
+        **regular_utm,
     }
 
 
@@ -186,6 +279,11 @@ def apply_payload_to_lead(lead: Lead, normalized: dict[str, Any]) -> None:
     lead.full_name = normalized["full_name"] or lead.full_name
     lead.city = normalized["city"] or lead.city
     lead.country = normalized["country"] or lead.country
+    lead.registration_type = normalized["registration_type"] or lead.registration_type
+    lead.getcourse_created_at = normalized["getcourse_created_at"] or lead.getcourse_created_at
+    lead.getcourse_last_activity_at = (
+        normalized["getcourse_last_activity_at"] or lead.getcourse_last_activity_at
+    )
     lead.source = normalized["source"] or lead.source
     lead.raw_getcourse_data = normalized["raw_payload"]
     lead.updated_at = now
@@ -220,6 +318,52 @@ async def upsert_getcourse_external_id(
     else:
         item.lead_id = lead.id
         item.metadata_ = normalized["raw_payload"]
+
+
+async def upsert_optional_external_ids(
+    session: AsyncSession,
+    lead: Lead,
+    normalized: dict[str, Any],
+) -> None:
+    custom_fields = normalized["custom_fields"]
+    vk_id = custom_fields.get("vk_id")
+    if vk_id is not None:
+        await upsert_external_id(
+            session=session,
+            lead=lead,
+            provider="getcourse_vk_id",
+            external_id=vk_id,
+            metadata=normalized["raw_payload"],
+        )
+
+
+async def upsert_external_id(
+    session: AsyncSession,
+    lead: Lead,
+    provider: str,
+    external_id: str,
+    metadata: dict[str, Any],
+) -> None:
+    item = await session.scalar(
+        select(LeadExternalId).where(
+            LeadExternalId.provider == provider,
+            LeadExternalId.external_id == external_id,
+        )
+    )
+    if item is None:
+        session.add(
+            LeadExternalId(
+                id=uuid.uuid4(),
+                lead_id=lead.id,
+                provider=provider,
+                external_id=external_id,
+                metadata_=metadata,
+            )
+        )
+        return
+
+    item.lead_id = lead.id
+    item.metadata_ = metadata
 
 
 async def upsert_contact(
@@ -270,18 +414,19 @@ async def upsert_email_subscription(
         select(EmailSubscription).where(EmailSubscription.normalized_email == normalized_email)
     )
     if subscription is None:
-        session.add(
-            EmailSubscription(
-                id=uuid.uuid4(),
-                lead_id=lead.id,
-                email=email,
-                normalized_email=normalized_email,
-                status="subscribed",
-                subscribed_at=datetime.now(UTC),
-            )
+        subscription = EmailSubscription(
+            id=uuid.uuid4(),
+            lead_id=lead.id,
+            email=email,
+            normalized_email=normalized_email,
+            status="subscribed",
+            subscribed_at=datetime.now(UTC),
         )
+        session.add(subscription)
+        await ensure_email_unsubscribe_token(session, subscription)
     elif subscription.lead_id == lead.id:
         subscription.email = email
+        await ensure_email_unsubscribe_token(session, subscription)
 
 
 async def upsert_custom_fields(
@@ -299,19 +444,21 @@ async def upsert_custom_fields(
             )
         )
         raw_data = {"field_key": field_key, "value": value}
+        field_label = human_custom_field_label(field_key)
         if custom_field is None:
             custom_field = LeadCustomField(
                 id=uuid.uuid4(),
                 lead_id=lead.id,
                 source="getcourse",
                 field_key=field_key,
-                field_label=field_key,
+                field_label=field_label,
                 value=value,
                 normalized_bool=normalize_bool(value),
                 raw_data=raw_data,
             )
             session.add(custom_field)
         else:
+            custom_field.field_label = field_label
             custom_field.value = value
             custom_field.normalized_bool = normalize_bool(value)
             custom_field.raw_data = raw_data
@@ -429,8 +576,8 @@ def merge_consent_metadata(
     return merged
 
 
-def has_utm_data(normalized: dict[str, Any]) -> bool:
-    return any(normalized[key] is not None for key in UTM_KEYS)
+def has_utm_data(values: dict[str, str | None]) -> bool:
+    return any(values.get(key) is not None for key in UTM_KEYS)
 
 
 def extract_custom_fields(payload: dict[str, Any]) -> dict[str, str | None]:
@@ -439,6 +586,23 @@ def extract_custom_fields(payload: dict[str, Any]) -> dict[str, str | None]:
         for key, value in payload.items()
         if str(key).startswith("custom_")
     }
+
+
+def extract_known_additional_fields(payload: dict[str, Any]) -> dict[str, str | None]:
+    fields: dict[str, str | None] = {}
+    for field_key, aliases in KNOWN_ADDITIONAL_FIELD_ALIASES.items():
+        value = clean_text(first_payload_value(payload, aliases))
+        if value is not None:
+            fields[field_key] = value
+    return fields
+
+
+def first_payload_value(payload: dict[str, Any], keys: tuple[str, ...]) -> Any:
+    for key in keys:
+        value = payload.get(key)
+        if clean_text(value) is not None:
+            return value
+    return None
 
 
 def clean_text(value: Any) -> str | None:
@@ -458,6 +622,27 @@ def parse_int(value: Any) -> int | None:
         return int(cleaned)
     except ValueError as exc:
         raise ValueError("gc_user_id must be an integer.") from exc
+
+
+def parse_datetime(value: Any) -> datetime | None:
+    cleaned = clean_text(value)
+    if cleaned is None:
+        return None
+    normalized = cleaned.replace("T", " ")
+    if normalized.endswith("Z"):
+        normalized = f"{normalized[:-1]}+00:00"
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%d.%m.%Y %H:%M:%S", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(normalized, fmt).replace(tzinfo=UTC)
+        except ValueError:
+            continue
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError as exc:
+        raise ValueError(f"Invalid datetime value: {cleaned}") from exc
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed
 
 
 def normalize_email(value: str | None) -> str | None:
@@ -489,6 +674,14 @@ def normalize_bool(value: str | None) -> bool | None:
 def join_name(first_name: str | None, last_name: str | None) -> str | None:
     name = " ".join(part for part in (first_name, last_name) if part)
     return name or None
+
+
+def human_custom_field_label(field_key: str) -> str:
+    if field_key in ADDITIONAL_FIELD_LABELS:
+        return ADDITIONAL_FIELD_LABELS[field_key]
+    if field_key in CONSENT_CUSTOM_FIELD_MAPPING:
+        return f"Согласие GetCourse {field_key.removeprefix('custom_')}"
+    return field_key
 
 
 def _json_safe(value: Any) -> str | int | float | bool | None:

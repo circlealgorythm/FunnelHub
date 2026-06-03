@@ -4,13 +4,15 @@ import uuid
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import pytest
 from sqlalchemy import delete, select
 
 from funnelhub.db.base import Base
-from funnelhub.db.models import FunnelState, Lead, Message, MessengerIdentity
+from funnelhub.db.models import EmailSubscription, FunnelState, Lead, Message, MessengerIdentity
 from funnelhub.db.session import async_session_maker, engine
+from funnelhub.services.email_messaging import EmailProviderSendResult
 from funnelhub.services.funnel_engine import FunnelDefinition, start_funnel_for_lead
 from funnelhub.services.funnel_runner import run_due_funnel_once
 
@@ -53,6 +55,44 @@ class FakeVkClient:
         self.peer_id = str(peer_id)
         self.message = message
         return {"response": 889}
+
+
+class FakeEmailClient:
+    def __init__(self) -> None:
+        self.to_email: str | None = None
+        self.subject: str | None = None
+        self.text: str | None = None
+
+    async def send_email(
+        self,
+        *,
+        to_email: str,
+        subject: str,
+        text: str,
+        html: str | None = None,
+        from_email: str | None = None,
+        from_name: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> EmailProviderSendResult:
+        self.to_email = to_email
+        self.subject = subject
+        self.text = text
+        return EmailProviderSendResult(external_message_id="email-889")
+
+
+class FailingEmailClient(FakeEmailClient):
+    async def send_email(
+        self,
+        *,
+        to_email: str,
+        subject: str,
+        text: str,
+        html: str | None = None,
+        from_email: str | None = None,
+        from_name: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> EmailProviderSendResult:
+        raise RuntimeError("email provider failed")
 
 
 @pytest.fixture
@@ -131,6 +171,24 @@ async def create_lead_without_identity(getcourse_user_id: int = TEST_GC_ID) -> u
         return lead.id
 
 
+async def create_lead_with_email_subscription() -> uuid.UUID:
+    async with async_session_maker() as session:
+        lead = Lead(id=uuid.uuid4(), getcourse_user_id=TEST_GC_ID, raw_getcourse_data={})
+        session.add(lead)
+        await session.flush()
+        session.add(
+            EmailSubscription(
+                id=uuid.uuid4(),
+                lead_id=lead.id,
+                email="runner-email@example.com",
+                normalized_email="runner-email@example.com",
+                status="subscribed",
+            )
+        )
+        await session.commit()
+        return lead.id
+
+
 async def create_lead_with_telegram_and_vk_identities() -> uuid.UUID:
     async with async_session_maker() as session:
         lead = Lead(id=uuid.uuid4(), getcourse_user_id=TEST_GC_ID, raw_getcourse_data={})
@@ -195,6 +253,25 @@ def build_messenger_definition() -> FunnelDefinition:
                     "delay": "0m",
                     "channel": "messenger",
                     "text": "Welcome from messenger runner",
+                },
+            ],
+        }
+    )
+
+
+def build_email_definition() -> FunnelDefinition:
+    return FunnelDefinition.model_validate(
+        {
+            "key": "runner_test_email_funnel",
+            "version": 1,
+            "steps": [
+                {
+                    "key": "email_welcome",
+                    "delay": "0m",
+                    "channel": "email",
+                    "subject": "Email welcome",
+                    "text": "Welcome from email runner",
+                    "buttons": [{"text": "Open", "url": "https://example.com/email"}],
                 },
             ],
         }
@@ -383,3 +460,99 @@ async def test_run_due_funnel_once_continues_after_failed_step_rollback(
     assert stats.failed == 1
     assert bot.chat_id == "telegram-701"
     assert bot.text == "Welcome from messenger runner"
+
+
+async def test_run_due_funnel_once_sends_email_step(
+    prepare_database: None,
+) -> None:
+    lead_id = await create_lead_with_email_subscription()
+    definition = build_email_definition()
+    now = datetime(2026, 5, 28, 12, 0, tzinfo=UTC)
+    email_client = FakeEmailClient()
+
+    async with async_session_maker() as session:
+        await start_funnel_for_lead(session, lead_id, definition, now=now)
+        await session.commit()
+
+    async with async_session_maker() as session:
+        stats = await run_due_funnel_once(
+            session=session,
+            definition=definition,
+            email_client=email_client,
+            public_base_url="https://bot.aisukam.ru",
+            email_from_email="hello@example.com",
+            email_from_name="Aisu",
+            now=now,
+        )
+
+    assert stats.due == 1
+    assert stats.sent == 1
+    assert stats.skipped == 0
+    assert stats.failed == 0
+    assert email_client.to_email == "runner-email@example.com"
+    assert email_client.subject == "Email welcome"
+    assert email_client.text is not None
+    assert "https://example.com/email" in email_client.text
+    assert "https://bot.aisukam.ru/email/unsubscribe/" in email_client.text
+
+    async with async_session_maker() as session:
+        message = await session.scalar(
+            select(Message).where(
+                Message.lead_id == lead_id,
+                Message.channel == "email",
+                Message.direction == "outbound",
+            )
+        )
+        assert message is not None
+        assert message.status == "sent"
+        assert message.external_message_id == "email-889"
+        assert message.metadata_["subject"] == "Email welcome"
+        assert message.metadata_["step_key"] == "email_welcome"
+
+        state = await session.scalar(
+            select(FunnelState).where(
+                FunnelState.lead_id == lead_id,
+                FunnelState.funnel_key == definition.key,
+            )
+        )
+        assert state is not None
+        assert state.status == "completed"
+        assert state.current_step_key is None
+
+
+async def test_run_due_funnel_once_retries_failed_email_step(
+    prepare_database: None,
+) -> None:
+    lead_id = await create_lead_with_email_subscription()
+    definition = build_email_definition()
+    now = datetime(2026, 5, 28, 12, 0, tzinfo=UTC)
+
+    async with async_session_maker() as session:
+        await start_funnel_for_lead(session, lead_id, definition, now=now)
+        await session.commit()
+
+    async with async_session_maker() as session:
+        stats = await run_due_funnel_once(
+            session=session,
+            definition=definition,
+            email_client=FailingEmailClient(),
+            public_base_url="https://bot.aisukam.ru",
+            now=now,
+        )
+
+    assert stats.due == 1
+    assert stats.sent == 0
+    assert stats.skipped == 0
+    assert stats.failed == 1
+
+    async with async_session_maker() as session:
+        state = await session.scalar(
+            select(FunnelState).where(
+                FunnelState.lead_id == lead_id,
+                FunnelState.funnel_key == definition.key,
+            )
+        )
+        assert state is not None
+        assert state.status == "active"
+        assert state.current_step_key == "email_welcome"
+        assert state.next_run_at == now

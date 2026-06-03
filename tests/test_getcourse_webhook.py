@@ -17,6 +17,7 @@ from funnelhub.db.models import (
     LeadContact,
     LeadCustomField,
     LeadExternalId,
+    LeadUtm,
     MessengerIdentity,
 )
 from funnelhub.db.session import async_session_maker, engine
@@ -150,6 +151,64 @@ async def test_getcourse_webhook_persists_lead_contacts_and_custom_fields() -> N
         assert custom_field is not None
         assert custom_field.value == "Да"
         assert custom_field.normalized_bool is True
+
+
+async def test_getcourse_webhook_persists_extended_profile_and_source_fields() -> None:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get(
+            "/webhooks/getcourse",
+            params={
+                "gc_user_id": TEST_GC_ID,
+                "email": TEST_EMAIL,
+                "Тип регистрации": "Зарегистрировался самостоятельно",
+                "Создан": "2024-11-25 18:53:02",
+                "Последняя активность": "2026-05-10 18:43:37",
+                "Откуда пришел": "mamba.ru",
+                "utm_source": "yandex",
+                "utm_medium": "cpc",
+                "gc_system_user_utm_source": "gc-source",
+                "gc_system_user_utm_campaign": "gc-campaign",
+                "VK-ID": "88996633",
+                "id групп пользователя/дата добавления": "3971958:2025-12-19",
+            },
+        )
+
+    assert response.status_code == 200
+    lead_id = uuid.UUID(response.json()["lead_id"])
+
+    async with async_session_maker() as session:
+        lead = await session.get(Lead, lead_id)
+        assert lead is not None
+        assert lead.registration_type == "Зарегистрировался самостоятельно"
+        assert lead.getcourse_created_at is not None
+        assert lead.getcourse_last_activity_at is not None
+        assert lead.source == "mamba.ru"
+
+        external_id = await session.scalar(
+            select(LeadExternalId).where(
+                LeadExternalId.provider == "getcourse_vk_id",
+                LeadExternalId.external_id == "88996633",
+            )
+        )
+        assert external_id is not None
+        assert external_id.lead_id == lead_id
+
+        field_values = {
+            field.field_key: field.value
+            for field in await session.scalars(
+                select(LeadCustomField).where(LeadCustomField.lead_id == lead_id)
+            )
+        }
+        assert field_values["vk_id"] == "88996633"
+        assert field_values["getcourse_groups"] == "3971958:2025-12-19"
+
+        utm_rows = (
+            await session.scalars(select(LeadUtm).where(LeadUtm.lead_id == lead_id))
+        ).all()
+        utm_by_kind = {row.source_kind: row for row in utm_rows}
+        assert utm_by_kind["form"].utm_source == "yandex"
+        assert utm_by_kind["getcourse_system"].utm_source == "gc-source"
+        assert utm_by_kind["getcourse_system"].utm_campaign == "gc-campaign"
 
 
 async def test_getcourse_webhook_updates_existing_lead_by_getcourse_id() -> None:

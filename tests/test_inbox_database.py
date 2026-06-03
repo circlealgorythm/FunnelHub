@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import AsyncGenerator
+from io import BytesIO
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from openpyxl import load_workbook
 from sqlalchemy import delete, select
 
 from funnelhub.config import get_settings
@@ -15,6 +17,8 @@ from funnelhub.main import app
 from funnelhub.services.auth import hash_password
 from funnelhub.services.inbox_database import (
     export_database_leads_csv,
+    export_database_leads_xlsx,
+    get_database_lead_detail,
     import_database_leads_csv,
     list_database_leads,
 )
@@ -136,6 +140,58 @@ async def test_export_database_leads_csv() -> None:
     assert "lead_id,getcourse_user_id,name" in csv_text
     assert "Database Test Lead" in csv_text
     assert TEST_EMAIL in csv_text
+
+
+async def test_export_database_leads_xlsx_uses_human_readable_columns() -> None:
+    await create_database_lead()
+
+    async with async_session_maker() as session:
+        content = await export_database_leads_xlsx(session, query="Database Test Lead")
+
+    workbook = load_workbook(BytesIO(content), read_only=True)
+    sheet = workbook.active
+    headers = [cell.value for cell in sheet[1]]
+    values = [cell.value for cell in sheet[2]]
+
+    assert "ID GetCourse" in headers
+    assert "Имя" in headers
+    assert "Согласия" in headers
+    assert TEST_GC_ID in values
+    assert "Database Test Lead" in values
+
+
+async def test_imported_getcourse_fields_are_available_in_database_detail() -> None:
+    content = (
+        "id,Email,VK-ID,gc_system_user_utm_source,Откуда пришел,"
+        "id групп пользователя/дата добавления\n"
+        f"{TEST_GC_ID + 3},{IMPORT_EMAIL},88996633,gc-source,mamba.ru,3971958:2025-12-19\n"
+    ).encode()
+
+    async with async_session_maker() as session:
+        result = await import_database_leads_csv(
+            session,
+            file_name="leads.csv",
+            content=content,
+        )
+        await session.commit()
+
+    assert result.processed_rows == 1
+
+    async with async_session_maker() as session:
+        lead = await session.scalar(select(Lead).where(Lead.getcourse_user_id == TEST_GC_ID + 3))
+        assert lead is not None
+        detail = await get_database_lead_detail(session, lead.id)
+
+    assert detail is not None
+    assert any(item["provider"] == "getcourse_vk_id" for item in detail.external_ids)
+    assert any(
+        item["key"] == "vk_id" and item["value"] == "88996633"
+        for item in detail.custom_fields
+    )
+    assert any(
+        item["source_kind"] == "getcourse_system" and item["utm_source"] == "gc-source"
+        for item in detail.utm_snapshots
+    )
 
 
 async def test_import_database_leads_csv_creates_and_updates_leads() -> None:

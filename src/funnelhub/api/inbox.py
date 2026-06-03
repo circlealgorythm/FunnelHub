@@ -28,6 +28,7 @@ from funnelhub.services.inbox_database import (
     DatabaseLeadList,
     DatabaseLeadSummary,
     export_database_leads_csv,
+    export_database_leads_xlsx,
     get_database_lead_detail,
     import_database_leads_csv,
     list_database_leads,
@@ -116,8 +117,14 @@ class DatabaseLeadListResponse(BaseModel):
 
 class DatabaseLeadDetailResponse(BaseModel):
     lead: DatabaseLeadResponse
+    profile_fields: list[dict[str, object]]
     contacts: list[dict[str, object]]
     identities: list[dict[str, object]]
+    external_ids: list[dict[str, object]]
+    utm_snapshots: list[dict[str, object]]
+    custom_fields: list[dict[str, object]]
+    consents: list[dict[str, object]]
+    email_subscriptions: list[dict[str, object]]
     funnel_states: list[dict[str, object]]
     recent_messages: list[dict[str, object]]
     raw_getcourse_data: dict[str, object]
@@ -274,6 +281,20 @@ async def export_database_leads(
     )
 
 
+@router.get("/database/leads/export.xlsx")
+async def export_database_leads_as_xlsx(
+    session: SessionDep,
+    q: str | None = None,
+) -> Response:
+    content = await export_database_leads_xlsx(session, query=q)
+    file_name = f"funnelhub-leads-{datetime.now().date().isoformat()}.xlsx"
+    return Response(
+        content=content,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{file_name}"'},
+    )
+
+
 @router.post("/database/leads/import", response_model=DatabaseImportResponse)
 async def import_database_leads(
     session: SessionDep,
@@ -385,8 +406,14 @@ def database_lead_list_response(lead_list: DatabaseLeadList) -> DatabaseLeadList
 def database_lead_detail_response(detail: DatabaseLeadDetail) -> DatabaseLeadDetailResponse:
     return DatabaseLeadDetailResponse(
         lead=database_lead_response(detail.lead),
+        profile_fields=detail.profile_fields,
         contacts=detail.contacts,
         identities=detail.identities,
+        external_ids=detail.external_ids,
+        utm_snapshots=detail.utm_snapshots,
+        custom_fields=detail.custom_fields,
+        consents=detail.consents,
+        email_subscriptions=detail.email_subscriptions,
         funnel_states=detail.funnel_states,
         recent_messages=detail.recent_messages,
         raw_getcourse_data=detail.raw_getcourse_data,

@@ -7,6 +7,7 @@ from aiogram import Bot
 
 from funnelhub.config import get_settings
 from funnelhub.db.session import async_session_maker
+from funnelhub.services.email_messaging import build_email_provider_client
 from funnelhub.services.funnel_engine import load_funnel_definition
 from funnelhub.services.funnel_runner import run_due_funnel_once
 from funnelhub.services.vk_messaging import HttpVkMessageClient
@@ -17,9 +18,11 @@ logger = logging.getLogger(__name__)
 async def main() -> None:
     logging.basicConfig(level=logging.INFO)
     settings = get_settings()
-    if not settings.telegram_bot_token and not settings.vk_group_access_token:
+    email_client = build_email_provider_client(settings)
+    if not settings.telegram_bot_token and not settings.vk_group_access_token and not email_client:
         raise RuntimeError(
-            "TELEGRAM_BOT_TOKEN or VK_GROUP_ACCESS_TOKEN is required to run the funnel worker."
+            "TELEGRAM_BOT_TOKEN, VK_GROUP_ACCESS_TOKEN, or EMAIL_PROVIDER is required "
+            "to run the funnel worker."
         )
 
     definition = load_funnel_definition(settings.default_funnel_path)
@@ -41,6 +44,11 @@ async def main() -> None:
                     definition=definition,
                     bot=bot,
                     vk_client=vk_client,
+                    email_client=email_client,
+                    public_base_url=settings.public_base_url,
+                    email_from_email=settings.email_from_email,
+                    email_from_name=settings.email_from_name,
+                    email_default_subject=settings.email_default_subject,
                     limit=settings.funnel_runner_batch_size,
                 )
             logger.info(

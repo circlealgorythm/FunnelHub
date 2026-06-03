@@ -1,6 +1,7 @@
 import {
   Archive,
   Check,
+  ChevronDown,
   ChevronLeft,
   Clock,
   Database as DatabaseIcon,
@@ -85,8 +86,14 @@ type DatabaseLeadList = {
 
 type DatabaseLeadDetail = {
   lead: DatabaseLead;
+  profile_fields: Array<Record<string, unknown>>;
   contacts: Array<Record<string, unknown>>;
   identities: Array<Record<string, unknown>>;
+  external_ids: Array<Record<string, unknown>>;
+  utm_snapshots: Array<Record<string, unknown>>;
+  custom_fields: Array<Record<string, unknown>>;
+  consents: Array<Record<string, unknown>>;
+  email_subscriptions: Array<Record<string, unknown>>;
   funnel_states: Array<Record<string, unknown>>;
   recent_messages: Array<Record<string, unknown>>;
   raw_getcourse_data: Record<string, unknown>;
@@ -102,7 +109,7 @@ type DatabaseImportSummary = {
   errors: Array<Record<string, unknown>>;
 };
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
 
 const statusLabels: Record<ConversationStatus, string> = {
   open: "Открыт",
@@ -425,9 +432,10 @@ export function App() {
         params.set("q", databaseQuery.trim());
       }
       const suffix = params.toString() ? `?${params}` : "";
-      const response = await fetch(`${API_BASE_URL}/api/inbox/database/leads/export${suffix}`, {
-        credentials: "include",
-      });
+      const response = await fetch(
+        `${API_BASE_URL}/api/inbox/database/leads/export.xlsx${suffix}`,
+        { credentials: "include" }
+      );
       if (!response.ok) {
         throw new Error(`Export failed: ${response.status}`);
       }
@@ -435,7 +443,7 @@ export function App() {
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = `funnelhub-leads-${new Date().toISOString().slice(0, 10)}.csv`;
+      link.download = `funnelhub-leads-${new Date().toISOString().slice(0, 10)}.xlsx`;
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -852,7 +860,7 @@ function DatabaseWorkspace({
           </button>
           <button className="soft-button" onClick={onExport} type="button">
             <Download aria-hidden="true" size={17} />
-            <span>Выгрузить CSV</span>
+            <span>Выгрузить XLSX</span>
           </button>
           <label className="soft-button file-button">
             <Upload aria-hidden="true" size={17} />
@@ -987,43 +995,119 @@ function LeadDatabaseDetail({ detail }: { detail: DatabaseLeadDetail }) {
         </div>
       </div>
 
-      <DetailSection title="Контакты">
+      <DetailSection count={detail.profile_fields.length} defaultOpen title="Профиль GetCourse">
+        <KeyValueRows items={detail.profile_fields} />
+      </DetailSection>
+
+      <DetailSection count={detail.contacts.length} defaultOpen title="Контакты">
         {detail.contacts.length === 0 ? <p>Контактов нет.</p> : null}
         {detail.contacts.map((contact, index) => (
-          <p key={`${String(contact.type)}-${index}`}>
-            <strong>{String(contact.type)}:</strong> {String(contact.value)}
-          </p>
+          <KeyValueLine
+            key={`${String(contact.type)}-${index}`}
+            label={String(contact.type)}
+            value={contact.value}
+          />
         ))}
       </DetailSection>
 
-      <DetailSection title="Мессенджеры">
+      <DetailSection count={detail.identities.length} defaultOpen title="Мессенджеры">
         {detail.identities.length === 0 ? <p>Мессенджеры не привязаны.</p> : null}
         {detail.identities.map((identity, index) => (
-          <p key={`${String(identity.channel)}-${index}`}>
-            <strong>{String(identity.channel)}:</strong>{" "}
-            {String(identity.username || identity.display_name || identity.external_user_id)}
-            {identity.is_subscribed ? " · активен" : " · отписан"}
-          </p>
+          <KeyValueLine
+            key={`${String(identity.channel)}-${index}`}
+            label={channelLabels[String(identity.channel)] ?? String(identity.channel)}
+            value={`${String(identity.username || identity.display_name || identity.external_user_id)} · ${
+              identity.is_subscribed ? "активен" : "отписан"
+            }`}
+          />
         ))}
       </DetailSection>
 
-      <DetailSection title="Воронка">
+      <DetailSection count={detail.external_ids.length} title="Внешние ID">
+        {detail.external_ids.length === 0 ? <p>Внешних ID нет.</p> : null}
+        {detail.external_ids.map((item, index) => (
+          <KeyValueLine
+            key={`${String(item.provider)}-${index}`}
+            label={String(item.provider)}
+            value={item.external_id}
+          />
+        ))}
+      </DetailSection>
+
+      <DetailSection count={detail.utm_snapshots.length} defaultOpen title="Источник и UTM">
+        {detail.utm_snapshots.length === 0 ? <p>UTM-данных нет.</p> : null}
+        {detail.utm_snapshots.map((snapshot, index) => (
+          <div className="nested-detail" key={`${String(snapshot.source_kind)}-${index}`}>
+            <h4>{humanSourceKind(String(snapshot.source_kind))}</h4>
+            <KeyValueRows
+              items={[
+                { label: "utm_source", value: snapshot.utm_source },
+                { label: "utm_medium", value: snapshot.utm_medium },
+                { label: "utm_campaign", value: snapshot.utm_campaign },
+                { label: "utm_content", value: snapshot.utm_content },
+                { label: "utm_term", value: snapshot.utm_term },
+                { label: "utm_group", value: snapshot.utm_group },
+              ].filter((item) => item.value !== null && item.value !== undefined)}
+            />
+          </div>
+        ))}
+      </DetailSection>
+
+      <DetailSection count={detail.custom_fields.length} defaultOpen title="Дополнительные поля">
+        {detail.custom_fields.length === 0 ? <p>Дополнительных полей нет.</p> : null}
+        <div className="field-chip-list">
+          {detail.custom_fields.map((field) => (
+            <span className="field-chip" key={String(field.key)}>
+              <strong>{String(field.label || field.key)}</strong>
+              <span>{formatDetailValue(fieldValue(field))}</span>
+            </span>
+          ))}
+        </div>
+      </DetailSection>
+
+      <DetailSection count={detail.consents.length} defaultOpen title="Согласия">
+        {detail.consents.length === 0 ? <p>Согласий нет.</p> : null}
+        {detail.consents.map((consent) => (
+          <KeyValueLine
+            key={String(consent.type)}
+            label={humanConsentType(String(consent.type))}
+            value={consent.is_granted ? "Да" : "Нет"}
+          />
+        ))}
+      </DetailSection>
+
+      <DetailSection count={detail.email_subscriptions.length} title="Рассылки">
+        {detail.email_subscriptions.length === 0 ? <p>Подписок на рассылки нет.</p> : null}
+        {detail.email_subscriptions.map((subscription, index) => (
+          <KeyValueLine
+            key={`${String(subscription.email)}-${index}`}
+            label={String(subscription.email)}
+            value={subscription.status}
+          />
+        ))}
+      </DetailSection>
+
+      <DetailSection count={detail.funnel_states.length} title="Воронка">
         {detail.funnel_states.length === 0 ? <p>Нет активных состояний.</p> : null}
         {detail.funnel_states.map((state, index) => (
-          <p key={`${String(state.funnel_key)}-${index}`}>
-            <strong>{String(state.status)}:</strong>{" "}
-            {String(state.current_step_key || state.funnel_key)}
-          </p>
+          <KeyValueLine
+            key={`${String(state.funnel_key)}-${index}`}
+            label={String(state.status)}
+            value={state.current_step_key || state.funnel_key}
+          />
         ))}
       </DetailSection>
 
-      <DetailSection title="Последние сообщения">
+      <DetailSection count={detail.recent_messages.length} title="Последние сообщения">
         {detail.recent_messages.length === 0 ? <p>Сообщений нет.</p> : null}
         {detail.recent_messages.map((message) => (
-          <p key={String(message.id)}>
-            <strong>{String(message.channel)} · {String(message.direction)}:</strong>{" "}
-            {String(message.body || "без текста")}
-          </p>
+          <KeyValueLine
+            key={String(message.id)}
+            label={`${channelLabels[String(message.channel)] ?? String(message.channel)} · ${String(
+              message.direction
+            )}`}
+            value={message.body || "без текста"}
+          />
         ))}
       </DetailSection>
 
@@ -1036,16 +1120,52 @@ function LeadDatabaseDetail({ detail }: { detail: DatabaseLeadDetail }) {
 
 function DetailSection({
   children,
+  count,
+  defaultOpen = false,
   title,
 }: {
   children: ReactNode;
+  count?: number;
+  defaultOpen?: boolean;
   title: string;
 }) {
   return (
-    <section className="detail-section">
-      <h3>{title}</h3>
-      {children}
-    </section>
+    <details className="detail-section" open={defaultOpen}>
+      <summary>
+        <span>
+          {title}
+          {typeof count === "number" ? <small>{count}</small> : null}
+        </span>
+        <ChevronDown aria-hidden="true" size={16} />
+      </summary>
+      <div className="detail-section-body">{children}</div>
+    </details>
+  );
+}
+
+function KeyValueRows({ items }: { items: Array<Record<string, unknown>> }) {
+  if (items.length === 0) {
+    return <p>Данных нет.</p>;
+  }
+  return (
+    <div className="key-value-list">
+      {items.map((item, index) => (
+        <KeyValueLine
+          key={`${String(item.key || item.label)}-${index}`}
+          label={String(item.label || item.key)}
+          value={item.value}
+        />
+      ))}
+    </div>
+  );
+}
+
+function KeyValueLine({ label, value }: { label: string; value: unknown }) {
+  return (
+    <p className="key-value-line">
+      <strong>{label}</strong>
+      <span>{formatDetailValue(value)}</span>
+    </p>
   );
 }
 
@@ -1170,6 +1290,63 @@ function formatTime(value: string) {
     hour: "2-digit",
     minute: "2-digit",
   }).format(new Date(value));
+}
+
+function formatDetailValue(value: unknown) {
+  if (value === null || value === undefined || value === "") {
+    return "не указано";
+  }
+  if (typeof value === "boolean") {
+    return value ? "Да" : "Нет";
+  }
+  if (typeof value === "string" && looksLikeDate(value)) {
+    return new Intl.DateTimeFormat("ru-RU", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(new Date(value));
+  }
+  if (typeof value === "object") {
+    return JSON.stringify(value);
+  }
+  return String(value);
+}
+
+function fieldValue(field: Record<string, unknown>) {
+  if (field.normalized_bool === true) {
+    return "Да";
+  }
+  if (field.normalized_bool === false) {
+    return "Нет";
+  }
+  return field.value;
+}
+
+function humanConsentType(value: string) {
+  const labels: Record<string, string> = {
+    personal_data: "Обработка персональных данных",
+    privacy_policy: "Политика конфиденциальности",
+    offer_agreement: "Договор оферты",
+    email_marketing: "Email-рассылки",
+    messenger_marketing: "Рассылки в мессенджерах",
+  };
+  return labels[value] ?? value;
+}
+
+function humanSourceKind(value: string) {
+  const labels: Record<string, string> = {
+    getcourse_system: "GetCourse system UTM",
+    form: "Источник пользователя",
+    import: "Импорт",
+    manual: "Ручные данные",
+  };
+  return labels[value] ?? value;
+}
+
+function looksLikeDate(value: string) {
+  return /^\d{4}-\d{2}-\d{2}/.test(value) && !Number.isNaN(new Date(value).getTime());
 }
 
 function formatError(caught: unknown) {
