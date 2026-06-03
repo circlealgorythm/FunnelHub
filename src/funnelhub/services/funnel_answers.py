@@ -66,6 +66,8 @@ async def handle_funnel_text_reply(
         metadata["pending_question_key"] = "experience"
         metadata["last_question_sent_at"] = current_time.isoformat()
         state.metadata_ = metadata
+        if state.current_step_key == metadata.get("questionnaire_waiting_for_step_key"):
+            state.next_run_at = current_time + parse_delay(experience_question.reminder_delay)
         await sender.send_text(
             lead_id=identity.lead_id,
             channel=channel,
@@ -84,7 +86,10 @@ async def handle_funnel_text_reply(
         metadata["answers"] = answers
         metadata.pop("pending_question_key", None)
         metadata["personalized_sent_at"] = current_time.isoformat()
+        waiting_step_key = metadata.pop("questionnaire_waiting_for_step_key", None)
         state.metadata_ = metadata
+        if state.current_step_key == waiting_step_key:
+            state.next_run_at = current_time
         response_text = get_personalized_response(definition, answers["topic"], experience_answer)
         if response_text is not None:
             await sender.send_text(
@@ -122,7 +127,12 @@ async def send_pending_question_reminder(
     if last_sent is not None and current_time - last_sent < parse_delay(question.reminder_delay):
         return False
 
-    identity = await get_latest_subscribed_identity(session, state.lead_id)
+    preferred_channel = metadata.get("messenger_channel")
+    identity = await get_subscribed_identity(
+        session,
+        state.lead_id,
+        preferred_channel if isinstance(preferred_channel, str) else None,
+    )
     if identity is None:
         return False
 
@@ -154,10 +164,23 @@ async def get_identity(
     )
 
 
-async def get_latest_subscribed_identity(
+async def get_subscribed_identity(
     session: AsyncSession,
     lead_id: uuid.UUID,
+    preferred_channel: str | None = None,
 ) -> MessengerIdentity | None:
+    if preferred_channel is not None:
+        return cast(
+            MessengerIdentity | None,
+            await session.scalar(
+                select(MessengerIdentity).where(
+                    MessengerIdentity.lead_id == lead_id,
+                    MessengerIdentity.is_subscribed.is_(True),
+                    MessengerIdentity.channel == preferred_channel,
+                )
+            ),
+        )
+
     return cast(
         MessengerIdentity | None,
         await session.scalar(

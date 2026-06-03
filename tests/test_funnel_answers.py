@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy import delete, select
@@ -104,7 +104,12 @@ def build_definition() -> FunnelDefinition:
     )
 
 
-async def create_lead_identity_and_state(metadata: dict[str, object]) -> uuid.UUID:
+async def create_lead_identity_and_state(
+    metadata: dict[str, object],
+    current_step_key: str = "welcome",
+    next_run_at: datetime | None = None,
+    include_vk_identity: bool = False,
+) -> uuid.UUID:
     async with async_session_maker() as session:
         lead = Lead(id=uuid.uuid4(), getcourse_user_id=TEST_GC_ID, raw_getcourse_data={})
         session.add(lead)
@@ -119,14 +124,25 @@ async def create_lead_identity_and_state(metadata: dict[str, object]) -> uuid.UU
                 raw_profile={},
             )
         )
+        if include_vk_identity:
+            session.add(
+                MessengerIdentity(
+                    id=uuid.uuid4(),
+                    lead_id=lead.id,
+                    channel="vk",
+                    external_user_id="vk-900",
+                    is_subscribed=True,
+                    raw_profile={},
+                )
+            )
         session.add(
             FunnelState(
                 id=uuid.uuid4(),
                 lead_id=lead.id,
                 funnel_key="answer_test_funnel",
                 status="active",
-                current_step_key="welcome",
-                next_run_at=None,
+                current_step_key=current_step_key,
+                next_run_at=next_run_at,
                 metadata_=metadata,
             )
         )
@@ -137,7 +153,12 @@ async def create_lead_identity_and_state(metadata: dict[str, object]) -> uuid.UU
 async def test_handle_funnel_text_reply_asks_second_question_after_topic_answer(
     prepare_database: None,
 ) -> None:
-    lead_id = await create_lead_identity_and_state(metadata={})
+    now = datetime(2026, 6, 1, 10, 0, tzinfo=UTC)
+    lead_id = await create_lead_identity_and_state(
+        metadata={"questionnaire_waiting_for_step_key": "step_01"},
+        current_step_key="step_01",
+        next_run_at=now + timedelta(minutes=3),
+    )
     definition = build_definition()
     sender = FakeFunnelTextSender()
 
@@ -149,7 +170,7 @@ async def test_handle_funnel_text_reply_asks_second_question_after_topic_answer(
             external_user_id="telegram-900",
             text="Деньги",
             sender=sender,
-            now=datetime(2026, 6, 1, 10, 0, tzinfo=UTC),
+            now=now,
         )
         await session.commit()
 
@@ -168,13 +189,21 @@ async def test_handle_funnel_text_reply_asks_second_question_after_topic_answer(
         assert state is not None
         assert state.metadata_["answers"] == {"topic": "money"}
         assert state.metadata_["pending_question_key"] == "experience"
+        assert state.next_run_at == now + timedelta(minutes=5)
 
 
 async def test_handle_funnel_text_reply_sends_personalized_response_after_second_answer(
     prepare_database: None,
 ) -> None:
+    now = datetime(2026, 6, 1, 10, 0, tzinfo=UTC)
     lead_id = await create_lead_identity_and_state(
-        metadata={"answers": {"topic": "money"}, "pending_question_key": "experience"}
+        metadata={
+            "answers": {"topic": "money"},
+            "pending_question_key": "experience",
+            "questionnaire_waiting_for_step_key": "step_01",
+        },
+        current_step_key="step_01",
+        next_run_at=now + timedelta(minutes=3),
     )
     definition = build_definition()
     sender = FakeFunnelTextSender()
@@ -187,7 +216,7 @@ async def test_handle_funnel_text_reply_sends_personalized_response_after_second
             external_user_id="telegram-900",
             text="Нет, я новичок",
             sender=sender,
-            now=datetime(2026, 6, 1, 10, 0, tzinfo=UTC),
+            now=now,
         )
         await session.commit()
 
@@ -206,6 +235,8 @@ async def test_handle_funnel_text_reply_sends_personalized_response_after_second
         assert state is not None
         assert state.metadata_["answers"] == {"topic": "money", "experience": "newbie"}
         assert "pending_question_key" not in state.metadata_
+        assert "questionnaire_waiting_for_step_key" not in state.metadata_
+        assert state.next_run_at == now
 
 
 async def test_send_pending_question_reminder_respects_reminder_delay(
@@ -243,3 +274,40 @@ async def test_send_pending_question_reminder_respects_reminder_delay(
     assert later is True
     assert sender.sent[0].text == "Что актуальнее?"
     assert sender.sent[0].buttons == [FunnelButton(text="Деньги")]
+
+
+async def test_send_pending_question_reminder_prefers_state_messenger_channel(
+    prepare_database: None,
+) -> None:
+    lead_id = await create_lead_identity_and_state(
+        metadata={
+            "messenger_channel": "telegram",
+            "pending_question_key": "topic",
+            "last_question_sent_at": datetime(2026, 6, 1, 10, 0, tzinfo=UTC).isoformat(),
+        },
+        include_vk_identity=True,
+    )
+    definition = build_definition()
+    sender = FakeFunnelTextSender()
+
+    async with async_session_maker() as session:
+        state = await session.scalar(select(FunnelState).where(FunnelState.lead_id == lead_id))
+        assert state is not None
+        sent = await send_pending_question_reminder(
+            session=session,
+            state=state,
+            definition=definition,
+            sender=sender,
+            now=datetime(2026, 6, 1, 10, 5, tzinfo=UTC),
+        )
+        await session.commit()
+
+    assert sent is True
+    assert sender.sent == [
+        SentText(
+            lead_id=lead_id,
+            channel="telegram",
+            text="Что актуальнее?",
+            buttons=[FunnelButton(text="Деньги")],
+        )
+    ]

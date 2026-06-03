@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
@@ -10,9 +11,10 @@ from funnelhub.config import Settings, get_settings
 from funnelhub.db.session import get_session
 from funnelhub.services.bot_linking import build_join_url
 from funnelhub.services.getcourse_webhook import ingest_getcourse_webhook
-from funnelhub.vk_bot import handle_vk_message_new
+from funnelhub.vk_bot import handle_vk_message_allow, handle_vk_message_new
 
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
+logger = logging.getLogger(__name__)
 
 
 class GetCourseWebhookResponse(BaseModel):
@@ -73,6 +75,7 @@ async def vk_callback_webhook(
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> Response:
     validate_vk_secret(event.secret, settings)
+    log_vk_callback_event(event)
 
     if event.type == "confirmation":
         if not settings.vk_confirmation_code:
@@ -82,13 +85,21 @@ async def vk_callback_webhook(
             )
         return Response(content=settings.vk_confirmation_code, media_type="text/plain")
 
-    if event.type == "message_new":
+    if event.type in {"message_new", "message_allow"}:
         try:
-            await handle_vk_message_new(
-                session=session,
-                settings=settings,
-                event=event.model_dump(),
-            )
+            event_payload = event.model_dump()
+            if event.type == "message_allow":
+                await handle_vk_message_allow(
+                    session=session,
+                    settings=settings,
+                    event=event_payload,
+                )
+            else:
+                await handle_vk_message_new(
+                    session=session,
+                    settings=settings,
+                    event=event_payload,
+                )
         except ValueError:
             await session.rollback()
             return Response(content="ok", media_type="text/plain")
@@ -97,6 +108,38 @@ async def vk_callback_webhook(
         return Response(content="ok", media_type="text/plain")
 
     return Response(content="ok", media_type="text/plain")
+
+
+def log_vk_callback_event(event: VkCallbackEvent) -> None:
+    object_keys = sorted(event.object.keys())
+    message = event.object.get("message")
+    message_keys = sorted(message.keys()) if isinstance(message, dict) else []
+    token_sources = [
+        key
+        for key in ("ref", "key", "access_key", "start", "payload")
+        if key in event.object
+    ]
+    if isinstance(message, dict):
+        token_sources.extend(
+            f"message.{key}"
+            for key in ("ref", "key", "access_key", "start", "payload", "text")
+            if key in message
+        )
+    has_user_id = any(key in event.object for key in ("user_id", "from_id"))
+    has_message_user_id = isinstance(message, dict) and any(
+        key in message for key in ("user_id", "from_id")
+    )
+    logger.info(
+        "VK callback received",
+        extra={
+            "vk_event_type": event.type,
+            "vk_group_id": event.group_id,
+            "vk_object_keys": object_keys,
+            "vk_message_keys": message_keys,
+            "vk_token_sources": token_sources,
+            "vk_has_user_id": has_user_id or has_message_user_id,
+        },
+    )
 
 
 def validate_vk_secret(secret: str | None, settings: Settings) -> None:

@@ -15,11 +15,19 @@ async def start_default_funnel_for_lead(
     settings: Settings,
     lead_id: uuid.UUID,
     now: datetime | None = None,
+    messenger_channel: str | None = None,
 ) -> FunnelState:
     definition = load_funnel_definition(settings.default_funnel_path)
-    return await start_funnel_for_lead(
+    state = await start_funnel_for_lead(
         session=session,
         lead_id=lead_id,
         definition=definition,
         now=now,
     )
+    if messenger_channel is not None:
+        state.metadata_ = {
+            **(state.metadata_ or {}),
+            "messenger_channel": messenger_channel,
+        }
+        await session.flush()
+    return state

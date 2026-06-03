@@ -7,7 +7,7 @@ from typing import Any
 from aiogram import Bot, Dispatcher, Router
 from aiogram.filters import Command, CommandStart
 from aiogram.filters.command import CommandObject
-from aiogram.types import Message, User
+from aiogram.types import CallbackQuery, Message, User
 
 from funnelhub.config import get_settings
 from funnelhub.db.models import MessengerIdentity
@@ -15,10 +15,16 @@ from funnelhub.db.session import async_session_maker
 from funnelhub.services.bot_linking import link_messenger_identity
 from funnelhub.services.funnel_answers import handle_funnel_text_reply
 from funnelhub.services.funnel_autostart import start_default_funnel_for_lead
-from funnelhub.services.funnel_engine import load_funnel_definition
+from funnelhub.services.funnel_engine import load_funnel_definition, run_due_funnel_step
 from funnelhub.services.funnel_runner import MessengerFunnelStepSender
+from funnelhub.services.inbox import (
+    mark_conversation_auto_handled,
+    record_inbound_messenger_message,
+)
+from funnelhub.services.inbox_notifications import notify_admin_about_inbound_message
 from funnelhub.services.telegram_messaging import (
     get_telegram_identity_by_user_id,
+    parse_text_callback_data,
     unsubscribe_telegram_identity,
 )
 
@@ -40,6 +46,7 @@ async def handle_start(message: Message, command: CommandObject) -> None:
 
     try:
         settings = get_settings()
+        definition = load_funnel_definition(settings.default_funnel_path)
         async with async_session_maker() as session:
             result = await link_messenger_identity(
                 session=session,
@@ -49,19 +56,30 @@ async def handle_start(message: Message, command: CommandObject) -> None:
                 username=telegram_user.username,
                 display_name=telegram_user.full_name,
                 raw_profile=build_raw_profile(telegram_user),
+                allow_relink=True,
             )
-            await start_default_funnel_for_lead(
+            state = await start_default_funnel_for_lead(
                 session=session,
                 settings=settings,
                 lead_id=result.lead_id,
+                messenger_channel="telegram",
+            )
+            sender = MessengerFunnelStepSender(
+                session=session,
+                telegram_bot=message.bot,
+                vk_client=None,
+            )
+            await run_due_funnel_step(
+                session=session,
+                state=state,
+                definition=definition,
+                sender=sender,
             )
             await session.commit()
     except ValueError:
         logger.info("Telegram start rejected for invalid or conflicting token")
         await message.answer("Ссылка недействительна или устарела. Получите новую ссылку.")
         return
-
-    await message.answer("Telegram привязан. Скоро здесь начнется воронка.")
 
 
 @router.message(Command("status"))
@@ -105,6 +123,14 @@ async def handle_text_answer(message: Message) -> None:
             telegram_bot=message.bot,
             vk_client=None,
         )
+        inbound_message = await record_inbound_messenger_message(
+            session=session,
+            channel="telegram",
+            external_user_id=str(telegram_user.id),
+            body=message.text,
+            external_message_id=str(message.message_id),
+            metadata={"source": "telegram_message"},
+        )
         handled = await handle_funnel_text_reply(
             session=session,
             definition=definition,
@@ -114,7 +140,78 @@ async def handle_text_answer(message: Message) -> None:
             sender=sender,
         )
         if handled:
+            await mark_conversation_auto_handled(
+                session=session,
+                channel="telegram",
+                external_user_id=str(telegram_user.id),
+            )
+        elif inbound_message is not None:
+            await notify_admin_about_inbound_message(
+                session=session,
+                settings=settings,
+                message=inbound_message,
+            )
+        if inbound_message is not None or handled:
             await session.commit()
+
+
+@router.callback_query()
+async def handle_inline_answer(callback: CallbackQuery) -> None:
+    telegram_user = callback.from_user
+    if telegram_user is None or callback.data is None:
+        return
+
+    text = parse_text_callback_data(callback.data)
+    if text is None:
+        return
+
+    settings = get_settings()
+    definition = load_funnel_definition(settings.default_funnel_path)
+    async with async_session_maker() as session:
+        sender = MessengerFunnelStepSender(
+            session=session,
+            telegram_bot=callback.bot,
+            vk_client=None,
+        )
+        inbound_message = await record_inbound_messenger_message(
+            session=session,
+            channel="telegram",
+            external_user_id=str(telegram_user.id),
+            body=text,
+            external_message_id=str(callback.message.message_id)
+            if callback.message is not None
+            else None,
+            metadata={
+                "source": "telegram_callback",
+                "callback_data": callback.data,
+            },
+        )
+        handled = await handle_funnel_text_reply(
+            session=session,
+            definition=definition,
+            channel="telegram",
+            external_user_id=str(telegram_user.id),
+            text=text,
+            sender=sender,
+        )
+        if handled:
+            await mark_conversation_auto_handled(
+                session=session,
+                channel="telegram",
+                external_user_id=str(telegram_user.id),
+            )
+            await session.commit()
+            await callback.answer("Принято")
+            return
+        if inbound_message is not None:
+            await notify_admin_about_inbound_message(
+                session=session,
+                settings=settings,
+                message=inbound_message,
+            )
+            await session.commit()
+
+    await callback.answer()
 
 
 def normalize_start_token(args: str | None) -> str | None:

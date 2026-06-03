@@ -4,8 +4,8 @@
 
 - Project: FunnelHub.
 - Methodology: Harness-engineering.
-- Current feature: `<нет>`.
-- WIP: `<нет>`.
+- Current feature: `simple-inbox`.
+- WIP: `simple-inbox` local MVP implemented; production deploy/connect pending.
 - Repo source of truth lives in `.harness/`.
 
 ## Decisions
@@ -41,20 +41,46 @@
 - VK integration uses VK Callback API for inbound `confirmation` and `message_new` events, and VK `messages.send` for outbound messages.
 - VK credentials and callback secret/confirmation values must stay in environment variables, not repository files.
 - Production callback host `bot.aisukam.ru` points to the VPS and Caddy proxies HTTPS traffic to the production FunnelHub app on `127.0.0.1:8000`.
+- GetCourse form redirect can use `/join/getcourse` as a no-process fallback: FunnelHub ingests lead query params during redirect, generates/reuses a bot link token, and renders the bot-choice thank-you page.
+- GetCourse redirect placeholder values such as `{email}`, `{phone}`, and `{name}` are ignored so a misconfigured redirect does not create placeholder contacts.
 - The real consultation scenario lives in `content/funnels/aisu_consultation.yml` and is the default funnel path.
 - The scenario questionnaire is non-blocking: the scheduled content chain continues while unanswered questions can be repeated.
 - Questionnaire answers and pending-question metadata are stored in the existing `funnel_states.metadata` JSONB field; no new table is needed yet.
 - Telegram/VK incoming text can complete the questionnaire and trigger an immediate personalized response without rewinding or pausing the scheduled chain.
+- Questionnaire question steps delay the next content step by the question's `reminder_delay`, not by the next step's normal delay; after all questionnaire answers are completed, the waiting content step becomes due immediately.
+- The Telegram `/start <token>` handler no longer sends a separate "Telegram linked" confirmation; the funnel messages are the only user-facing onboarding content after linking.
+- The Telegram `/start <token>` handler sends the first due default-funnel step immediately after linking instead of waiting for the background funnel worker interval.
+- VK Callback API `message_allow` can auto-link a VK user from `object.key`/`object.ref`/`object.start` and start the default funnel without requiring the user to send a manual `/start` message, provided the VK event type is enabled in the community callback settings.
+- VK token extraction also accepts `access_key` at the event object level and inside payload; VK callback logging records event type, object/message keys, and token source names without logging token values or callback secrets.
+- VK OAuth join flow is supported as the preferred VK autostart fallback for users who have already allowed community messages before. When `VK_GROUP_ID`, `VK_OAUTH_CLIENT_ID`, and `VK_OAUTH_CLIENT_SECRET` are configured, the thank-you page renders an OAuth link that validates signed state, links the VK user to the lead, starts the default funnel, and sends the first due step immediately.
+- If VK OAuth settings are missing, the thank-you page intentionally falls back to the existing `vk.me` deep link.
+- VK ID OAuth now uses the VK ID authorization endpoint with PKCE and `code_v2` callback handling. FunnelHub extracts the VK user id from the VK ID token response/id token, links the user to the lead, and sends through the community access token. `messages.allowMessagesFromGroup` is not used because VK ID tokens cannot call that legacy method.
+- VK success callback auto-redirects the browser to the VK community dialog after sending the first message. The VK ID `Разрешить` screen remains a VK-controlled step and cannot be removed by FunnelHub.
+- VK outbound messaging requires a valid `VK_GROUP_ACCESS_TOKEN` community key with messages permission. A VK ID application service key is not sufficient.
+- Telegram questionnaire answer buttons are sent as inline callback buttons. Manual text replies remain supported as fallback.
+- VK questionnaire answer buttons use inline keyboard buttons with `primary` color for text answers; URL buttons remain link buttons.
+- Messenger funnel states store the start channel in `metadata.messenger_channel`; shared `messenger` steps prefer that channel so a lead linked to both Telegram and VK does not silently switch channels mid-funnel.
+- Real bot-start paths may relink an existing messenger identity to a newer lead when the user explicitly starts through Telegram `/start <token>`, VK Callback token, or VK ID OAuth. The public `/api/messenger/link` endpoint still rejects linking the same messenger identity to another lead by default.
 - Future agent/RAG work must not be the primary access path for structured lead operations; leads, contacts, consents, statuses, messages, subscriptions, funnel states, and events should be handled through SQL, read-only tools, admin APIs, reports, and filters.
 - Future RAG is for unstructured knowledge: scenario texts, inbox conversations, product knowledge, objections, offers, policies, documents, operator instructions, and future agent answer drafts.
 - Future RAG implementation should use PostgreSQL + `pgvector` for MVP, not a separate Pinecone/Qdrant/Milvus service.
 - Knowledge/RAG must be a separate knowledge/search layer, not mixed into the core lead schema.
 - Backend stack: Python 3.12+, FastAPI, PostgreSQL, Redis, SQLAlchemy/Alembic.
 - Admin MVP: server-rendered FastAPI pages with Jinja2/HTMX, mobile-friendly for inbox replies.
+- Inbox operator UI uses a separate local React app in `inbox-app/` because Aisu will use it as a daily working interface and the UX needs to be more polished than the earlier server-rendered admin assumption.
+- Inbox conversations are created from inbound Telegram/VK messages and callbacks; existing outbound funnel history for the same lead/channel is attached to the new conversation when the first inbound message arrives.
+- Questionnaire answers that are handled automatically by the funnel are still recorded as inbound messages, then their conversation is moved back from `needs_reply` to `open` so the inbox only highlights messages that need manual attention.
+- Manual inbox replies use the existing Telegram/VK outbound adapters and persist as outbound `messages` linked to the conversation.
+- Inbox access is protected by a single-admin login for Aisu using env-configured credentials, PBKDF2 password hash, signed HttpOnly session cookie, and server-side authorization on `/api/inbox/*`.
+- Inbox Telegram admin notifications are optional env-configured side effects: they are sent only for inbound messages that still need a manual reply, and delivery failures are logged without breaking Telegram/VK customer bot handling.
+- Inbox notification links use `INBOX_APP_URL?conversation=<conversation_id>` so the React app can open the relevant dialog directly.
+- Inbox "База" uses existing lead/contact/messenger/funnel/message/import tables without a new migration. CSV import reuses GetCourse ingestion/deduplication by `gc_user_id`, email, or phone, and CSV export is read-only from the operational database.
 - Telegram: aiogram 3.x.
 - VK: VK API / Callback API through a channel adapter.
 - Max: future channel adapter, not MVP-critical.
 - Email: external provider API/SMTP; do not use GetCourse email processes as communication source of truth.
+- Conversation statuses now include `needs_reply` and `replied`; message statuses now include `received` for inbound messages.
+- `INBOX_ADMIN_PASSWORD_HASH` stores only a password hash; the real inbox password must not be committed.
 
 ## Completed
 
@@ -138,18 +164,45 @@
 - Applied Alembic migrations on production PostgreSQL through `0002_bot_link_tokens`.
 - Switched host Caddy from the temporary VK confirmation responder to reverse proxying the real app.
 - Smoke-tested production health, GetCourse webhook, join page, and VK confirmation response.
+- Added `GET /join/getcourse` for direct GetCourse form redirects without a GetCourse process.
+- Updated the join page copy to match the current GetCourse thank-you page and show Telegram/VK bonus buttons.
+- Added tests for the GetCourse redirect join page and unresolved GetCourse placeholders.
+- Added VK OAuth join support for VK autostart, including signed state, OAuth code exchange, `/oauth/vk/callback`, immediate funnel start/send, and tests.
+- Fixed VK ID autostart end-to-end on production: switched to `id.vk.ru`, PKCE state, VK ID token exchange, id token user id extraction, valid community access token, and auto-redirect after success.
+- Reworked Telegram questionnaire buttons to inline callback buttons and added callback handling in the Telegram bot.
+- Styled VK text answer buttons with `primary` color.
+- Added `allow_relink` support to messenger linking and enabled it only for real bot-start/OAuth flows so repeated tests or repeat applications from the same VK/Telegram account can move the messenger identity to the current lead.
+- Restyled the GetCourse redirect thank-you page to match the live Aisu Kam landing page direction: warm cream background, gold accents, serif typography, gift cards, and a decorative ritual-lamp motif.
+- Added local `simple-inbox` backend foundation: `src/funnelhub/services/inbox.py`, `src/funnelhub/api/inbox.py`, and `/api/inbox` routes for conversation list, conversation detail, replies, and status updates.
+- Added single-admin inbox auth: `src/funnelhub/services/auth.py`, `src/funnelhub/api/auth.py`, `/api/auth/login`, `/api/auth/me`, `/api/auth/logout`, and `/api/inbox/*` protection.
+- Added React login screen and logout action to `inbox-app`.
+- Added inbox Telegram admin notification service in `src/funnelhub/services/inbox_notifications.py`.
+- Wired Telegram text/callback and VK inbound messages to notify the admin bot when a conversation needs manual reply.
+- Added React support for opening a conversation from `?conversation=<conversation_id>`.
+- Added `INBOX_APP_URL`, `INBOX_NOTIFY_TELEGRAM_BOT_TOKEN`, and `INBOX_NOTIFY_TELEGRAM_CHAT_ID` to `.env.example`.
+- Added local Inbox database backend: `src/funnelhub/services/inbox_database.py` and `/api/inbox/database/leads` routes for lead list/detail, CSV export, and CSV import.
+- Added React `База` section in `inbox-app` with lead search/table, detail panel, CSV export, and CSV upload.
+- Added `tests/test_inbox_database.py` covering database list, detail/API auth, CSV export, and CSV import.
+- Wired Telegram text messages, Telegram inline callbacks, and VK `message_new` events to record inbound messages and create/update conversations.
+- Linked future outbound Telegram/VK messages to the latest conversation for the same lead/channel when one exists.
+- Added Alembic migration `0003_inbox_statuses` for inbox statuses.
+- Created separate local React app in `inbox-app/` with Vite, TypeScript, React, lucide icons, responsive conversation list/chat/detail layout, filters, search, reply composer, and status actions.
+- Added `tests/test_inbox.py` covering inbound persistence, auto-handled conversation status, inbox reply persistence, list/detail service behavior, and inbox API behavior.
 
 ## Open Questions
 
 - Email provider choice.
 - Final replacement URLs/files for the three video lessons.
 - Production VK community credentials and Callback API endpoint setup.
-- Configure GetCourse production webhook to `https://bot.aisukam.ru/webhooks/getcourse`.
+- Configure GetCourse production redirect to `https://bot.aisukam.ru/join/getcourse?name={name}&phone={phone}&email={email}`.
 - Run manual Telegram and VK end-to-end user-path checks from a real phone/account.
 - Confirm whether the production GetCourse webhook should send all eight consent checkbox fields or only the field relevant to the active form/offer.
 - Production domain name.
 - Need GetCourse custom field ID/name mapping if available, because XLSX exports can contain blank/headerless columns that are actually custom fields.
 - First real corpus for future RAG: scenario texts, inbox messages, product documents, offers, policies, operator instructions, and customer objections.
+- Production deployment and access control approach for `inbox-app/`.
+- Configure production `INBOX_ADMIN_USERNAME`, `INBOX_ADMIN_PASSWORD_HASH`, and `INBOX_SESSION_SECRET` before deploying inbox.
+- Configure production `INBOX_NOTIFY_TELEGRAM_BOT_TOKEN`, `INBOX_NOTIFY_TELEGRAM_CHAT_ID`, and public `INBOX_APP_URL` before testing live inbox notifications. Local `.env` has been configured for the notification bot; the bot token must remain out of repository files.
 
 ## Verification Log
 
@@ -275,3 +328,131 @@
 - 2026-06-01 production join page returned HTTP 200 and rendered Telegram/VK deep links.
 - 2026-06-01 production VK confirmation POST returned `dbcd0b9d`.
 - 2026-06-01 production services were running: `app`, `telegram-bot`, `funnel-worker`, `postgres`, `redis`.
+- 2026-06-02 `ruff check .` passed after GetCourse redirect join page.
+- 2026-06-02 `mypy src` passed after GetCourse redirect join page: no issues in 22 source files.
+- 2026-06-02 `pytest -x` passed after GetCourse redirect join page: 51 tests passed.
+- 2026-06-02 `docker compose config --quiet` passed after GetCourse redirect join page.
+- 2026-06-02 `docker compose -f docker-compose.prod.yml config --quiet` passed after GetCourse redirect join page.
+- 2026-06-02 production deploy attempt blocked: `31.129.110.56` did not accept TCP connections on 22, 80, or 443; public HTTPS health could not be checked.
+- 2026-06-02 production deploy completed after provider-side availability issue was resolved: archive uploaded to `/opt/funnelhub`, production Docker images rebuilt, services restarted, and `alembic upgrade head` passed.
+- 2026-06-02 production `https://bot.aisukam.ru/health` returned `{"status":"ok","service":"FunnelHub"}`.
+- 2026-06-02 production `https://bot.aisukam.ru/join/getcourse?...` returned HTTP 200 and rendered the thank-you page with Telegram and VK deep links.
+- 2026-06-02 production VK confirmation POST returned `dbcd0b9d`.
+- 2026-06-02 production services were running: `app`, `funnel-worker`, `postgres`, `redis`, `telegram-bot`.
+- 2026-06-02 `ruff check .` passed after questionnaire wait/start-message fix.
+- 2026-06-02 `mypy src` passed after questionnaire wait/start-message fix: no issues in 22 source files.
+- 2026-06-02 `pytest -x` passed after questionnaire wait/start-message fix: 52 tests passed.
+- 2026-06-02 `docker compose config --quiet` passed after questionnaire wait/start-message fix.
+- 2026-06-02 `docker compose -f docker-compose.prod.yml config --quiet` passed after questionnaire wait/start-message fix.
+- 2026-06-02 production deploy completed for questionnaire wait/start-message fix: Docker images rebuilt, migrations checked, services restarted.
+- 2026-06-02 production `https://bot.aisukam.ru/health` returned `{"status":"ok","service":"FunnelHub"}` after the fix.
+- 2026-06-02 production VK confirmation POST returned `dbcd0b9d` after the fix.
+- 2026-06-02 `ruff check .`, `mypy src`, `pytest -x`, and `docker compose -f docker-compose.prod.yml config --quiet` passed after immediate Telegram `/start` first-step send; pytest reported 52 tests passed.
+- 2026-06-02 production deploy completed for immediate Telegram `/start` first-step send: Docker images rebuilt, migrations checked, services restarted.
+- 2026-06-02 production `https://bot.aisukam.ru/health` returned `{"status":"ok","service":"FunnelHub"}` after immediate Telegram `/start` deploy.
+- 2026-06-02 test Telegram lead `4acaaf04-59d0-4f0d-9f3f-5427bd82bd28` was reset after deploy by deleting 1 `funnel_states` row and 2 `messages` rows; lead, token, and Telegram identity were left intact.
+- 2026-06-02 `ruff check .`, `mypy src`, `pytest -x`, and `docker compose -f docker-compose.prod.yml config --quiet` passed after VK `message_allow` autostart support; pytest reported 53 tests passed.
+- 2026-06-02 production deploy completed for VK `message_allow` autostart support: Docker images rebuilt, migrations checked, services restarted.
+- 2026-06-02 production `https://bot.aisukam.ru/health` returned `{"status":"ok","service":"FunnelHub"}` after VK `message_allow` deploy.
+- 2026-06-02 production VK confirmation POST returned `dbcd0b9d` after VK `message_allow` deploy.
+- 2026-06-02 `ruff check .`, `mypy src`, and focused VK/GetCourse webhook tests passed after VK `access_key` support and diagnostic logging; focused pytest reported 26 tests passed.
+- 2026-06-02 production deploy completed for VK `access_key` support and diagnostic logging; services were running and server-side health check returned `{"status":"ok","service":"FunnelHub"}`.
+- 2026-06-02 local `pytest tests/test_vk_oauth.py -q` passed after VK OAuth support; pytest reported 4 tests passed.
+- 2026-06-02 production redeploy completed after rebuilding the deploy archive with untracked files included. `src/funnelhub/services/vk_oauth.py` is present on the VPS, services are running, and both `http://127.0.0.1:8000/health` and `https://bot.aisukam.ru/health` returned `{"status":"ok","service":"FunnelHub"}`.
+- 2026-06-02 production `.env` check initially showed `VK_GROUP_ID`, `VK_OAUTH_CLIENT_ID`, `VK_OAUTH_CLIENT_SECRET`, and `VK_OAUTH_STATE_SECRET` were missing, so the production thank-you page fell back to `vk.me`.
+- 2026-06-02 added production VK OAuth env values from the VK ID application, generated `VK_OAUTH_STATE_SECRET`, and restarted the production stack. `http://127.0.0.1:8000/health` returned `{"status":"ok","service":"FunnelHub"}` and a production `/join/getcourse` smoke page rendered `oauth.vk.com=True` and `vk.me=False`.
+- 2026-06-02 production VK ID flow was corrected through several callback failures: old `oauth.vk.com` caused `Security Error`, state delimiter was rewritten to a single base64url block, VK ID `messages.allowMessagesFromGroup` was removed, user id extraction from id token/token response was added, and the production `VK_GROUP_ACCESS_TOKEN` was replaced with a valid community key. User confirmed VK opened the bot and the first message arrived.
+- 2026-06-02 production VK success page now auto-redirects to the VK community dialog after the callback; `https://bot.aisukam.ru/health` returned `{"status":"ok","service":"FunnelHub"}` after deploy.
+- 2026-06-02 local `ruff check`, `mypy src`, and Telegram/VK messaging tests passed after inline button updates; focused pytest reported 10 tests passed.
+- 2026-06-02 production deploy completed for Telegram inline callback buttons and VK primary text buttons; `https://bot.aisukam.ru/health` returned `{"status":"ok","service":"FunnelHub"}`.
+- 2026-06-03 local `pytest tests/test_getcourse_webhook.py tests/test_vk_oauth.py -q`, focused `ruff check`, and `mypy src` passed after messenger `allow_relink`; pytest reported 26 tests passed.
+- 2026-06-03 production deploy completed for messenger `allow_relink`; running services were `app`, `funnel-worker`, `postgres`, `redis`, and `telegram-bot`; `http://127.0.0.1:8000/health` returned `{"status":"ok","service":"FunnelHub"}`.
+- 2026-06-03 production `/join/getcourse` smoke for `vk-relink-20260603@example.com` returned HTTP 200 and rendered `id.vk.ru=True`, `vk.me=False`.
+- 2026-06-02 production `/join/getcourse` lead-ingestion smoke passed with a synthetic email/phone: two repeated requests returned HTTP 200, rendered Telegram/VK buttons, and reused the same bot-link token.
+- 2026-06-02 `ruff check src/funnelhub/api/messenger.py` passed after restyling the thank-you page.
+- 2026-06-02 `pytest tests/test_getcourse_webhook.py -q` passed after restyling the thank-you page: 19 tests passed. Pytest emitted a `.pytest_cache` permission warning.
+- 2026-06-02 production deploy completed for the thank-you page restyle by updating `src/funnelhub/api/messenger.py` on the VPS and rebuilding/recreating the `app` container.
+- 2026-06-02 production `http://127.0.0.1:8000/health` and public `https://bot.aisukam.ru/health` returned `{"status":"ok","service":"FunnelHub"}` after the thank-you page restyle deploy.
+- 2026-06-02 production `/join/getcourse` smoke after deploy confirmed the page contains the new restyled blocks (`portrait-card`, `gift-list`) and Telegram/VK buttons.
+- 2026-06-02 local follow-up replaced the unclear decorative right-side lamp/mandala block with a functional `Что дальше` card. `ruff check src/funnelhub/api/messenger.py` passed and `pytest tests/test_getcourse_webhook.py -q` passed with 19 tests. Production deploy was blocked by the Codex escalated-command usage limit until Jun 3rd, 2026 1:16 AM.
+- 2026-06-03 `ruff check src/funnelhub/api/messenger.py` passed before deploying the right-side `Что дальше` card.
+- 2026-06-03 `pytest tests/test_getcourse_webhook.py -q` passed before deploying the right-side `Что дальше` card: 20 tests passed. Pytest emitted a `.pytest_cache` permission warning.
+- 2026-06-03 production deploy completed for the right-side `Что дальше` card by updating `src/funnelhub/api/messenger.py` on the VPS and rebuilding/recreating the `app` container.
+- 2026-06-03 production `https://bot.aisukam.ru/health` returned `{"status":"ok","service":"FunnelHub"}` after deploy.
+- 2026-06-03 production `/join/getcourse` public smoke confirmed the new `next-card` / `Что дальше` block renders, Telegram/VK buttons are present, and old `lamp` / `mandala` / `portrait-card` markup is absent.
+- 2026-06-03 diagnosed Telegram test silence after first message: the lead had both Telegram and VK identities, so the immediate `/start` first step went to Telegram while subsequent worker-driven `messenger` steps selected the latest supported identity and continued in VK.
+- 2026-06-03 fixed messenger channel routing by storing `messenger_channel` in `funnel_states.metadata` on Telegram/VK starts and making the funnel worker prefer that channel for shared `messenger` steps, with fallback to the previous latest-identity behavior for old states.
+- 2026-06-03 local `pytest tests/test_funnel_runner.py tests/test_getcourse_webhook.py -q` passed after messenger channel pinning: 23 tests passed. Pytest emitted a `.pytest_cache` permission warning.
+- 2026-06-03 local focused `ruff check` passed after messenger channel pinning.
+- 2026-06-03 local `mypy src` passed after messenger channel pinning.
+- 2026-06-03 `docker compose -f docker-compose.prod.yml config --quiet` passed after messenger channel pinning.
+- 2026-06-03 production deploy completed for messenger channel pinning by updating runtime files on `/opt/funnelhub` and rebuilding/recreating `app`, `telegram-bot`, and `funnel-worker`.
+- 2026-06-03 production health check returned HTTP 200 with `{"status":"ok","service":"FunnelHub"}` after deploy; `app`, `telegram-bot`, `funnel-worker`, `postgres`, and `redis` were running.
+- 2026-06-03 reset production Telegram/VK test lead `a60d5472-0fd3-4211-b963-5e06e34c8b48` by deleting 1 `funnel_states` row and 6 `messages` rows; Telegram identity `634471826` and VK identity `199271782` were kept subscribed.
+- 2026-06-03 cleaned old orphaned VK test state `9348a8c0-1454-4fde-b4e9-0e321ef21075` with no subscribed identity by deleting 1 `funnel_states` row and 16 `messages` rows.
+- 2026-06-03 final production reset check confirmed `funnel_states` count is 0 and Telegram/VK identities remain subscribed.
+- 2026-06-03 updated thank-you page copy for the meditation, three video steps, and `Что дальше` card wording.
+- 2026-06-03 `ruff check src/funnelhub/api/messenger.py` passed after thank-you page copy updates.
+- 2026-06-03 `pytest tests/test_getcourse_webhook.py -q` passed after thank-you page copy updates: 20 tests passed. Pytest emitted a `.pytest_cache` permission warning.
+- 2026-06-03 production deploy completed for thank-you page copy updates. Public `https://bot.aisukam.ru/health` returned `{"status":"ok","service":"FunnelHub"}` and `/join/getcourse` smoke confirmed the new copy while old mini-course wording was absent.
+- 2026-06-03 converted `content/funnels/aisu_consultation.yml` multiline scenario texts from quoted/folded YAML strings to literal block scalars so visual paragraph gaps in the file become real blank lines in Telegram/VK messages.
+- 2026-06-03 local scenario parse check confirmed the `welcome` text now contains 11 double-newline paragraph gaps instead of 0.
+- 2026-06-03 local `pytest tests/test_funnel_engine.py tests/test_funnel_runner.py tests/test_funnel_answers.py -q` passed after scenario literal-block conversion: 14 tests passed. Pytest emitted a `.pytest_cache` permission warning.
+- 2026-06-03 local `ruff check src/funnelhub tests/test_funnel_engine.py tests/test_funnel_runner.py tests/test_funnel_answers.py` passed after scenario literal-block conversion.
+- 2026-06-03 local `mypy src` passed after scenario literal-block conversion.
+- 2026-06-03 `docker compose -f docker-compose.prod.yml config --quiet` passed after scenario literal-block conversion.
+- 2026-06-03 production deploy completed for scenario literal-block conversion by updating `content/funnels/aisu_consultation.yml` on `/opt/funnelhub` and rebuilding/recreating `app`, `telegram-bot`, and `funnel-worker`.
+- 2026-06-03 production parse check inside the app container confirmed `welcome_double_newlines=11` and `welcome_single_newlines=22`; production health returned HTTP 200 with `{"status":"ok","service":"FunnelHub"}`.
+- 2026-06-03 production test cleanup deleted exactly two requested test leads: `Sergei Gurbin` and `Sergei Burshnabuven`. Cascade cleanup removed 2 `funnel_states`, 13 `messages`, 2 `messenger_identities`, 2 `bot_link_tokens`, and 4 `lead_contacts`.
+- 2026-06-03 production cleanup verification confirmed 0 remaining matches for those two test names, 0 `funnel_states`, 0 `messenger_identities`, health HTTP 200, and worker logs without errors.
+- 2026-06-03 production DB read-only check before inbox work confirmed the two test leads had lead rows, messenger identities, outbound messages, and active funnel states; it also showed `conversations` were empty and inbound questionnaire answers were only in `funnel_states.metadata.answers`.
+- 2026-06-03 local `python -m alembic upgrade head` applied `0003_inbox_statuses`.
+- 2026-06-03 local focused `ruff check` passed for inbox backend files, bot wiring, messaging services, migration, and inbox tests.
+- 2026-06-03 local `mypy src` passed after inbox backend/API work: no issues in 25 source files.
+- 2026-06-03 local `pytest tests/test_inbox.py -q` passed: 5 tests passed.
+- 2026-06-03 local Telegram/VK/GetCourse affected tests passed: `pytest tests/test_telegram_messaging.py tests/test_vk_messaging.py tests/test_getcourse_webhook.py tests/test_vk_bot.py tests/test_telegram_bot.py -q` reported 41 tests passed.
+- 2026-06-03 local full `pytest -x` passed after inbox work: 68 tests passed.
+- 2026-06-03 `docker compose config --quiet` and `docker compose -f docker-compose.prod.yml config --quiet` passed after inbox work.
+- 2026-06-03 `npm install` completed in `inbox-app/` and `npm run build` passed; Vite built the React inbox app successfully.
+- 2026-06-03 local FastAPI was started with uvicorn and `GET http://localhost:8000/api/inbox/conversations` returned `[]` successfully.
+- 2026-06-03 local React dev server responded HTTP 200 at `http://127.0.0.1:5173`; in-app browser verification was not available because the Browser plugin did not expose the required Node `js` execution tool in this session.
+- 2026-06-03 `npm run build` passed after inbox filter-button wrapping and mobile layout adjustments.
+- 2026-06-03 local `ruff check .` passed after single-admin inbox auth.
+- 2026-06-03 local `mypy src` passed after single-admin inbox auth: no issues in 27 source files.
+- 2026-06-03 local `pytest -x` passed after single-admin inbox auth: 76 tests passed.
+- 2026-06-03 `npm run build` passed in `inbox-app/` after adding the login screen and authenticated API fetches.
+- 2026-06-03 reviewed the full `content/funnels/aisu_consultation.yml` scenario for long Telegram/VK message paragraphs and added semantic paragraph gaps to messages that were still single-block text.
+- 2026-06-03 production scenario parse check confirmed there are 0 long single-paragraph scenario/personalized messages; the largest remaining paragraph is `abilities.self_practice` at 429 characters.
+- 2026-06-03 fixed production `funnel-worker` restart-loop causes: removed async SQLAlchemy `pool_pre_ping` from `create_async_engine` and changed `run_due_funnel_once` to re-load each due state by stored ID so rollback from a failed state cannot expire the next state object and raise `MissingGreenlet`.
+- 2026-06-03 added regression coverage for failed messenger steps without identities and for continuing to the next due state after rollback.
+- 2026-06-03 local `pytest tests/test_funnel_runner.py tests/test_funnel_engine.py tests/test_funnel_answers.py -q` passed after worker rollback fix: 16 tests passed.
+- 2026-06-03 local focused `ruff check` passed for `src/funnelhub/db/session.py`, `src/funnelhub/services/funnel_runner.py`, and `tests/test_funnel_runner.py`.
+- 2026-06-03 local `mypy src` passed after worker rollback fix.
+- 2026-06-03 production deploy completed for scenario paragraph cleanup and worker stability fixes by updating runtime files on `/opt/funnelhub` and rebuilding/recreating `app`, `telegram-bot`, and `funnel-worker`.
+- 2026-06-03 production check after deploy confirmed `app`, `telegram-bot`, `funnel-worker`, `postgres`, and `redis` were running; app health returned HTTP 200.
+- 2026-06-03 production cleanup re-deleted test leads `Sergei Gurbin` and `Sergei Burshnabuven` after a new test run recreated them; cascade cleanup removed 2 funnel states, 8 messages, 1 messenger identity, 2 bot link tokens, and 5 lead contacts.
+- 2026-06-03 final production verification confirmed 0 matching test leads, 0 due funnel states, and two clean `funnel-worker` passes with no errors.
+- 2026-06-03 production clean-slate reset deleted all lead-owned operational data for a fresh TG/VK experiment: before reset there were 25 leads, 50 contacts, 25 bot link tokens, 26 email subscriptions, 35 messages, 82 events, 1 messenger identity, and 1 funnel state; after reset all checked lead/message/state/identity/event tables were 0.
+- 2026-06-03 diagnosed repeated VK question buttons after a Telegram start: scheduled `messenger` steps respected `funnel_states.metadata.messenger_channel`, but pending questionnaire reminders still selected the latest subscribed TG/VK identity, so reminders could switch to VK and repeat there.
+- 2026-06-03 fixed questionnaire reminders to prefer `metadata.messenger_channel` through `get_subscribed_identity(...)`, matching regular messenger-step routing.
+- 2026-06-03 added regression coverage in `tests/test_funnel_answers.py` for a lead with both Telegram and VK identities whose questionnaire reminder must remain in Telegram.
+- 2026-06-03 local `ruff check src/funnelhub/services/funnel_answers.py tests/test_funnel_answers.py` passed after questionnaire reminder channel pinning.
+- 2026-06-03 local `mypy src` passed after questionnaire reminder channel pinning.
+- 2026-06-03 local DB-backed focused pytest could not run because Docker Desktop/PostgreSQL was not running locally: Docker API pipe `dockerDesktopLinuxEngine` was unavailable and pytest failed with `ConnectionRefusedError`.
+- 2026-06-03 production deploy completed for questionnaire reminder channel pinning by updating `src/funnelhub/services/funnel_answers.py` and rebuilding/recreating `app`, `telegram-bot`, and `funnel-worker`.
+- 2026-06-03 production rollback smoke verified the fix without persisting data: a temporary lead with both Telegram and VK identities and `messenger_channel=telegram` sent the pending reminder to `telegram`; rollback left checked tables at 0.
+- 2026-06-03 production health returned HTTP 200, all services were running, `due_states=0`, and `funnel-worker` logged a clean pass after the reset/fix.
+- 2026-06-03 local focused `ruff check` passed for inbox notification service, Telegram/VK bot wiring, config, and notification tests.
+- 2026-06-03 local `mypy src` passed after inbox Telegram notifications: no issues in 28 source files.
+- 2026-06-03 local focused pytest passed after inbox Telegram notifications: `tests/test_inbox_notifications.py tests/test_inbox.py tests/test_telegram_bot.py tests/test_vk_bot.py -q` reported 20 tests passed.
+- 2026-06-03 local full `ruff check .` passed after inbox Telegram notifications.
+- 2026-06-03 local full `pytest -x` passed after inbox Telegram notifications: 80 tests passed.
+- 2026-06-03 `npm run build` passed in `inbox-app/` after adding direct conversation selection from notification links.
+- 2026-06-03 local inbox notification bot setup completed: Telegram `getUpdates` returned a private admin chat, `.env` was updated with notification settings, `.env` is git-ignored, and a test `sendMessage` returned `ok=true`.
+- 2026-06-03 local focused `ruff check` passed for Inbox database backend/API/tests.
+- 2026-06-03 local `mypy src` passed after Inbox database section: no issues in 29 source files.
+- 2026-06-03 local focused pytest passed after Inbox database section: `tests/test_inbox_database.py tests/test_inbox.py -q` reported 9 tests passed.
+- 2026-06-03 local full `ruff check .` passed after Inbox database section.
+- 2026-06-03 local full `pytest -x` passed after Inbox database section: 84 tests passed.
+- 2026-06-03 `npm run build` passed in `inbox-app/` after adding the `База` section.
+- 2026-06-03 browser verification passed locally for Inbox `База`: login, desktop database view, and mobile database layout rendered correctly; local dev servers were stopped after verification.

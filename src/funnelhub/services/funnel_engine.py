@@ -89,6 +89,7 @@ class FunnelStepSend:
     lead_id: uuid.UUID
     funnel_key: str
     step: FunnelStep
+    state_metadata: dict[str, Any] = field(default_factory=dict)
 
 
 class FunnelStepSender(Protocol):
@@ -201,7 +202,14 @@ async def run_due_funnel_step(
 
     step_index = definition.step_index(state.current_step_key)
     step = definition.steps[step_index]
-    await sender.send(FunnelStepSend(lead_id=state.lead_id, funnel_key=definition.key, step=step))
+    await sender.send(
+        FunnelStepSend(
+            lead_id=state.lead_id,
+            funnel_key=definition.key,
+            step=step,
+            state_metadata=dict(state.metadata_ or {}),
+        )
+    )
     metadata = dict(state.metadata_ or {})
     if step.kind == "question" and step.question_key is not None:
         metadata["pending_question_key"] = step.question_key
@@ -227,7 +235,18 @@ async def run_due_funnel_step(
 
     next_step = definition.steps[next_index]
     state.current_step_key = next_step.key
-    state.next_run_at = current_time + parse_delay(next_step.delay)
+    next_delay = parse_delay(next_step.delay)
+    if step.kind == "question" and step.question_key is not None:
+        question = (
+            definition.questionnaire.questions.get(step.question_key)
+            if definition.questionnaire is not None
+            else None
+        )
+        if question is not None:
+            next_delay = parse_delay(question.reminder_delay)
+            metadata["questionnaire_waiting_for_step_key"] = next_step.key
+
+    state.next_run_at = current_time + next_delay
     state.metadata_ = build_state_metadata(
         definition=definition,
         step_index=next_index,

@@ -21,6 +21,7 @@ from funnelhub.db.models import (
 )
 from funnelhub.db.session import async_session_maker, engine
 from funnelhub.main import app
+from funnelhub.services.bot_linking import link_messenger_identity
 
 TEST_EMAIL = "webhook-test@example.com"
 TEST_PHONE = "79990000000"
@@ -197,10 +198,60 @@ async def test_join_page_renders_for_active_bot_link_token() -> None:
         join_response = await client.get(f"/join/{token}")
 
     assert join_response.status_code == 200
-    assert "Выберите канал" in join_response.text
-    assert "Telegram" in join_response.text
-    assert "VK" in join_response.text
+    assert "Спасибо за вашу заявку!" in join_response.text
+    assert "Телеграм" in join_response.text
+    assert "Вконтакте" in join_response.text
     assert token in join_response.text
+
+
+async def test_getcourse_redirect_join_page_creates_lead_and_renders_buttons() -> None:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get(
+            "/join/getcourse",
+            params={
+                "gc_user_id": TEST_GC_ID,
+                "email": TEST_EMAIL,
+                "phone": "+7 999 000-00-00",
+                "name": "Сергей тест Gurban",
+                "utm_source": "yandex",
+            },
+        )
+
+    assert response.status_code == 200
+    assert "Спасибо за вашу заявку!" in response.text
+    assert "Телеграм" in response.text
+    assert "Вконтакте" in response.text
+
+    async with async_session_maker() as session:
+        lead = await session.scalar(
+            select(Lead).where(Lead.getcourse_user_id == int(TEST_GC_ID))
+        )
+        assert lead is not None
+        assert lead.full_name == "Сергей тест Gurban"
+
+        email_contact = await session.scalar(
+            select(LeadContact).where(
+                LeadContact.contact_type == "email",
+                LeadContact.normalized_value == TEST_EMAIL,
+            )
+        )
+        assert email_contact is not None
+        assert email_contact.lead_id == lead.id
+
+
+async def test_getcourse_redirect_join_page_rejects_unresolved_placeholders() -> None:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get(
+            "/join/getcourse",
+            params={
+                "name": "{name}",
+                "phone": "{phone}",
+                "email": "{email}",
+            },
+        )
+
+    assert response.status_code == 400
+    assert "Не удалось получить данные заявки" in response.text
 
 
 async def test_messenger_link_binds_telegram_identity_to_lead() -> None:
@@ -252,6 +303,7 @@ async def test_messenger_link_binds_telegram_identity_to_lead() -> None:
         assert funnel_state is not None
         assert funnel_state.status == "active"
         assert funnel_state.current_step_key == "welcome"
+        assert funnel_state.metadata_["messenger_channel"] == "telegram"
 
 
 async def test_repeated_telegram_link_reuses_default_funnel_state() -> None:
@@ -326,6 +378,7 @@ async def test_messenger_link_binds_vk_identity_and_starts_default_funnel() -> N
         )
         assert funnel_state is not None
         assert funnel_state.status == "active"
+        assert funnel_state.metadata_["messenger_channel"] == "vk"
 
 
 async def test_vk_callback_confirmation_returns_configured_code(
@@ -347,28 +400,35 @@ async def test_vk_callback_confirmation_returns_configured_code(
     assert response.text == "confirm-code"
 
 
-async def test_vk_callback_message_new_links_identity_and_starts_funnel() -> None:
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        webhook_response = await client.get(
-            "/webhooks/getcourse",
-            params={"gc_user_id": TEST_GC_ID, "email": TEST_EMAIL},
-        )
-        token = webhook_response.json()["bot_link_token"]
-        response = await client.post(
-            "/webhooks/vk",
-            json={
-                "type": "message_new",
-                "secret": get_settings().vk_callback_secret,
-                "group_id": 123,
-                "object": {
-                    "message": {
-                        "from_id": 321,
-                        "peer_id": 321,
-                        "text": f"/start {token}",
-                    }
+async def test_vk_callback_message_new_links_identity_and_starts_funnel(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("VK_GROUP_ACCESS_TOKEN", "")
+    get_settings.cache_clear()
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            webhook_response = await client.get(
+                "/webhooks/getcourse",
+                params={"gc_user_id": TEST_GC_ID, "email": TEST_EMAIL},
+            )
+            token = webhook_response.json()["bot_link_token"]
+            response = await client.post(
+                "/webhooks/vk",
+                json={
+                    "type": "message_new",
+                    "secret": get_settings().vk_callback_secret,
+                    "group_id": 123,
+                    "object": {
+                        "message": {
+                            "from_id": 321,
+                            "peer_id": 321,
+                            "text": f"/start {token}",
+                        }
+                    },
                 },
-            },
-        )
+            )
+    finally:
+        get_settings.cache_clear()
 
     assert response.status_code == 200
     assert response.text == "ok"
@@ -379,6 +439,56 @@ async def test_vk_callback_message_new_links_identity_and_starts_funnel() -> Non
             select(MessengerIdentity).where(
                 MessengerIdentity.channel == "vk",
                 MessengerIdentity.external_user_id == "321",
+            )
+        )
+        assert identity is not None
+        assert identity.lead_id == lead_id
+
+        funnel_state = await session.scalar(
+            select(FunnelState).where(
+                FunnelState.lead_id == lead_id,
+                FunnelState.funnel_key == "aisu_consultation",
+            )
+        )
+        assert funnel_state is not None
+
+
+async def test_vk_callback_message_allow_links_identity_and_starts_funnel(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("VK_GROUP_ACCESS_TOKEN", "")
+    get_settings.cache_clear()
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            webhook_response = await client.get(
+                "/webhooks/getcourse",
+                params={"gc_user_id": TEST_GC_ID, "email": TEST_EMAIL},
+            )
+            token = webhook_response.json()["bot_link_token"]
+            response = await client.post(
+                "/webhooks/vk",
+                json={
+                    "type": "message_allow",
+                    "secret": get_settings().vk_callback_secret,
+                    "group_id": 123,
+                    "object": {
+                        "user_id": 654,
+                        "key": token,
+                    },
+                },
+            )
+    finally:
+        get_settings.cache_clear()
+
+    assert response.status_code == 200
+    assert response.text == "ok"
+
+    lead_id = uuid.UUID(webhook_response.json()["lead_id"])
+    async with async_session_maker() as session:
+        identity = await session.scalar(
+            select(MessengerIdentity).where(
+                MessengerIdentity.channel == "vk",
+                MessengerIdentity.external_user_id == "654",
             )
         )
         assert identity is not None
@@ -437,6 +547,54 @@ async def test_messenger_link_rejects_same_telegram_id_for_another_lead() -> Non
 
     assert response.status_code == 422
     assert response.json()["detail"] == "Messenger identity is already linked to another lead."
+
+
+async def test_bot_start_can_relink_messenger_identity_to_new_lead() -> None:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        first_webhook_response = await client.get(
+            "/webhooks/getcourse",
+            params={"gc_user_id": TEST_GC_ID, "email": TEST_EMAIL},
+        )
+        second_webhook_response = await client.get(
+            "/webhooks/getcourse",
+            params={"gc_user_id": TEST_GC_ID_SECOND, "email": TEST_EMAIL_SECOND},
+        )
+
+    async with async_session_maker() as session:
+        first_result = await link_messenger_identity(
+            session=session,
+            token=first_webhook_response.json()["bot_link_token"],
+            channel="vk",
+            external_user_id="vk-123",
+            username=None,
+            display_name=None,
+            raw_profile={},
+            allow_relink=True,
+        )
+        second_result = await link_messenger_identity(
+            session=session,
+            token=second_webhook_response.json()["bot_link_token"],
+            channel="vk",
+            external_user_id="vk-123",
+            username=None,
+            display_name=None,
+            raw_profile={},
+            allow_relink=True,
+        )
+        await session.commit()
+
+    assert first_result.identity_id == second_result.identity_id
+    assert first_result.lead_id != second_result.lead_id
+
+    async with async_session_maker() as session:
+        identity = await session.scalar(
+            select(MessengerIdentity).where(
+                MessengerIdentity.channel == "vk",
+                MessengerIdentity.external_user_id == "vk-123",
+            )
+        )
+        assert identity is not None
+        assert identity.lead_id == second_result.lead_id
 
 
 async def test_getcourse_webhook_derives_consents_from_mapped_custom_field() -> None:

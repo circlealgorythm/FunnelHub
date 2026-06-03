@@ -8,7 +8,7 @@ from datetime import datetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from funnelhub.db.models import MessengerIdentity
+from funnelhub.db.models import FunnelState, MessengerIdentity
 from funnelhub.services.funnel_answers import send_pending_question_reminder
 from funnelhub.services.funnel_engine import (
     FunnelButton,
@@ -63,7 +63,11 @@ class MessengerFunnelStepSender:
             await self._send_vk(payload)
             return
         if step.channel == "messenger":
-            identity = await self._get_latest_supported_identity(payload.lead_id)
+            preferred_channel = payload.state_metadata.get("messenger_channel")
+            identity = await self._get_supported_identity(
+                payload.lead_id,
+                preferred_channel if isinstance(preferred_channel, str) else None,
+            )
             if identity is None:
                 raise ValueError("Lead has no subscribed messenger identity.")
             if identity.channel == "telegram":
@@ -140,13 +144,34 @@ class MessengerFunnelStepSender:
             url_buttons=build_vk_buttons(buttons),
         )
 
-    async def _get_latest_supported_identity(self, lead_id: uuid.UUID) -> MessengerIdentity | None:
+    async def _get_supported_identity(
+        self,
+        lead_id: uuid.UUID,
+        preferred_channel: str | None,
+    ) -> MessengerIdentity | None:
+        configured_channels = self._configured_channels()
+        if preferred_channel is not None:
+            if preferred_channel not in configured_channels:
+                raise ValueError(
+                    f"Preferred messenger channel is not configured: {preferred_channel}"
+                )
+            preferred_identity = await self._session.scalar(
+                select(MessengerIdentity)
+                .where(
+                    MessengerIdentity.lead_id == lead_id,
+                    MessengerIdentity.is_subscribed.is_(True),
+                    MessengerIdentity.channel == preferred_channel,
+                )
+                .order_by(MessengerIdentity.created_at.desc())
+            )
+            return preferred_identity
+
         identity = await self._session.scalar(
             select(MessengerIdentity)
             .where(
                 MessengerIdentity.lead_id == lead_id,
                 MessengerIdentity.is_subscribed.is_(True),
-                MessengerIdentity.channel.in_(self._configured_channels()),
+                MessengerIdentity.channel.in_(configured_channels),
             )
             .order_by(MessengerIdentity.created_at.desc())
         )
@@ -183,9 +208,14 @@ async def run_due_funnel_once(
     sent = 0
     skipped = 0
     failed = 0
+    state_ids = [state.id for state in states]
 
-    for state in states:
+    for state_id in state_ids:
         try:
+            state = await session.get(FunnelState, state_id)
+            if state is None:
+                skipped += 1
+                continue
             result = await run_due_funnel_step(
                 session=session,
                 state=state,
@@ -210,11 +240,11 @@ async def run_due_funnel_once(
             await session.rollback()
             logger.exception(
                 "Failed to run funnel step",
-                extra={"funnel_key": definition.key, "funnel_state_id": str(state.id)},
+                extra={"funnel_key": definition.key, "funnel_state_id": str(state_id)},
             )
 
     return FunnelRunnerStats(
-        due=len(states),
+        due=len(state_ids),
         sent=sent,
         skipped=skipped,
         failed=failed,

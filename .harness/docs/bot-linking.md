@@ -26,6 +26,7 @@ Lead creation still happens at `GET/POST /webhooks/getcourse`. Messenger linking
 ## Implemented Endpoints
 
 - `GET /join/{token}`: local channel choice page.
+- `GET /join/getcourse`: direct GetCourse form redirect endpoint. It accepts lead fields in query params, saves/updates the lead, generates/reuses a bot link token, and renders the same Telegram/VK join page. This is useful when the form handler can redirect but a separate GetCourse process should be avoided.
 - `POST /api/messenger/link`: links a messenger user to the lead behind the token.
 
 Request example:
@@ -62,6 +63,7 @@ Response example:
 - An active non-expired token is reused for repeat webhooks for the same lead.
 - `used_at` is set on first successful messenger link, but the token remains active for now so repeated `/start` calls can still repair/update the same link.
 - The same `channel + external_user_id` cannot be linked to a second lead.
+- Real user starts can override that link when the user explicitly enters through Telegram `/start <token>`, VK Callback token start, or VK ID OAuth. This supports repeat applications and repeated test leads from the same messenger account. The generic `/api/messenger/link` endpoint still rejects cross-lead conflicts by default.
 
 ## Telegram Token Handling
 
@@ -124,13 +126,50 @@ Production endpoint:
 Supported VK events:
 
 - `confirmation`: returns `VK_CONFIRMATION_CODE`.
+- `message_allow`: extracts a bot-link token from `object.key`, `object.ref`, `object.start`, or payload, links the VK user to the lead, starts the default funnel, and sends the first due funnel step immediately when outbound VK credentials are configured.
 - `message_new`: extracts a bot-link token from `message.ref`, JSON `message.payload`, or text like `/start <token>`, links the VK user to the lead, and starts the default funnel.
 - `message_new` with `/stop`, `stop`, `стоп`, or `отписаться`: marks the VK identity unsubscribed.
 
 VK outbound delivery uses the community access token from `VK_GROUP_ACCESS_TOKEN`.
 
+## VK OAuth Autostart
+
+VK `message_allow` is not reliable enough as the only autostart path for users who have already allowed messages before. The production code therefore also supports a VK OAuth join flow.
+
+When these settings are present, the VK button on the thank-you page links to VK OAuth instead of the plain `vk.me` deep link:
+
+```text
+VK_GROUP_ID=<numeric VK community id>
+VK_OAUTH_CLIENT_ID=<VK app client id>
+VK_OAUTH_CLIENT_SECRET=<VK app secure key>
+VK_OAUTH_STATE_SECRET=<random signing secret; can reuse callback secret only as a fallback>
+```
+
+The VK app redirect URL must be:
+
+```text
+https://bot.aisukam.ru/oauth/vk/callback
+```
+
+OAuth callback behavior:
+
+- validates the signed lead token state;
+- exchanges the VK ID OAuth code for a VK user id;
+- links the VK user to the saved lead;
+- starts the default funnel and sends the first due step immediately.
+
+If the OAuth settings are missing, the thank-you page falls back to the existing `https://vk.me/...` deep link.
+
+Production notes:
+
+- The VK ID confirmation screen with the `Разрешить` button is controlled by VK and cannot be removed by FunnelHub.
+- After a successful callback, FunnelHub auto-redirects the browser to the VK community dialog; the visible success page is only a fallback.
+- Outbound VK messages require a valid community access token in `VK_GROUP_ACCESS_TOKEN`. A VK ID app service key is not enough.
+- Telegram questionnaire answer buttons are inline callback buttons. Manual text answers remain as a fallback.
+- VK questionnaire answer buttons are inline buttons with `primary` color. URL buttons remain link buttons.
+
 ## Next Work
 
 - Test the Telegram adapter end-to-end against the new test bot.
 - Replace the placeholder funnel YAML with the real customer scenario.
-- Add VK adapter later after community credentials are available.
+- Add production VK OAuth app credentials and retest VK autostart from the thank-you page.

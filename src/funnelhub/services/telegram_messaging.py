@@ -4,18 +4,16 @@ import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 from aiogram.types import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
-    KeyboardButton,
-    ReplyKeyboardMarkup,
 )
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from funnelhub.db.models import Message, MessengerIdentity
+from funnelhub.db.models import Conversation, Message, MessengerIdentity
 
 
 class TelegramMessageClient(Protocol):
@@ -40,6 +38,8 @@ class TelegramTextButton:
 
 
 TelegramButton = TelegramUrlButton | TelegramTextButton
+TEXT_CALLBACK_PREFIX = "fh_answer:"
+MAX_CALLBACK_DATA_BYTES = 64
 
 
 @dataclass(frozen=True)
@@ -62,9 +62,13 @@ async def send_telegram_text_message(
     now = datetime.now(UTC)
     reply_markup = build_url_keyboard(url_buttons)
     metadata = build_message_metadata(url_buttons)
+    conversation = await get_latest_telegram_conversation(session, lead_id)
+    if conversation is not None:
+        conversation.last_message_at = now
     message = Message(
         id=uuid.uuid4(),
         lead_id=lead_id,
+        conversation_id=conversation.id if conversation is not None else None,
         channel="telegram",
         direction="outbound",
         message_type="text",
@@ -127,6 +131,23 @@ async def get_telegram_identity_by_user_id(
     return identity
 
 
+async def get_latest_telegram_conversation(
+    session: AsyncSession,
+    lead_id: uuid.UUID,
+) -> Conversation | None:
+    return cast(
+        Conversation | None,
+        await session.scalar(
+            select(Conversation)
+            .where(
+                Conversation.lead_id == lead_id,
+                Conversation.channel == "telegram",
+            )
+            .order_by(Conversation.updated_at.desc())
+        )
+    )
+
+
 async def unsubscribe_telegram_identity(
     session: AsyncSession,
     external_user_id: str,
@@ -143,24 +164,38 @@ async def unsubscribe_telegram_identity(
 
 def build_url_keyboard(
     url_buttons: Sequence[TelegramButton] | None,
-) -> InlineKeyboardMarkup | ReplyKeyboardMarkup | None:
+) -> InlineKeyboardMarkup | None:
     if not url_buttons:
         return None
-    url_only_buttons = [
-        button for button in url_buttons if isinstance(button, TelegramUrlButton)
-    ]
-    if len(url_only_buttons) == len(url_buttons):
-        return InlineKeyboardMarkup(
-            inline_keyboard=[
-                [InlineKeyboardButton(text=button.text, url=button.url)]
-                for button in url_only_buttons
-            ]
+
+    inline_keyboard: list[list[InlineKeyboardButton]] = []
+    for button in url_buttons:
+        if isinstance(button, TelegramUrlButton):
+            inline_keyboard.append([InlineKeyboardButton(text=button.text, url=button.url)])
+            continue
+
+        callback_data = build_text_callback_data(button.text)
+        if callback_data is None:
+            return None
+        inline_keyboard.append(
+            [InlineKeyboardButton(text=button.text, callback_data=callback_data)]
         )
-    return ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton(text=button.text)] for button in url_buttons],
-        resize_keyboard=True,
-        one_time_keyboard=True,
-    )
+
+    return InlineKeyboardMarkup(inline_keyboard=inline_keyboard)
+
+
+def build_text_callback_data(text: str) -> str | None:
+    callback_data = f"{TEXT_CALLBACK_PREFIX}{text}"
+    if len(callback_data.encode()) > MAX_CALLBACK_DATA_BYTES:
+        return None
+    return callback_data
+
+
+def parse_text_callback_data(callback_data: str) -> str | None:
+    if not callback_data.startswith(TEXT_CALLBACK_PREFIX):
+        return None
+    text = callback_data[len(TEXT_CALLBACK_PREFIX) :].strip()
+    return text or None
 
 
 def build_message_metadata(

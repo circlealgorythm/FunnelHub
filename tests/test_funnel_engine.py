@@ -76,6 +76,42 @@ def build_definition() -> FunnelDefinition:
     )
 
 
+def build_question_definition() -> FunnelDefinition:
+    return FunnelDefinition.model_validate(
+        {
+            "key": "test_funnel",
+            "version": 1,
+            "questionnaire": {
+                "questions": {
+                    "topic": {
+                        "key": "topic",
+                        "text": "Что актуальнее?",
+                        "reminder_delay": "5m",
+                        "options": [{"key": "money", "text": "Деньги"}],
+                    }
+                }
+            },
+            "steps": [
+                {
+                    "key": "question_topic",
+                    "delay": "0m",
+                    "channel": "telegram",
+                    "kind": "question",
+                    "question_key": "topic",
+                    "text": "Что актуальнее?",
+                    "buttons": [{"text": "Деньги"}],
+                },
+                {
+                    "key": "social",
+                    "delay": "1m",
+                    "channel": "telegram",
+                    "text": "Соцсети",
+                },
+            ],
+        }
+    )
+
+
 def test_parse_delay() -> None:
     assert parse_delay("0m") == timedelta(minutes=0)
     assert parse_delay("15m") == timedelta(minutes=15)
@@ -175,6 +211,33 @@ async def test_run_due_funnel_step_advances_state(
         assert persisted_state is not None
         assert persisted_state.current_step_key == "day_1"
         assert persisted_state.status == "active"
+
+
+async def test_question_step_waits_for_reminder_delay_before_next_content(
+    prepare_database: None,
+) -> None:
+    lead_id = await create_test_lead()
+    definition = build_question_definition()
+    now = datetime(2026, 5, 28, 10, 0, tzinfo=UTC)
+    sender = DryRunFunnelStepSender()
+
+    async with async_session_maker() as session:
+        state = await start_funnel_for_lead(session, lead_id, definition, now=now)
+        result = await run_due_funnel_step(session, state, definition, sender, now=now)
+        await session.commit()
+
+    assert result is not None
+    assert result.sent_step_key == "question_topic"
+    assert result.next_step_key == "social"
+    assert result.next_run_at == now + timedelta(minutes=5)
+
+    async with async_session_maker() as session:
+        persisted_state = await session.get(FunnelState, state.id)
+        assert persisted_state is not None
+        assert persisted_state.current_step_key == "social"
+        assert persisted_state.next_run_at == now + timedelta(minutes=5)
+        assert persisted_state.metadata_["pending_question_key"] == "topic"
+        assert persisted_state.metadata_["questionnaire_waiting_for_step_key"] == "social"
 
 
 async def test_run_due_funnel_step_completes_after_last_step(

@@ -59,6 +59,7 @@ async def link_messenger_identity(
     username: str | None,
     display_name: str | None,
     raw_profile: dict[str, Any],
+    allow_relink: bool = False,
 ) -> MessengerLinkResult:
     bot_link_token = await get_active_bot_link_token(session, token)
     if bot_link_token is None:
@@ -72,7 +73,9 @@ async def link_messenger_identity(
     )
     created = existing_identity is None
     if existing_identity is not None and existing_identity.lead_id != bot_link_token.lead_id:
-        raise ValueError("Messenger identity is already linked to another lead.")
+        if not allow_relink:
+            raise ValueError("Messenger identity is already linked to another lead.")
+        existing_identity.lead_id = bot_link_token.lead_id
 
     now = datetime.now(UTC)
     if existing_identity is None:

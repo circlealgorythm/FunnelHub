@@ -83,13 +83,15 @@ Supported channels for now:
 - A lead can have one `funnel_states` row per `funnel_key`.
 - Starting an already existing funnel returns the existing state.
 - `current_step_key` points to the next step to send.
-- `next_run_at` is calculated from the step `delay`.
+- `next_run_at` is normally calculated from the step `delay`.
 - After sending a due step, the engine advances to the next step.
 - After the final step, state becomes `completed`.
-- A `question` step sends text buttons but does not block the scheduled chain.
+- A `question` step sends text buttons and delays the next content step by the question's `reminder_delay`.
 - Questionnaire answers are stored under `metadata.answers`.
 - If the first answer is received, the second question is sent immediately.
-- If the second answer is received later, the personalized response is sent immediately and the scheduled chain remains at its current position.
+- If the first answer is received before the content timeout, the next content step waits for the second question's `reminder_delay`.
+- If the second answer is received before the timeout, the personalized response is sent immediately and the waiting content step becomes due immediately.
+- If no answer arrives before the timeout, the scheduled chain continues while pending-question metadata remains available for later answers.
 - If a question is pending, the runner can repeat it after the configured `reminder_delay`.
 
 ## Next Work

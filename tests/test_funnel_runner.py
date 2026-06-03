@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy import delete, select
@@ -69,16 +69,25 @@ async def prepare_database() -> AsyncGenerator[None]:
 async def cleanup_test_leads() -> None:
     async with async_session_maker() as session:
         lead_ids = set(
-            await session.scalars(select(Lead.id).where(Lead.getcourse_user_id == TEST_GC_ID))
+            await session.scalars(
+                select(Lead.id).where(
+                    Lead.getcourse_user_id.is_not(None),
+                    Lead.getcourse_user_id >= TEST_GC_ID,
+                    Lead.getcourse_user_id < TEST_GC_ID + 100,
+                )
+            )
         )
         if lead_ids:
             await session.execute(delete(Lead).where(Lead.id.in_(lead_ids)))
         await session.commit()
 
 
-async def create_lead_with_telegram_identity() -> uuid.UUID:
+async def create_lead_with_telegram_identity(
+    getcourse_user_id: int = TEST_GC_ID,
+    external_user_id: str = "telegram-700",
+) -> uuid.UUID:
     async with async_session_maker() as session:
-        lead = Lead(id=uuid.uuid4(), getcourse_user_id=TEST_GC_ID, raw_getcourse_data={})
+        lead = Lead(id=uuid.uuid4(), getcourse_user_id=getcourse_user_id, raw_getcourse_data={})
         session.add(lead)
         await session.flush()
         session.add(
@@ -86,7 +95,7 @@ async def create_lead_with_telegram_identity() -> uuid.UUID:
                 id=uuid.uuid4(),
                 lead_id=lead.id,
                 channel="telegram",
-                external_user_id="telegram-700",
+                external_user_id=external_user_id,
                 is_subscribed=True,
                 raw_profile={},
             )
@@ -109,6 +118,43 @@ async def create_lead_with_vk_identity() -> uuid.UUID:
                 is_subscribed=True,
                 raw_profile={},
             )
+        )
+        await session.commit()
+        return lead.id
+
+
+async def create_lead_without_identity(getcourse_user_id: int = TEST_GC_ID) -> uuid.UUID:
+    async with async_session_maker() as session:
+        lead = Lead(id=uuid.uuid4(), getcourse_user_id=getcourse_user_id, raw_getcourse_data={})
+        session.add(lead)
+        await session.commit()
+        return lead.id
+
+
+async def create_lead_with_telegram_and_vk_identities() -> uuid.UUID:
+    async with async_session_maker() as session:
+        lead = Lead(id=uuid.uuid4(), getcourse_user_id=TEST_GC_ID, raw_getcourse_data={})
+        session.add(lead)
+        await session.flush()
+        session.add_all(
+            [
+                MessengerIdentity(
+                    id=uuid.uuid4(),
+                    lead_id=lead.id,
+                    channel="telegram",
+                    external_user_id="telegram-700",
+                    is_subscribed=True,
+                    raw_profile={},
+                ),
+                MessengerIdentity(
+                    id=uuid.uuid4(),
+                    lead_id=lead.id,
+                    channel="vk",
+                    external_user_id="vk-700",
+                    is_subscribed=True,
+                    raw_profile={},
+                ),
+            ]
         )
         await session.commit()
         return lead.id
@@ -246,3 +292,94 @@ async def test_run_due_funnel_once_sends_messenger_step_to_vk_identity(
         assert message is not None
         assert message.status == "sent"
         assert message.external_message_id == "889"
+
+
+async def test_run_due_funnel_once_uses_preferred_messenger_channel(
+    prepare_database: None,
+) -> None:
+    lead_id = await create_lead_with_telegram_and_vk_identities()
+    definition = build_messenger_definition()
+    now = datetime(2026, 5, 28, 12, 0, tzinfo=UTC)
+    bot = FakeTelegramBot()
+    vk_client = FakeVkClient()
+
+    async with async_session_maker() as session:
+        state = await start_funnel_for_lead(session, lead_id, definition, now=now)
+        state.metadata_ = {**state.metadata_, "messenger_channel": "telegram"}
+        await session.commit()
+
+    async with async_session_maker() as session:
+        stats = await run_due_funnel_once(
+            session=session,
+            definition=definition,
+            bot=bot,
+            vk_client=vk_client,
+            now=now,
+        )
+
+    assert stats.sent == 1
+    assert stats.failed == 0
+    assert bot.chat_id == "telegram-700"
+    assert bot.text == "Welcome from messenger runner"
+    assert vk_client.peer_id is None
+
+
+async def test_run_due_funnel_once_records_failed_step_without_crashing(
+    prepare_database: None,
+) -> None:
+    lead_id = await create_lead_without_identity()
+    definition = build_messenger_definition()
+    now = datetime(2026, 5, 28, 12, 0, tzinfo=UTC)
+
+    async with async_session_maker() as session:
+        await start_funnel_for_lead(session, lead_id, definition, now=now)
+        await session.commit()
+
+    async with async_session_maker() as session:
+        stats = await run_due_funnel_once(
+            session=session,
+            definition=definition,
+            bot=FakeTelegramBot(),
+            vk_client=FakeVkClient(),
+            now=now,
+        )
+
+    assert stats.due == 1
+    assert stats.sent == 0
+    assert stats.skipped == 0
+    assert stats.failed == 1
+
+
+async def test_run_due_funnel_once_continues_after_failed_step_rollback(
+    prepare_database: None,
+) -> None:
+    failing_lead_id = await create_lead_without_identity(TEST_GC_ID)
+    working_lead_id = await create_lead_with_telegram_identity(
+        TEST_GC_ID + 1,
+        "telegram-701",
+    )
+    definition = build_messenger_definition()
+    now = datetime(2026, 5, 28, 12, 0, tzinfo=UTC)
+    bot = FakeTelegramBot()
+
+    async with async_session_maker() as session:
+        failing_state = await start_funnel_for_lead(session, failing_lead_id, definition, now=now)
+        failing_state.next_run_at = now - timedelta(minutes=1)
+        await start_funnel_for_lead(session, working_lead_id, definition, now=now)
+        await session.commit()
+
+    async with async_session_maker() as session:
+        stats = await run_due_funnel_once(
+            session=session,
+            definition=definition,
+            bot=bot,
+            vk_client=FakeVkClient(),
+            now=now,
+        )
+
+    assert stats.due == 2
+    assert stats.sent == 1
+    assert stats.skipped == 0
+    assert stats.failed == 1
+    assert bot.chat_id == "telegram-701"
+    assert bot.text == "Welcome from messenger runner"

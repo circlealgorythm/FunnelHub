@@ -12,7 +12,7 @@
     {"id": "funnel-runner", "title": "Background funnel runner", "status": "completed"},
     {"id": "funnel-autostart", "title": "Start default funnel after Telegram linking", "status": "completed"},
     {"id": "email-provider", "title": "Email provider integration", "status": "pending"},
-    {"id": "simple-inbox", "title": "Simple mobile inbox", "status": "pending"},
+    {"id": "simple-inbox", "title": "Simple mobile inbox", "status": "in_progress"},
     {"id": "getcourse-import", "title": "GetCourse CSV/XLSX import", "status": "pending"},
     {"id": "manual-broadcasts", "title": "Manual broadcasts", "status": "pending"},
     {"id": "knowledge-rag", "title": "Knowledge/RAG layer with pgvector", "status": "pending"},

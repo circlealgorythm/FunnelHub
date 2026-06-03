@@ -22,6 +22,9 @@ def test_extract_vk_user_id() -> None:
 
 def test_extract_vk_start_token_from_ref_payload_and_text() -> None:
     assert extract_vk_start_token({"ref": " token-ref "}) == "token-ref"
+    assert extract_vk_start_token({"key": " token-key "}) == "token-key"
+    assert extract_vk_start_token({"access_key": " token-access-key "}) == "token-access-key"
+    assert extract_vk_start_token({"start": " token-start "}) == "token-start"
     assert extract_vk_start_token({"payload": '{"token":"token-payload"}'}) == "token-payload"
     assert extract_vk_start_token({"text": "/start token-text"}) == "token-text"
 

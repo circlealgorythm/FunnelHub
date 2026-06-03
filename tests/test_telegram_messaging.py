@@ -11,9 +11,11 @@ from funnelhub.db.base import Base
 from funnelhub.db.models import Lead, Message, MessengerIdentity
 from funnelhub.db.session import async_session_maker, engine
 from funnelhub.services.telegram_messaging import (
+    TelegramTextButton,
     TelegramUrlButton,
     build_message_metadata,
     build_url_keyboard,
+    parse_text_callback_data,
     send_telegram_text_message,
     unsubscribe_telegram_identity,
 )
@@ -93,6 +95,18 @@ def test_build_url_keyboard_and_metadata() -> None:
     assert build_message_metadata(buttons) == {
         "buttons": [{"type": "url", "text": "Open", "url": "https://example.com"}]
     }
+
+
+def test_build_text_keyboard_as_inline_callback_buttons() -> None:
+    buttons = [TelegramTextButton(text="Деньги")]
+
+    keyboard = build_url_keyboard(buttons)
+
+    assert keyboard is not None
+    callback_data = keyboard.inline_keyboard[0][0].callback_data
+    assert keyboard.inline_keyboard[0][0].text == "Деньги"
+    assert callback_data is not None
+    assert parse_text_callback_data(callback_data) == "Деньги"
 
 
 async def test_send_telegram_text_message_records_outbound_message() -> None:

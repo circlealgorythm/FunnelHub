@@ -12,7 +12,7 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from funnelhub.db.models import Message, MessengerIdentity
+from funnelhub.db.models import Conversation, Message, MessengerIdentity
 
 
 class VkMessageClient(Protocol):
@@ -101,9 +101,13 @@ async def send_vk_text_message(
     now = datetime.now(UTC)
     keyboard = build_url_keyboard(url_buttons)
     metadata = build_message_metadata(url_buttons)
+    conversation = await get_latest_vk_conversation(session, lead_id)
+    if conversation is not None:
+        conversation.last_message_at = now
     message = Message(
         id=uuid.uuid4(),
         lead_id=lead_id,
+        conversation_id=conversation.id if conversation is not None else None,
         channel="vk",
         direction="outbound",
         message_type="text",
@@ -166,6 +170,23 @@ async def get_vk_identity_by_user_id(
     return identity
 
 
+async def get_latest_vk_conversation(
+    session: AsyncSession,
+    lead_id: uuid.UUID,
+) -> Conversation | None:
+    return cast(
+        Conversation | None,
+        await session.scalar(
+            select(Conversation)
+            .where(
+                Conversation.lead_id == lead_id,
+                Conversation.channel == "vk",
+            )
+            .order_by(Conversation.updated_at.desc())
+        )
+    )
+
+
 async def unsubscribe_vk_identity(
     session: AsyncSession,
     external_user_id: str,
@@ -190,6 +211,7 @@ def build_url_keyboard(url_buttons: Sequence[VkButton] | None) -> dict[str, Any]
             [
                 {
                     "action": build_button_action(button),
+                    **build_button_style(button),
                 }
             ]
             for button in url_buttons
@@ -208,6 +230,12 @@ def build_button_action(button: VkButton) -> dict[str, str]:
         "type": "text",
         "label": button.text,
     }
+
+
+def build_button_style(button: VkButton) -> dict[str, str]:
+    if isinstance(button, VkTextButton):
+        return {"color": "primary"}
+    return {}
 
 
 def build_message_metadata(url_buttons: Sequence[VkButton] | None) -> dict[str, Any]:
