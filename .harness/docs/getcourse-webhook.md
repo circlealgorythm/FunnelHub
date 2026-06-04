@@ -238,6 +238,42 @@ The future `getcourse-webhook` feature should:
 - create/update `lead_consents` only when custom field mapping to consent semantics is known;
 - create an `events` row with a dedupe key if GetCourse can provide a stable event/request identifier.
 
+## Webhook Protection
+
+Implemented on 2026-06-04 for `GET/POST /webhooks/getcourse` and `GET /join/getcourse`.
+
+Environment settings:
+
+```text
+GETCOURSE_WEBHOOK_SECRET=<shared secret>
+GETCOURSE_WEBHOOK_SECRET_REQUIRED=false
+GETCOURSE_WEBHOOK_RATE_LIMIT_PER_MINUTE=120
+```
+
+Secret transport:
+
+- preferred: `X-FunnelHub-Webhook-Secret` request header;
+- fallback for GetCourse/browser redirect constraints: query/form/JSON field `fh_secret`,
+  `webhook_secret`, `getcourse_webhook_secret`, or `secret`.
+
+Compatibility behavior:
+
+- if `GETCOURSE_WEBHOOK_SECRET` is empty, GetCourse ingestion remains open;
+- if a secret is configured and `GETCOURSE_WEBHOOK_SECRET_REQUIRED=false`, requests without
+  a secret are allowed, but requests with a wrong secret are rejected with HTTP 403;
+- if a secret is configured and `GETCOURSE_WEBHOOK_SECRET_REQUIRED=true`, missing or wrong
+  secrets are rejected with HTTP 403;
+- `GETCOURSE_WEBHOOK_RATE_LIMIT_PER_MINUTE=0` disables the in-process per-IP limit.
+
+Security notes:
+
+- secret comparison uses constant-time comparison;
+- supported secret fields are stripped before ingestion, so query/form secrets are not stored in
+  `leads.raw_getcourse_data`;
+- the limiter is in-memory and per app process. This is acceptable for the current single app
+  process, but should be replaced or backed by Redis if production scales to multiple app workers
+  or multiple nodes.
+
 ## Captured Payload - 2026-05-22
 
 GetCourse was observed calling `webhook.site` with a `GET` request and query string fields. Request body and form values were empty.

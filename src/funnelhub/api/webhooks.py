@@ -12,6 +12,10 @@ from funnelhub.db.session import get_session
 from funnelhub.services.bot_linking import build_join_url
 from funnelhub.services.funnel_autostart import start_default_email_funnel_for_lead
 from funnelhub.services.getcourse_webhook import ingest_getcourse_webhook
+from funnelhub.services.ingestion_guard import (
+    enforce_getcourse_ingestion_guard,
+    strip_getcourse_webhook_secret_fields,
+)
 from funnelhub.vk_bot import handle_vk_message_allow, handle_vk_message_new
 
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
@@ -45,6 +49,13 @@ async def getcourse_webhook(
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> GetCourseWebhookResponse:
     payload = await _extract_payload(request)
+    enforce_getcourse_ingestion_guard(
+        request=request,
+        payload=payload,
+        settings=settings,
+        endpoint="webhooks/getcourse",
+    )
+    payload = strip_getcourse_webhook_secret_fields(payload)
     if not payload:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

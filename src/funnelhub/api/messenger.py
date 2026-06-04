@@ -27,6 +27,10 @@ from funnelhub.services.getcourse_webhook import (
     CONSENT_CUSTOM_FIELD_MAPPING,
     ingest_getcourse_webhook,
 )
+from funnelhub.services.ingestion_guard import (
+    enforce_getcourse_ingestion_guard,
+    strip_getcourse_webhook_secret_fields,
+)
 from funnelhub.services.vk_messaging import HttpVkMessageClient
 from funnelhub.services.vk_oauth import (
     build_vk_oauth_join_url,
@@ -67,7 +71,19 @@ async def getcourse_redirect_join_page(
     session: Annotated[AsyncSession, Depends(get_session)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> HTMLResponse:
-    payload = getcourse_redirect_payload(dict(request.query_params))
+    raw_payload = dict(request.query_params)
+    enforce_getcourse_ingestion_guard(
+        request=request,
+        payload=raw_payload,
+        settings=settings,
+        endpoint="join/getcourse",
+    )
+    payload = getcourse_redirect_payload(
+        {
+            key: str(value)
+            for key, value in strip_getcourse_webhook_secret_fields(raw_payload).items()
+        }
+    )
     if not payload:
         return render_getcourse_join_error()
 

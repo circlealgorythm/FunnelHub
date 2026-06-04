@@ -23,6 +23,7 @@ from funnelhub.db.models import (
 from funnelhub.db.session import async_session_maker, engine
 from funnelhub.main import app
 from funnelhub.services.bot_linking import link_messenger_identity
+from funnelhub.services.ingestion_guard import getcourse_rate_limiter
 
 TEST_EMAIL = "webhook-test@example.com"
 TEST_PHONE = "79990000000"
@@ -33,12 +34,19 @@ TEST_GC_ID_SECOND = "987654323"
 
 
 @pytest.fixture(autouse=True)
-async def prepare_database() -> AsyncGenerator[None]:
+async def prepare_database(monkeypatch: pytest.MonkeyPatch) -> AsyncGenerator[None]:
+    monkeypatch.setenv("GETCOURSE_WEBHOOK_SECRET", "")
+    monkeypatch.setenv("GETCOURSE_WEBHOOK_SECRET_REQUIRED", "false")
+    monkeypatch.setenv("GETCOURSE_WEBHOOK_RATE_LIMIT_PER_MINUTE", "120")
+    get_settings.cache_clear()
+    getcourse_rate_limiter.reset()
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
 
     await cleanup_test_leads()
     yield
+    getcourse_rate_limiter.reset()
+    get_settings.cache_clear()
     await cleanup_test_leads()
     await engine.dispose()
 
@@ -386,6 +394,162 @@ async def test_getcourse_redirect_join_page_rejects_unresolved_placeholders() ->
 
     assert response.status_code == 400
     assert "Не удалось получить данные заявки" in response.text
+
+
+async def test_getcourse_webhook_allows_missing_secret_in_compatibility_mode(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GETCOURSE_WEBHOOK_SECRET", "expected-secret")
+    monkeypatch.setenv("GETCOURSE_WEBHOOK_SECRET_REQUIRED", "false")
+    get_settings.cache_clear()
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get(
+            "/webhooks/getcourse",
+            params={"gc_user_id": TEST_GC_ID, "email": TEST_EMAIL},
+        )
+
+    assert response.status_code == 200
+
+
+async def test_getcourse_webhook_accepts_valid_shared_secret_header(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GETCOURSE_WEBHOOK_SECRET", "expected-secret")
+    monkeypatch.setenv("GETCOURSE_WEBHOOK_SECRET_REQUIRED", "true")
+    get_settings.cache_clear()
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get(
+            "/webhooks/getcourse",
+            params={"gc_user_id": TEST_GC_ID, "email": TEST_EMAIL},
+            headers={"X-FunnelHub-Webhook-Secret": "expected-secret"},
+        )
+
+    assert response.status_code == 200
+
+
+async def test_getcourse_webhook_rejects_invalid_shared_secret_without_creating_lead(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GETCOURSE_WEBHOOK_SECRET", "expected-secret")
+    monkeypatch.setenv("GETCOURSE_WEBHOOK_SECRET_REQUIRED", "true")
+    get_settings.cache_clear()
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get(
+            "/webhooks/getcourse",
+            params={
+                "gc_user_id": TEST_GC_ID,
+                "email": TEST_EMAIL,
+                "fh_secret": "wrong-secret",
+            },
+        )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Invalid GetCourse webhook secret."
+    async with async_session_maker() as session:
+        lead_count = await session.scalar(
+            select(func.count()).select_from(Lead).where(Lead.getcourse_user_id == int(TEST_GC_ID))
+        )
+    assert lead_count == 0
+
+
+async def test_getcourse_webhook_rejects_missing_required_shared_secret(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GETCOURSE_WEBHOOK_SECRET", "expected-secret")
+    monkeypatch.setenv("GETCOURSE_WEBHOOK_SECRET_REQUIRED", "true")
+    get_settings.cache_clear()
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get(
+            "/webhooks/getcourse",
+            params={"gc_user_id": TEST_GC_ID, "email": TEST_EMAIL},
+        )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "GetCourse webhook secret is required."
+
+
+async def test_getcourse_webhook_strips_query_secret_from_raw_payload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GETCOURSE_WEBHOOK_SECRET", "expected-secret")
+    monkeypatch.setenv("GETCOURSE_WEBHOOK_SECRET_REQUIRED", "true")
+    get_settings.cache_clear()
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get(
+            "/webhooks/getcourse",
+            params={
+                "gc_user_id": TEST_GC_ID,
+                "email": TEST_EMAIL,
+                "fh_secret": "expected-secret",
+            },
+        )
+
+    assert response.status_code == 200
+    lead_id = uuid.UUID(response.json()["lead_id"])
+    async with async_session_maker() as session:
+        lead = await session.get(Lead, lead_id)
+    assert lead is not None
+    assert "fh_secret" not in lead.raw_getcourse_data
+
+
+async def test_getcourse_webhook_rate_limits_by_client_ip(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GETCOURSE_WEBHOOK_RATE_LIMIT_PER_MINUTE", "1")
+    get_settings.cache_clear()
+    getcourse_rate_limiter.reset()
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        first_response = await client.get(
+            "/webhooks/getcourse",
+            params={"gc_user_id": TEST_GC_ID, "email": TEST_EMAIL},
+            headers={"X-Forwarded-For": "203.0.113.10"},
+        )
+        second_response = await client.get(
+            "/webhooks/getcourse",
+            params={"gc_user_id": TEST_GC_ID_SECOND, "email": TEST_EMAIL_SECOND},
+            headers={"X-Forwarded-For": "203.0.113.10"},
+        )
+
+    assert first_response.status_code == 200
+    assert second_response.status_code == 429
+    async with async_session_maker() as session:
+        second_lead_count = await session.scalar(
+            select(func.count())
+            .select_from(Lead)
+            .where(Lead.getcourse_user_id == int(TEST_GC_ID_SECOND))
+        )
+    assert second_lead_count == 0
+
+
+async def test_getcourse_redirect_join_page_rejects_invalid_shared_secret(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GETCOURSE_WEBHOOK_SECRET", "expected-secret")
+    monkeypatch.setenv("GETCOURSE_WEBHOOK_SECRET_REQUIRED", "true")
+    get_settings.cache_clear()
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get(
+            "/join/getcourse",
+            params={
+                "gc_user_id": TEST_GC_ID,
+                "email": TEST_EMAIL,
+                "fh_secret": "wrong-secret",
+            },
+        )
+
+    assert response.status_code == 403
+    async with async_session_maker() as session:
+        lead_count = await session.scalar(
+            select(func.count()).select_from(Lead).where(Lead.getcourse_user_id == int(TEST_GC_ID))
+        )
+    assert lead_count == 0
 
 
 async def test_messenger_link_binds_telegram_identity_to_lead() -> None:

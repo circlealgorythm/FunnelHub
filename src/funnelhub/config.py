@@ -23,6 +23,15 @@ class Settings(BaseSettings):
     public_base_url: str = Field(
         default="http://localhost:8000", validation_alias="PUBLIC_BASE_URL"
     )
+    getcourse_webhook_secret: str | None = Field(
+        default=None, validation_alias="GETCOURSE_WEBHOOK_SECRET"
+    )
+    getcourse_webhook_secret_required: bool = Field(
+        default=False, validation_alias="GETCOURSE_WEBHOOK_SECRET_REQUIRED"
+    )
+    getcourse_webhook_rate_limit_per_minute: int = Field(
+        default=120, validation_alias="GETCOURSE_WEBHOOK_RATE_LIMIT_PER_MINUTE"
+    )
     telegram_bot_username: str | None = Field(
         default=None, validation_alias="TELEGRAM_BOT_USERNAME"
     )

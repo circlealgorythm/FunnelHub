@@ -29,6 +29,11 @@ Lead creation still happens at `GET/POST /webhooks/getcourse`. Messenger linking
 - `GET /join/getcourse`: direct GetCourse form redirect endpoint. It accepts lead fields in query params, saves/updates the lead, generates/reuses a bot link token, and renders the same Telegram/VK join page. This is useful when the form handler can redirect but a separate GetCourse process should be avoided.
 - `POST /api/messenger/link`: links a messenger user to the lead behind the token.
 
+`/join/getcourse` uses the same GetCourse ingestion protection as `/webhooks/getcourse`:
+`GETCOURSE_WEBHOOK_SECRET`, `GETCOURSE_WEBHOOK_SECRET_REQUIRED`, and
+`GETCOURSE_WEBHOOK_RATE_LIMIT_PER_MINUTE`. Secret query fields are accepted for redirect
+compatibility but stripped before the lead payload is saved.
+
 Request example:
 
 ```json

@@ -7,6 +7,7 @@
 - Current feature: `email-provider`.
 - WIP: Unisender Go provider and the Aisu Kam email sequence are deployed; provider delivery/bounce/open/click webhooks and manual email broadcasts remain future work.
 - 2026-06-04 technical audit completed before further development. Highest-priority finding `/inbox/{path:path}` encoded path traversal is now fixed locally and covered by regression tests; next audit item is GetCourse webhook authentication/rate limiting.
+- 2026-06-04 GetCourse webhook authentication/rate limiting is implemented locally on branch `codex/getcourse-webhook-auth`; it has not been deployed or merged.
 - 2026-06-04 urgent bot scenario fix deployed: question steps now attach questionnaire option buttons during the first send when the YAML step has `question_key` but no explicit `buttons`.
 - Repo source of truth lives in `.harness/`.
 
@@ -48,6 +49,7 @@
 - Production SSH deploy access is stored locally in the git-ignored `.env` as `SSH_HOST`, `SSH_USER`, and `SSH_PASSWORD`. Do not search for SSH users/keys or commit secrets; use those env variables, preferably through a non-printing `paramiko` helper, for `/opt/funnelhub` deploys.
 - GetCourse form redirect can use `/join/getcourse` as a no-process fallback: FunnelHub ingests lead query params during redirect, generates/reuses a bot link token, and renders the bot-choice thank-you page.
 - GetCourse redirect placeholder values such as `{email}`, `{phone}`, and `{name}` are ignored so a misconfigured redirect does not create placeholder contacts.
+- GetCourse ingestion protection uses an optional shared secret and an in-memory per-IP rate limit for both `/webhooks/getcourse` and `/join/getcourse`. `GETCOURSE_WEBHOOK_SECRET_REQUIRED=false` keeps the current live flow compatible until production GetCourse/site settings are updated; supported query/form secret fields are stripped before `raw_getcourse_data` persistence.
 - The real consultation scenario lives in `content/funnels/aisu_consultation.yml` and is the default funnel path.
 - The scenario questionnaire is non-blocking: the scheduled content chain continues while unanswered questions can be repeated.
 - Questionnaire answers and pending-question metadata are stored in the existing `funnel_states.metadata` JSONB field; no new table is needed yet.
@@ -566,3 +568,5 @@
 - 2026-06-04 fixed first-send questionnaire buttons in the bot funnel. `run_due_funnel_step` now sends an effective question step with buttons derived from `questionnaire.questions[question_key].options` when the YAML step has no explicit `buttons`.
 - 2026-06-04 local verification after the questionnaire-button fix passed: focused funnel pytest reported 24 passed, focused `ruff check` passed, `mypy src` passed, and full `pytest -x` passed with 111 tests.
 - 2026-06-04 production deploy completed for the questionnaire-button fix. `funnel_engine.py` was uploaded to `/opt/funnelhub`, `app`, `telegram-bot`, and `funnel-worker` were rebuilt/recreated, in-container smoke confirmed `question_topic` now has buttons `Деньги|Отношения|Духовное целительство|Все вместе|Раскрытие способностей|Затрудняюсь ответить`, public `/health` returned HTTP 200, services were running, and worker logs were clean.
+- 2026-06-04 implemented local GetCourse ingestion hardening on branch `codex/getcourse-webhook-auth`: shared-secret validation, compatibility mode, required-secret switch, per-IP in-memory rate limiting, and stripping of secret query/form/JSON fields before lead persistence.
+- 2026-06-04 local verification after GetCourse ingestion hardening passed: `pytest tests/test_getcourse_webhook.py -q` reported 29 passed, `ruff check .` passed, `mypy src` passed, full `pytest -x` reported 118 passed, and `docker compose -f docker-compose.prod.yml config --quiet` exited successfully with existing local env interpolation warnings.
