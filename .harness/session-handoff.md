@@ -4,6 +4,14 @@
 
 FunnelHub is being set up as a Harness-engineering project. GetCourse keeps courses/payments/access. FunnelHub owns bots, email, inbox, lead database, imports, broadcasts, and analytics.
 
+## Latest Technical Audit
+
+- 2026-06-04 pre-development technical audit completed without changing production code.
+- Highest-priority finding `src/funnelhub/main.py` `/inbox/{path:path}` encoded path traversal was fixed locally on 2026-06-04 by resolving requested files under `inbox-app/dist` and refusing paths outside that directory. Local reproduction of `/inbox/%2e%2e/%2e%2e/pyproject.toml` now returns the Inbox `index.html` instead of file contents.
+- Other important findings to carry forward: unauthenticated GetCourse ingestion can create leads and start email funnel state, worker/manual-send paths can duplicate external sends after rollback or concurrent workers, production CORS still allows credentialed localhost origins, Inbox import accepts only CSV and has no upload size/row cap, and docs still describe some completed/pending areas inconsistently.
+- Local verification during the audit passed: `ruff check .`, `mypy src`, `pytest -x` with 109 tests, `npm run build` in `inbox-app/`, and `docker compose -f docker-compose.prod.yml config --quiet`. Compose emitted only existing local env interpolation warnings.
+- Local verification after the path traversal fix passed: `pytest tests/test_main.py -q` with 2 tests, `ruff check .`, `mypy src`, full `pytest -x` with 111 tests, and `docker compose -f docker-compose.prod.yml config --quiet`. Compose emitted only existing local env interpolation warnings.
+
 ## Current Feature
 
 `email-provider` is deployed with Unisender Go enabled on production. The Aisu Kam messenger and email sequences were rebuilt from the original DOCX as version 2 and now run through day 18; delivery/bounce/open/click provider webhooks and manual email broadcasts remain future work.

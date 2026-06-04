@@ -6,6 +6,7 @@
 - Methodology: Harness-engineering.
 - Current feature: `email-provider`.
 - WIP: Unisender Go provider and the Aisu Kam email sequence are deployed; provider delivery/bounce/open/click webhooks and manual email broadcasts remain future work.
+- 2026-06-04 technical audit completed before further development. Highest-priority finding `/inbox/{path:path}` encoded path traversal is now fixed locally and covered by regression tests; next audit item is GetCourse webhook authentication/rate limiting.
 - Repo source of truth lives in `.harness/`.
 
 ## Decisions
@@ -555,3 +556,6 @@
 - 2026-06-04 local verification passed after XLSX/export-shape ingestion changes: `pytest tests/test_getcourse_webhook.py tests/test_inbox_database.py -q` reported 32 passed, focused `ruff check` passed, `mypy src` passed, and full `pytest -x` reported 109 passed.
 - 2026-06-04 production deploy completed for the XLSX/export-shape ingestion changes. `app`, `telegram-bot`, and `funnel-worker` were rebuilt/recreated, public `/health` and `/inbox` returned HTTP 200, Telegram polling started, and funnel-worker logged clean passes.
 - 2026-06-04 production rollback smoke confirmed the 27-column export shape without persisting data: `Имя` + `Фамилия` assembled to `Сергей тест Gurbin`, `Откуда пришел=mamba.ru` was stored as lead source, regular Yandex `utm_*` was stored as `source_kind=form`, `VK-ID` created `getcourse_vk_id`, and checked custom fields created `personal_data`, `privacy_policy`, and `offer_agreement` consents.
+- 2026-06-04 local technical audit verification passed: `ruff check .`, `mypy src`, `pytest -x` with 109 tests, `npm run build` in `inbox-app/`, and `docker compose -f docker-compose.prod.yml config --quiet` all exited successfully. Docker Compose still prints existing local env interpolation warnings.
+- 2026-06-04 fixed Inbox SPA fallback path traversal by resolving requested files under `inbox-app/dist` and refusing paths outside that directory. Local reproduction of `/inbox/%2e%2e/%2e%2e/pyproject.toml` now returns the Inbox `index.html` instead of the file contents.
+- 2026-06-04 local verification after path traversal fix passed: focused `pytest tests/test_main.py -q` reported 2 passed, `ruff check .` passed, `mypy src` passed, full `pytest -x` reported 111 passed, and `docker compose -f docker-compose.prod.yml config --quiet` exited successfully with existing local env interpolation warnings.

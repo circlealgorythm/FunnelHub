@@ -72,10 +72,23 @@ def mount_inbox_app(app: FastAPI) -> None:
 
     @app.get("/inbox/{path:path}", include_in_schema=False)
     async def inbox_spa(path: str) -> FileResponse:
-        file_path = dist_path / path
-        if path and file_path.is_file():
+        file_path = safe_inbox_dist_file(dist_path, path)
+        if file_path is not None:
             return FileResponse(file_path)
         return FileResponse(index_path)
+
+
+def safe_inbox_dist_file(dist_path: Path, path: str) -> Path | None:
+    if not path:
+        return None
+
+    dist_root = dist_path.resolve()
+    file_path = (dist_root / path).resolve()
+    if not file_path.is_relative_to(dist_root):
+        return None
+    if not file_path.is_file():
+        return None
+    return file_path
 
 
 app = create_app()
