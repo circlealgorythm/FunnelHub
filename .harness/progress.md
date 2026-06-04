@@ -6,8 +6,8 @@
 - Methodology: Harness-engineering.
 - Current feature: `email-provider`.
 - WIP: Unisender Go provider and the Aisu Kam email sequence are deployed; provider delivery/bounce/open/click webhooks and manual email broadcasts remain future work.
-- 2026-06-04 technical audit completed before further development. Highest-priority finding `/inbox/{path:path}` encoded path traversal is now fixed locally and covered by regression tests; next audit item is GetCourse webhook authentication/rate limiting.
-- 2026-06-05 GetCourse webhook authentication/rate limiting is merged to `main` and deployed to production in compatibility mode with `GETCOURSE_WEBHOOK_SECRET_REQUIRED=false`.
+- 2026-06-04 technical audit completed before further development. Highest-priority finding `/inbox/{path:path}` encoded path traversal is now fixed locally and covered by regression tests.
+- 2026-06-05 audit item 2, GetCourse webhook authentication/rate limiting, is completed and deployed in safe compatibility mode with `GETCOURSE_WEBHOOK_SECRET_REQUIRED=false`.
 - 2026-06-04 urgent bot scenario fix deployed: question steps now attach questionnaire option buttons during the first send when the YAML step has `question_key` but no explicit `buttons`.
 - Repo source of truth lives in `.harness/`.
 
@@ -52,6 +52,7 @@
 - GetCourse ingestion protection uses an optional shared secret and an in-memory per-IP rate limit for both `/webhooks/getcourse` and `/join/getcourse`. `GETCOURSE_WEBHOOK_SECRET_REQUIRED=false` keeps the current live flow compatible until production GetCourse/site settings are updated; supported query/form secret fields are stripped before `raw_getcourse_data` persistence.
 - Do not enable `GETCOURSE_WEBHOOK_SECRET_REQUIRED=true` while a real secret must be passed as a query parameter unless access logs are disabled/redacted first. Uvicorn access logs include query strings, so header transport is preferred for `/webhooks/getcourse`; `/join/getcourse` browser redirects need additional log hygiene before query-secret enforcement.
 - Production app access-log is disabled with `uvicorn --no-access-log`, so `/join/getcourse?...&fh_secret=...` query strings no longer appear in the app container stdout. Business/application logs remain enabled.
+- Strict GetCourse secret enforcement is intentionally deferred. The public site now sends `fh_secret`, but `GETCOURSE_WEBHOOK_SECRET_REQUIRED=false` remains the safer production default until the flow has observed more real leads; this avoids losing FunnelHub leads if an old cached site bundle or alternate form path omits the secret.
 - The real consultation scenario lives in `content/funnels/aisu_consultation.yml` and is the default funnel path.
 - The scenario questionnaire is non-blocking: the scheduled content chain continues while unanswered questions can be repeated.
 - Questionnaire answers and pending-question metadata are stored in the existing `funnel_states.metadata` JSONB field; no new table is needed yet.
@@ -576,3 +577,6 @@
 - 2026-06-05 production smoke after GetCourse hardening passed: public `/health` returned HTTP 200, `/webhooks/getcourse` accepted the old no-secret flow, `/webhooks/getcourse` accepted a valid header secret, `/webhooks/getcourse` rejected an invalid query secret with HTTP 403 and no lead, `/join/getcourse` accepted the old no-secret flow, `/join/getcourse` rejected an invalid query secret with HTTP 403 and no lead, smoke leads were cleaned up, Telegram polling started, and funnel-worker logs showed clean passes.
 - 2026-06-05 production deploy completed for disabling Uvicorn access-log on the `app` service. `docker-compose.prod.yml` now starts app with `uvicorn funnelhub.main:app --host 0.0.0.0 --port 8000 --no-access-log`; only `app` was recreated.
 - 2026-06-05 production smoke after access-log disable passed: public `/health` returned HTTP 200, a `/join/getcourse?...&fh_secret=visible-log-marker-do-not-use` request returned the expected HTTP 403, app logs did not contain the marker, `/join/getcourse?`, or Uvicorn `GET /...` access lines, and no test lead was created.
+- 2026-06-05 public site `AisuKam_site` was updated and deployed by the user so live `aisukam.ru` adds the generated FunnelHub `fh_secret` to both the background `/webhooks/getcourse` sync and the `/join/getcourse` redirect. Source commit in `AisuKam_site`: `f72a914 Add FunnelHub redirect secret env`.
+- 2026-06-05 live production application smoke passed from `aisukam.ru`: the real form redirected to the Telegram/VK choice page, the lead was found in FunnelHub, `fh_secret` was not persisted in `raw_getcourse_data`, `form_type` and `custom_10616540` arrived, `personal_data` and `privacy_policy` consents were created, the email funnel state is active, and recent app logs contained no `fh_secret`, email, or `/join/getcourse?` query string.
+- 2026-06-05 audit item 2 is closed in compatibility mode. Decision: do not enable `GETCOURSE_WEBHOOK_SECRET_REQUIRED=true` yet; observe real traffic first to avoid dropping FunnelHub ingestion for cached or alternate form paths.
