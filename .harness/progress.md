@@ -7,6 +7,7 @@
 - Current feature: `email-provider`.
 - WIP: Unisender Go provider and the Aisu Kam email sequence are deployed; provider delivery/bounce/open/click webhooks and manual email broadcasts remain future work.
 - 2026-06-04 technical audit completed before further development. Highest-priority finding `/inbox/{path:path}` encoded path traversal is now fixed locally and covered by regression tests; next audit item is GetCourse webhook authentication/rate limiting.
+- 2026-06-04 urgent bot scenario fix deployed: question steps now attach questionnaire option buttons during the first send when the YAML step has `question_key` but no explicit `buttons`.
 - Repo source of truth lives in `.harness/`.
 
 ## Decisions
@@ -96,6 +97,7 @@
 - Aisu Kam email signatures can render a round portrait from `EMAIL_SIGNATURE_IMAGE_URL`; production currently uses `https://bot.aisukam.ru/assets/email/aisu-kam-signature.png`.
 - The production Aisu messenger and email funnels now treat the original DOCX as source for days 2-18; CTA buttons stop at day 18 so future autoposting does not inherit stale course buttons.
 - The non-blocking questionnaire no longer repeats questions by a standalone timer. The first content/video step waits 5 minutes after the first question if the questionnaire is incomplete; unanswered questions are repeated after each subsequent messenger funnel message until answered.
+- Initial questionnaire question sends derive buttons from `questionnaire.questions[question_key].options` when the step itself has no `buttons`, so scenario authors do not need to duplicate question options in every `kind: question` step.
 - If both questionnaire answers are completed before the first video step, the personalized response is sent immediately and the first video step is scheduled 1 minute later.
 - Inbox database lead detail should expose structured GetCourse data through existing tables rather than only raw JSON: profile fields, contacts, messenger identities, external IDs, UTM snapshots, custom fields, consents, email subscriptions, funnel states, and recent messages.
 - GetCourse webhook/import ingestion accepts extended profile/source fields without a migration: registration type, GetCourse created/last-activity timestamps, advertising `utm_*`, `VK-ID`, group IDs, partner/manager fields, birthday/age/gender/note, and mailing categories.
@@ -561,3 +563,6 @@
 - 2026-06-04 local verification after path traversal fix passed: focused `pytest tests/test_main.py -q` reported 2 passed, `ruff check .` passed, `mypy src` passed, full `pytest -x` reported 111 passed, and `docker compose -f docker-compose.prod.yml config --quiet` exited successfully with existing local env interpolation warnings.
 - 2026-06-04 production deploy completed for the Inbox path traversal fix. Archive `funnelhub-20260604-200010.tar.gz` was uploaded to `/opt/funnelhub`, production `.env` was preserved, `app` was rebuilt/recreated, and `telegram-bot`, `funnel-worker`, `postgres`, and `redis` remained running.
 - 2026-06-04 production smoke after the path traversal deploy passed: public `/health` returned HTTP 200, public `/inbox` returned HTTP 200 with `/inbox/assets/...`, in-container helper check reported traversal blocked, and `curl --path-as-is https://bot.aisukam.ru/inbox/%2e%2e/%2e%2e/pyproject.toml` returned the Inbox `index.html` instead of `pyproject.toml`.
+- 2026-06-04 fixed first-send questionnaire buttons in the bot funnel. `run_due_funnel_step` now sends an effective question step with buttons derived from `questionnaire.questions[question_key].options` when the YAML step has no explicit `buttons`.
+- 2026-06-04 local verification after the questionnaire-button fix passed: focused funnel pytest reported 24 passed, focused `ruff check` passed, `mypy src` passed, and full `pytest -x` passed with 111 tests.
+- 2026-06-04 production deploy completed for the questionnaire-button fix. `funnel_engine.py` was uploaded to `/opt/funnelhub`, `app`, `telegram-bot`, and `funnel-worker` were rebuilt/recreated, in-container smoke confirmed `question_topic` now has buttons `Деньги|Отношения|Духовное целительство|Все вместе|Раскрытие способностей|Затрудняюсь ответить`, public `/health` returned HTTP 200, services were running, and worker logs were clean.

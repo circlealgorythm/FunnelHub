@@ -205,11 +205,12 @@ async def run_due_funnel_step(
 
     step_index = definition.step_index(state.current_step_key)
     step = definition.steps[step_index]
+    send_step = step_with_question_option_buttons(definition, step)
     await sender.send(
         FunnelStepSend(
             lead_id=state.lead_id,
             funnel_key=definition.key,
-            step=step,
+            step=send_step,
             state_metadata=dict(state.metadata_ or {}),
         )
     )
@@ -263,6 +264,26 @@ async def run_due_funnel_step(
         status=state.status,
         next_step_key=next_step.key,
         next_run_at=state.next_run_at,
+    )
+
+
+def step_with_question_option_buttons(
+    definition: FunnelDefinition,
+    step: FunnelStep,
+) -> FunnelStep:
+    if step.kind != "question" or step.question_key is None or step.buttons:
+        return step
+    if definition.questionnaire is None:
+        return step
+
+    question = definition.questionnaire.questions.get(step.question_key)
+    if question is None:
+        return step
+
+    return step.model_copy(
+        update={
+            "buttons": [FunnelButton(text=option.text) for option in question.options],
+        }
     )
 
 

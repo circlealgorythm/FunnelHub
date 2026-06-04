@@ -45,6 +45,7 @@ FunnelHub is being set up as a Harness-engineering project. GetCourse keeps cour
 - Long messenger day 7 is split into `day_07_part_1` and `day_07_part_2`; only `day_07_part_2` has the CTA button.
 - Questionnaire behavior: after the first question, the first video waits 5 minutes if answers are incomplete. If both answers are completed before the first video, the personalized response is sent immediately and the first video is scheduled 1 minute later. If questions remain unanswered, the pending question repeats after each subsequent messenger funnel message, not by an independent timer.
 - On production deploy, 2 active old `aisu_consultation` states at `step_08` were migrated to new `day_02`.
+- 2026-06-04 urgent questionnaire-button fix is deployed. Previously `question_topic` had text plus `question_key: topic` but no explicit `buttons`, and the first send path used only `step.buttons`, so the initial question could arrive without answer buttons. `run_due_funnel_step` now attaches buttons from `questionnaire.questions[question_key].options` before sending any `kind: question` step without explicit buttons. Production smoke confirmed `question_topic` sends `Деньги|Отношения|Духовное целительство|Все вместе|Раскрытие способностей|Затрудняюсь ответить`, `/health` is OK, and worker logs are clean.
 
 ## Production Access
 

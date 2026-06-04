@@ -100,7 +100,6 @@ def build_question_definition() -> FunnelDefinition:
                     "kind": "question",
                     "question_key": "topic",
                     "text": "Что актуальнее?",
-                    "buttons": [{"text": "Деньги"}],
                 },
                 {
                     "key": "social",
@@ -283,6 +282,7 @@ async def test_question_step_waits_for_reminder_delay_before_next_content(
     assert result.sent_step_key == "question_topic"
     assert result.next_step_key == "social"
     assert result.next_run_at == now + timedelta(minutes=5)
+    assert [button.text for button in sender.sent[0].step.buttons] == ["Деньги"]
 
     async with async_session_maker() as session:
         persisted_state = await session.get(FunnelState, state.id)
