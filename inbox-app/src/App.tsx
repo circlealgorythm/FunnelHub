@@ -1005,8 +1005,11 @@ function DatabaseWorkspace({
                       <span>{lead.phone ?? "телефон нет"}</span>
                     </td>
                     <td>
-                      <span>{lead.telegram ? `TG @${lead.telegram}` : "TG нет"}</span>
-                      <span>{lead.vk ? `VK @${lead.vk}` : "VK нет"}</span>
+                      {leadMessengerLabels(lead).length > 0 ? (
+                        leadMessengerLabels(lead).map((label) => <span key={label}>{label}</span>)
+                      ) : (
+                        <span>мессенджер нет</span>
+                      )}
                     </td>
                     <td>
                       <span>{lead.conversations_count} диалогов</span>
@@ -1341,6 +1344,13 @@ function displayName(conversation: Conversation) {
     conversation.identity_username ||
     "Без имени"
   );
+}
+
+function leadMessengerLabels(lead: DatabaseLead) {
+  return [
+    lead.telegram ? "TG" : null,
+    lead.vk ? "VK" : null,
+  ].filter((label): label is string => label !== null);
 }
 
 function formatRelativeDate(value: string | null) {

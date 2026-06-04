@@ -27,7 +27,11 @@ from funnelhub.db.models import (
     Message,
     MessengerIdentity,
 )
-from funnelhub.services.getcourse_webhook import ADDITIONAL_FIELD_LABELS, ingest_getcourse_webhook
+from funnelhub.services.getcourse_webhook import (
+    ADDITIONAL_FIELD_LABELS,
+    CONSENT_CUSTOM_FIELD_MAPPING,
+    ingest_getcourse_webhook,
+)
 
 CSV_EXPORT_COLUMNS = [
     "lead_id",
@@ -69,11 +73,6 @@ XLSX_EXPORT_COLUMNS = [
     ("utm_term", "utm_term"),
     ("utm_content", "utm_content"),
     ("utm_group", "utm_group"),
-    ("gc_system_user_utm_source", "gc_system_user_utm_source"),
-    ("gc_system_user_utm_medium", "gc_system_user_utm_medium"),
-    ("gc_system_user_utm_campaign", "gc_system_user_utm_campaign"),
-    ("gc_system_user_utm_term", "gc_system_user_utm_term"),
-    ("gc_system_user_utm_content", "gc_system_user_utm_content"),
     ("vk_id", "VK-ID из GetCourse"),
     ("getcourse_groups", "Группы GetCourse"),
     ("partner", "От партнера"),
@@ -91,8 +90,8 @@ XLSX_EXPORT_COLUMNS = [
 
 IMPORT_FIELD_ALIASES = {
     "gc_user_id": ("gc_user_id", "getcourse_user_id", "id", "ID", "GetCourse ID"),
-    "name": ("name", "full_name", "Имя", "ФИО", "Name"),
-    "first_name": ("first_name", "Имя пользователя", "First name"),
+    "name": ("name", "full_name", "ФИО", "Name"),
+    "first_name": ("first_name", "Имя", "Имя пользователя", "First name"),
     "last_name": ("last_name", "Фамилия", "Last name"),
     "email": ("email", "Email", "E-mail", "Почта", "Эл. почта"),
     "phone": ("phone", "Телефон", "Phone", "Номер телефона"),
@@ -108,14 +107,10 @@ IMPORT_FIELD_ALIASES = {
     "utm_term": ("utm_term",),
     "utm_content": ("utm_content",),
     "utm_group": ("utm_group",),
-    "gc_system_user_utm_source": ("gc_system_user_utm_source",),
-    "gc_system_user_utm_medium": ("gc_system_user_utm_medium",),
-    "gc_system_user_utm_campaign": ("gc_system_user_utm_campaign",),
-    "gc_system_user_utm_term": ("gc_system_user_utm_term",),
-    "gc_system_user_utm_content": ("gc_system_user_utm_content",),
     "vk_id": ("vk_id", "VK-ID"),
     "getcourse_groups": ("getcourse_groups", "id групп пользователя/дата добавления"),
 }
+GETCOURSE_EXPORT_CONSENT_FIELD_KEYS = tuple(CONSENT_CUSTOM_FIELD_MAPPING)
 
 
 @dataclass(frozen=True)
@@ -236,7 +231,7 @@ async def get_database_lead_detail(
     utm_snapshots = (
         await session.scalars(
             select(LeadUtm)
-            .where(LeadUtm.lead_id == lead_id)
+            .where(LeadUtm.lead_id == lead_id, LeadUtm.source_kind != "getcourse_system")
             .order_by(LeadUtm.created_at.desc())
         )
     ).all()
@@ -432,8 +427,13 @@ async def import_database_leads_csv(
     content: bytes,
 ) -> DatabaseImportResult:
     text = decode_csv_content(content)
-    reader = csv.DictReader(io.StringIO(text))
-    if reader.fieldnames is None:
+    delimiter = detect_csv_delimiter(text)
+    csv_reader = csv.reader(io.StringIO(text), delimiter=delimiter)
+    try:
+        fieldnames = next(csv_reader)
+    except StopIteration:
+        raise ValueError("CSV file must contain a header row.") from None
+    if not fieldnames:
         raise ValueError("CSV file must contain a header row.")
 
     batch = ImportBatch(
@@ -442,9 +442,9 @@ async def import_database_leads_csv(
         file_name=file_name,
         file_format="csv",
         encoding="utf-8-sig",
-        delimiter=",",
+        delimiter=delimiter,
         status="processing",
-        metadata_={"fieldnames": reader.fieldnames},
+        metadata_={"fieldnames": fieldnames},
     )
     session.add(batch)
     await session.flush()
@@ -456,8 +456,9 @@ async def import_database_leads_csv(
     updated_rows = 0
     errors: list[dict[str, Any]] = []
 
-    for row_number, row in enumerate(reader, start=2):
+    for row_number, values in enumerate(csv_reader, start=2):
         total_rows += 1
+        row = import_values_to_row(fieldnames, values)
         payload = import_row_to_payload(row)
         import_row = ImportRow(
             id=uuid.uuid4(),
@@ -583,8 +584,18 @@ def lead_contact_subquery(contact_type: str) -> Any:
 
 def messenger_identity_subquery(channel: str) -> Any:
     return (
-        select(MessengerIdentity.username)
-        .where(MessengerIdentity.lead_id == Lead.id, MessengerIdentity.channel == channel)
+        select(
+            func.coalesce(
+                MessengerIdentity.username,
+                MessengerIdentity.display_name,
+                MessengerIdentity.external_user_id,
+            )
+        )
+        .where(
+            MessengerIdentity.lead_id == Lead.id,
+            MessengerIdentity.channel == channel,
+            MessengerIdentity.is_subscribed.is_(True),
+        )
         .order_by(MessengerIdentity.created_at.desc())
         .limit(1)
         .correlate(Lead)
@@ -640,7 +651,6 @@ def xlsx_export_row(detail: DatabaseLeadDetail) -> dict[str, Any]:
     profile = detail_profile_dict(detail.profile_fields)
     custom = detail_custom_field_dict(detail.custom_fields)
     form_utm = latest_utm_snapshot(detail.utm_snapshots, "form")
-    gc_utm = latest_utm_snapshot(detail.utm_snapshots, "getcourse_system")
     return {
         "lead_id": str(lead.id),
         "getcourse_user_id": lead.getcourse_user_id,
@@ -662,11 +672,6 @@ def xlsx_export_row(detail: DatabaseLeadDetail) -> dict[str, Any]:
         "utm_term": form_utm.get("utm_term"),
         "utm_content": form_utm.get("utm_content"),
         "utm_group": form_utm.get("utm_group"),
-        "gc_system_user_utm_source": gc_utm.get("utm_source"),
-        "gc_system_user_utm_medium": gc_utm.get("utm_medium"),
-        "gc_system_user_utm_campaign": gc_utm.get("utm_campaign"),
-        "gc_system_user_utm_term": gc_utm.get("utm_term"),
-        "gc_system_user_utm_content": gc_utm.get("utm_content"),
         "vk_id": custom.get("vk_id"),
         "getcourse_groups": custom.get("getcourse_groups"),
         "partner": custom.get("partner"),
@@ -696,6 +701,33 @@ def decode_csv_content(content: bytes) -> str:
         except UnicodeDecodeError:
             continue
     raise ValueError("CSV file encoding must be UTF-8 or Windows-1251.")
+
+
+def detect_csv_delimiter(text: str) -> str:
+    header = text.splitlines()[0] if text.splitlines() else ""
+    candidates = [",", "\t", ";"]
+    return max(candidates, key=lambda delimiter: header.count(delimiter))
+
+
+def import_values_to_row(fieldnames: list[str], values: list[str]) -> dict[str, str | None]:
+    row: dict[str, str | None] = {}
+    headerless_custom_index = 0
+    for index, value in enumerate(values):
+        header = fieldnames[index] if index < len(fieldnames) else ""
+        key = import_column_key(header, index, headerless_custom_index)
+        if not header.strip():
+            headerless_custom_index += 1
+        row[key] = value
+    return row
+
+
+def import_column_key(header: str, index: int, headerless_custom_index: int) -> str:
+    cleaned = header.strip()
+    if cleaned:
+        return cleaned
+    if headerless_custom_index < len(GETCOURSE_EXPORT_CONSENT_FIELD_KEYS):
+        return GETCOURSE_EXPORT_CONSENT_FIELD_KEYS[headerless_custom_index]
+    return f"column_{index + 1}"
 
 
 def import_row_to_payload(row: dict[str, str | None]) -> dict[str, Any]:

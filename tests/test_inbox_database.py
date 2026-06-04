@@ -15,6 +15,7 @@ from funnelhub.db.models import ImportBatch, Lead, LeadContact, Message, Messeng
 from funnelhub.db.session import async_session_maker, engine
 from funnelhub.main import app
 from funnelhub.services.auth import hash_password
+from funnelhub.services.getcourse_webhook import ingest_getcourse_webhook
 from funnelhub.services.inbox_database import (
     export_database_leads_csv,
     export_database_leads_xlsx,
@@ -27,6 +28,7 @@ TEST_GC_ID = 987656000
 TEST_EMAIL = "database@example.com"
 IMPORT_EMAIL = "imported-database@example.com"
 API_IMPORT_EMAIL = "api-db@example.com"
+SHORT_IMPORT_EMAIL = "short-export@example.com"
 
 
 @pytest.fixture(autouse=True)
@@ -54,7 +56,7 @@ async def cleanup_test_data() -> None:
             await session.scalars(
                 select(LeadContact.lead_id).where(
                     LeadContact.normalized_value.in_(
-                        {TEST_EMAIL, IMPORT_EMAIL, API_IMPORT_EMAIL}
+                        {TEST_EMAIL, IMPORT_EMAIL, API_IMPORT_EMAIL, SHORT_IMPORT_EMAIL}
                     )
                 )
             )
@@ -103,6 +105,18 @@ async def create_database_lead() -> uuid.UUID:
             )
         )
         session.add(
+            MessengerIdentity(
+                id=uuid.uuid4(),
+                lead_id=lead.id,
+                channel="vk",
+                external_user_id="199271782",
+                username=None,
+                display_name=None,
+                is_subscribed=True,
+                raw_profile={},
+            )
+        )
+        session.add(
             Message(
                 id=uuid.uuid4(),
                 lead_id=lead.id,
@@ -128,6 +142,7 @@ async def test_list_database_leads_searches_contacts_and_counts_messages() -> No
     assert lead_list.items[0].name == "Database Test Lead"
     assert lead_list.items[0].email == TEST_EMAIL
     assert lead_list.items[0].telegram == "database_tg"
+    assert lead_list.items[0].vk == "199271782"
     assert lead_list.items[0].messages_count == 1
 
 
@@ -162,9 +177,10 @@ async def test_export_database_leads_xlsx_uses_human_readable_columns() -> None:
 
 async def test_imported_getcourse_fields_are_available_in_database_detail() -> None:
     content = (
-        "id,Email,VK-ID,gc_system_user_utm_source,Откуда пришел,"
-        "id групп пользователя/дата добавления\n"
-        f"{TEST_GC_ID + 3},{IMPORT_EMAIL},88996633,gc-source,mamba.ru,3971958:2025-12-19\n"
+        "id,Email,VK-ID,gc_system_user_utm_source,utm_source,utm_medium,utm_campaign,"
+        "Откуда пришел,id групп пользователя/дата добавления\n"
+        f"{TEST_GC_ID + 3},{IMPORT_EMAIL},88996633,gc-source,yandex,cpc,direct-campaign,"
+        "mamba.ru,3971958:2025-12-19\n"
     ).encode()
 
     async with async_session_maker() as session:
@@ -189,9 +205,299 @@ async def test_imported_getcourse_fields_are_available_in_database_detail() -> N
         for item in detail.custom_fields
     )
     assert any(
-        item["source_kind"] == "getcourse_system" and item["utm_source"] == "gc-source"
+        item["source_kind"] == "form" and item["utm_source"] == "yandex"
         for item in detail.utm_snapshots
     )
+    assert not any(
+        item["source_kind"] == "getcourse_system"
+        for item in detail.utm_snapshots
+    )
+
+
+async def test_getcourse_tab_export_import_preserves_headerless_consent_columns() -> None:
+    headers = [
+        "id",
+        "Email",
+        "Тип регистрации",
+        "Создан",
+        "Последняя активность",
+        "Имя",
+        "Фамилия",
+        "Телефон",
+        "Дата рождения",
+        "Возраст",
+        "Страна",
+        "Город",
+        "От партнера",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "gc_system_user_utm_source",
+        "gc_system_user_utm_medium",
+        "gc_system_user_utm_campaign",
+        "gc_system_user_utm_term",
+        "gc_system_user_utm_content",
+        "Откуда пришел",
+        "utm_source",
+        "utm_medium",
+        "utm_campaign",
+        "utm_term",
+        "utm_content",
+        "utm_group",
+        "ID партнера",
+        "Email партнера",
+        "ФИО партнера",
+        "ФИО менеджера",
+        "VK-ID",
+        "id групп пользователя/дата добавления",
+    ]
+    values = [
+        str(TEST_GC_ID + 6),
+        "tab-export@example.com",
+        "Самостоятельно",
+        "2024-11-25 18:53:02",
+        "2026-05-10 18:43:37",
+        "Tab",
+        "Export",
+        "79991112233",
+        "1990-01-01",
+        "36",
+        "Россия",
+        "Москва",
+        "partner-source",
+        "",
+        "",
+        "Да",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "gc-empty-source",
+        "",
+        "",
+        "",
+        "",
+        "landing",
+        "yandex",
+        "cpc",
+        "direct-campaign",
+        "keyword",
+        "ad-content",
+        "group-1",
+        "partner-id",
+        "partner@example.com",
+        "Partner Name",
+        "Manager Name",
+        "88996644",
+        "3971958:2025-12-19",
+    ]
+    content = ("\t".join(headers) + "\n" + "\t".join(values) + "\n").encode("cp1251")
+
+    async with async_session_maker() as session:
+        result = await import_database_leads_csv(
+            session,
+            file_name="getcourse-export.csv",
+            content=content,
+        )
+        await session.commit()
+
+    assert result.processed_rows == 1
+
+    async with async_session_maker() as session:
+        lead = await session.scalar(select(Lead).where(Lead.getcourse_user_id == TEST_GC_ID + 6))
+        assert lead is not None
+        detail = await get_database_lead_detail(session, lead.id)
+
+    assert detail is not None
+    assert any(
+        item["key"] == "custom_10616540" and item["value"] == "Да"
+        for item in detail.custom_fields
+    )
+    assert {item["type"] for item in detail.consents} == {
+        "personal_data",
+        "privacy_policy",
+    }
+    assert any(
+        item["source_kind"] == "form"
+        and item["utm_source"] == "yandex"
+        and item["utm_campaign"] == "direct-campaign"
+        for item in detail.utm_snapshots
+    )
+    assert not any(
+        item["source_kind"] == "getcourse_system"
+        for item in detail.utm_snapshots
+    )
+
+
+async def test_getcourse_short_export_import_preserves_headerless_consent_columns() -> None:
+    headers = [
+        "Email",
+        "Тип регистрации",
+        "Создан",
+        "Последняя активность",
+        "Имя",
+        "Фамилия",
+        "Телефон",
+        "Дата рождения",
+        "Возраст",
+        "Страна",
+        "Город",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "Откуда пришел",
+        "utm_source",
+        "utm_medium",
+        "utm_campaign",
+        "utm_term",
+        "utm_content",
+        "utm_group",
+        "VK-ID",
+    ]
+    values = [
+        SHORT_IMPORT_EMAIL,
+        "Зарегистрировался самостоятельно",
+        "2024-11-25 18:53:02",
+        "2026-05-10 18:43:37",
+        "Сергей тест",
+        "Gurbin",
+        "+79261685789",
+        "",
+        "",
+        "Россия",
+        "Москва",
+        "Да",
+        "",
+        "Да",
+        "",
+        "Да",
+        "Да",
+        "Да",
+        "",
+        "mamba.ru",
+        "Yandex",
+        "cpc",
+        "116900226",
+        "шаманизм",
+        "16736567277",
+        "",
+        "88996633",
+    ]
+    content = ("\t".join(headers) + "\n" + "\t".join(values) + "\n").encode("cp1251")
+
+    async with async_session_maker() as session:
+        result = await import_database_leads_csv(
+            session,
+            file_name="short-getcourse-export.csv",
+            content=content,
+        )
+        await session.commit()
+
+    assert result.processed_rows == 1
+
+    async with async_session_maker() as session:
+        contact = await session.scalar(
+            select(LeadContact).where(LeadContact.normalized_value == SHORT_IMPORT_EMAIL)
+        )
+        assert contact is not None
+        lead = await session.get(Lead, contact.lead_id)
+        assert lead is not None
+        detail = await get_database_lead_detail(session, lead.id)
+
+    assert detail is not None
+    assert detail.lead.name == "Сергей тест Gurbin"
+    custom_by_key = {item["key"]: item for item in detail.custom_fields}
+    assert custom_by_key["custom_10558670"]["value"] == "Да"
+    assert custom_by_key["custom_10616540"]["value"] == "Да"
+    assert custom_by_key["custom_10682753"]["value"] == "Да"
+    assert custom_by_key["custom_10682754"]["value"] == "Да"
+    assert custom_by_key["custom_10683365"]["value"] == "Да"
+    assert {item["type"] for item in detail.consents} == {
+        "personal_data",
+        "privacy_policy",
+        "offer_agreement",
+    }
+    assert any(
+        item["source_kind"] == "form"
+        and item["utm_source"] == "Yandex"
+        and item["utm_campaign"] == "116900226"
+        and item["utm_term"] == "шаманизм"
+        and item["utm_content"] == "16736567277"
+        for item in detail.utm_snapshots
+    )
+
+
+async def test_tariff_form_consents_are_available_in_database_detail() -> None:
+    async with async_session_maker() as session:
+        result = await ingest_getcourse_webhook(
+            session,
+            {
+                "gc_user_id": str(TEST_GC_ID + 4),
+                "email": "tariff-consent@example.com",
+                "custom_10558670": "Да",
+            },
+        )
+        await session.commit()
+
+    async with async_session_maker() as session:
+        detail = await get_database_lead_detail(session, result.lead_id)
+
+    assert detail is not None
+    custom_field = next(
+        item for item in detail.custom_fields if item["key"] == "custom_10558670"
+    )
+    assert custom_field["value"] == "Да"
+    assert custom_field["normalized_bool"] is True
+    assert "Политикой конфиденциальности" in str(custom_field["label"])
+    assert "Договором оферты" in str(custom_field["label"])
+
+    consents_by_type = {item["type"]: item for item in detail.consents}
+    assert set(consents_by_type) == {
+        "personal_data",
+        "privacy_policy",
+        "offer_agreement",
+    }
+    assert consents_by_type["privacy_policy"]["is_granted"] is True
+    assert consents_by_type["offer_agreement"]["is_granted"] is True
+
+
+async def test_consultation_form_consent_does_not_include_offer_in_database_detail() -> None:
+    async with async_session_maker() as session:
+        result = await ingest_getcourse_webhook(
+            session,
+            {
+                "gc_user_id": str(TEST_GC_ID + 5),
+                "email": "consultation-consent@example.com",
+                "custom_10616540": "Да",
+            },
+        )
+        await session.commit()
+
+    async with async_session_maker() as session:
+        detail = await get_database_lead_detail(session, result.lead_id)
+
+    assert detail is not None
+    custom_field = next(
+        item for item in detail.custom_fields if item["key"] == "custom_10616540"
+    )
+    assert custom_field["value"] == "Да"
+    assert "Политикой конфиденциальности" in str(custom_field["label"])
+    assert "Договором оферты" not in str(custom_field["label"])
+    assert {item["type"] for item in detail.consents} == {
+        "personal_data",
+        "privacy_policy",
+    }
 
 
 async def test_import_database_leads_csv_creates_and_updates_leads() -> None:

@@ -23,7 +23,10 @@ from funnelhub.services.funnel_autostart import (
 )
 from funnelhub.services.funnel_engine import load_funnel_definition, run_due_funnel_step
 from funnelhub.services.funnel_runner import MessengerFunnelStepSender
-from funnelhub.services.getcourse_webhook import ingest_getcourse_webhook
+from funnelhub.services.getcourse_webhook import (
+    CONSENT_CUSTOM_FIELD_MAPPING,
+    ingest_getcourse_webhook,
+)
 from funnelhub.services.vk_messaging import HttpVkMessageClient
 from funnelhub.services.vk_oauth import (
     build_vk_oauth_join_url,
@@ -33,6 +36,13 @@ from funnelhub.services.vk_oauth import (
 
 router = APIRouter(tags=["messenger-linking"])
 logger = logging.getLogger(__name__)
+JOIN_FORM_TYPE_CONSENT_FIELD_MAPPING = {
+    "consultation": "custom_10616540",
+    "baseTariff": "custom_10682754",
+    "extendedTariff": "custom_10558670",
+    "oraclesTariff": "custom_10682753",
+    "mentorshipTariff": "custom_10683365",
+}
 
 
 class MessengerLinkRequest(BaseModel):
@@ -163,7 +173,17 @@ def getcourse_redirect_payload(query_params: dict[str, str]) -> dict[str, str]:
         if cleaned is None:
             continue
         payload[aliases.get(key, key)] = cleaned
+    if payload and not has_consent_custom_field(payload):
+        consent_field = JOIN_FORM_TYPE_CONSENT_FIELD_MAPPING.get(
+            payload.get("form_type", "consultation")
+        )
+        if consent_field is not None:
+            payload[consent_field] = "Да"
     return payload
+
+
+def has_consent_custom_field(payload: dict[str, str]) -> bool:
+    return any(field_key in payload for field_key in CONSENT_CUSTOM_FIELD_MAPPING)
 
 
 def clean_redirect_value(value: Any) -> str | None:

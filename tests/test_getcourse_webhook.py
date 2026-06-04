@@ -174,9 +174,14 @@ async def test_getcourse_webhook_persists_extended_profile_and_source_fields() -
                 "Тип регистрации": "Зарегистрировался самостоятельно",
                 "Создан": "2024-11-25 18:53:02",
                 "Последняя активность": "2026-05-10 18:43:37",
+                "Имя": "Сергей тест",
+                "Фамилия": "Gurbin",
                 "Откуда пришел": "mamba.ru",
-                "utm_source": "yandex",
+                "utm_source": "Yandex",
                 "utm_medium": "cpc",
+                "utm_campaign": "116900226",
+                "utm_term": "шаманизм",
+                "utm_content": "16736567277",
                 "gc_system_user_utm_source": "gc-source",
                 "gc_system_user_utm_campaign": "gc-campaign",
                 "VK-ID": "88996633",
@@ -193,6 +198,9 @@ async def test_getcourse_webhook_persists_extended_profile_and_source_fields() -
         assert lead.registration_type == "Зарегистрировался самостоятельно"
         assert lead.getcourse_created_at is not None
         assert lead.getcourse_last_activity_at is not None
+        assert lead.first_name == "Сергей тест"
+        assert lead.last_name == "Gurbin"
+        assert lead.full_name == "Сергей тест Gurbin"
         assert lead.source == "mamba.ru"
 
         external_id = await session.scalar(
@@ -217,9 +225,11 @@ async def test_getcourse_webhook_persists_extended_profile_and_source_fields() -
             await session.scalars(select(LeadUtm).where(LeadUtm.lead_id == lead_id))
         ).all()
         utm_by_kind = {row.source_kind: row for row in utm_rows}
-        assert utm_by_kind["form"].utm_source == "yandex"
-        assert utm_by_kind["getcourse_system"].utm_source == "gc-source"
-        assert utm_by_kind["getcourse_system"].utm_campaign == "gc-campaign"
+        assert set(utm_by_kind) == {"form"}
+        assert utm_by_kind["form"].utm_source == "Yandex"
+        assert utm_by_kind["form"].utm_campaign == "116900226"
+        assert utm_by_kind["form"].utm_term == "шаманизм"
+        assert utm_by_kind["form"].utm_content == "16736567277"
 
 
 async def test_getcourse_webhook_updates_existing_lead_by_getcourse_id() -> None:
@@ -319,6 +329,48 @@ async def test_getcourse_redirect_join_page_creates_lead_and_renders_buttons() -
         )
         assert email_contact is not None
         assert email_contact.lead_id == lead.id
+        consent_types = set(
+            await session.scalars(
+                select(LeadConsent.consent_type).where(LeadConsent.lead_id == lead.id)
+            )
+        )
+        assert consent_types == {"personal_data", "privacy_policy"}
+
+
+async def test_getcourse_redirect_join_page_derives_tariff_consent_from_form_type() -> None:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get(
+            "/join/getcourse",
+            params={
+                "gc_user_id": TEST_GC_ID,
+                "email": TEST_EMAIL,
+                "phone": "+7 999 000-00-00",
+                "name": "Тариф тест",
+                "form_type": "baseTariff",
+            },
+        )
+
+    assert response.status_code == 200
+
+    async with async_session_maker() as session:
+        lead = await session.scalar(
+            select(Lead).where(Lead.getcourse_user_id == int(TEST_GC_ID))
+        )
+        assert lead is not None
+        custom_field = await session.scalar(
+            select(LeadCustomField).where(
+                LeadCustomField.lead_id == lead.id,
+                LeadCustomField.field_key == "custom_10682754",
+            )
+        )
+        assert custom_field is not None
+        assert custom_field.value == "Да"
+        consent_types = set(
+            await session.scalars(
+                select(LeadConsent.consent_type).where(LeadConsent.lead_id == lead.id)
+            )
+        )
+        assert consent_types == {"personal_data", "privacy_policy", "offer_agreement"}
 
 
 async def test_getcourse_redirect_join_page_rejects_unresolved_placeholders() -> None:

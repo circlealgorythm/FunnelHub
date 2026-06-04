@@ -23,13 +23,6 @@ from funnelhub.services.email_messaging import ensure_email_unsubscribe_token
 
 EMPTY_VALUES = {"", "(empty)", "none", "null"}
 UTM_KEYS = ("utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content", "utm_group")
-GC_SYSTEM_UTM_KEYS = (
-    "gc_system_user_utm_source",
-    "gc_system_user_utm_medium",
-    "gc_system_user_utm_campaign",
-    "gc_system_user_utm_term",
-    "gc_system_user_utm_content",
-)
 PROFILE_FIELD_ALIASES = {
     "registration_type": ("registration_type", "registration", "Тип регистрации"),
     "getcourse_created_at": ("getcourse_created_at", "created_at", "created", "Создан"),
@@ -84,6 +77,14 @@ CONSENT_CUSTOM_FIELD_MAPPING = {
     "custom_10682754": "https://school.aisukam.ru/oferta_skoraya_pomoshch",
     "custom_10683365": "https://school.aisukam.ru/oferta_individualnoe_nastavnichestvo",
     "custom_11344348": "https://school.aisukam.ru/oferta_shamanputesh",
+}
+CONSENT_CUSTOM_FIELD_LABELS = {
+    field_key: (
+        "Я согласен (-на) на обработку моих персональных данных "
+        "в соответствии с Политикой конфиденциальности"
+        + (" и Договором оферты" if offer_url is not None else "")
+    )
+    for field_key, offer_url in CONSENT_CUSTOM_FIELD_MAPPING.items()
 }
 
 
@@ -140,22 +141,6 @@ async def ingest_getcourse_webhook(
     custom_fields = await upsert_custom_fields(session, lead, normalized)
     await upsert_consents(session, lead, custom_fields)
 
-    if has_utm_data(normalized["gc_system_utm"]):
-        session.add(
-            LeadUtm(
-                id=uuid.uuid4(),
-                lead_id=lead.id,
-                source_kind="getcourse_system",
-                utm_source=normalized["gc_system_utm"]["utm_source"],
-                utm_medium=normalized["gc_system_utm"]["utm_medium"],
-                utm_campaign=normalized["gc_system_utm"]["utm_campaign"],
-                utm_term=normalized["gc_system_utm"]["utm_term"],
-                utm_content=normalized["gc_system_utm"]["utm_content"],
-                utm_group=None,
-                raw_data=normalized["raw_payload"],
-            )
-        )
-
     if has_utm_data(normalized["utm"]):
         session.add(
             LeadUtm(
@@ -195,16 +180,12 @@ def normalize_getcourse_payload(payload: dict[str, Any]) -> dict[str, Any]:
 
     email = clean_text(first_payload_value(payload, ("email", "Email", "E-mail")))
     phone = clean_text(first_payload_value(payload, ("phone", "Телефон", "Phone")))
-    first_name = clean_text(first_payload_value(payload, ("first_name", "Имя пользователя")))
+    first_name = clean_text(first_payload_value(payload, ("first_name", "Имя", "Имя пользователя")))
     last_name = clean_text(first_payload_value(payload, ("last_name", "Фамилия")))
     full_name = clean_text(
-        first_payload_value(payload, ("name", "full_name", "Имя", "ФИО"))
+        first_payload_value(payload, ("name", "full_name", "ФИО"))
     ) or join_name(first_name, last_name)
     regular_utm = {key: clean_text(payload.get(key)) for key in UTM_KEYS}
-    gc_system_utm = {
-        target_key: clean_text(payload.get(source_key))
-        for target_key, source_key in zip(UTM_KEYS[:5], GC_SYSTEM_UTM_KEYS, strict=True)
-    }
     additional_fields = extract_custom_fields(payload)
     additional_fields.update(extract_known_additional_fields(payload))
 
@@ -232,11 +213,9 @@ def normalize_getcourse_payload(payload: dict[str, Any]) -> dict[str, Any]:
             first_payload_value(payload, PROFILE_FIELD_ALIASES["getcourse_last_activity_at"])
         ),
         "source": clean_text(first_payload_value(payload, PROFILE_FIELD_ALIASES["source"]))
-        or regular_utm["utm_source"]
-        or gc_system_utm["utm_source"],
+        or regular_utm["utm_source"],
         "custom_fields": additional_fields,
         "utm": regular_utm,
-        "gc_system_utm": gc_system_utm,
         **regular_utm,
     }
 
@@ -679,8 +658,8 @@ def join_name(first_name: str | None, last_name: str | None) -> str | None:
 def human_custom_field_label(field_key: str) -> str:
     if field_key in ADDITIONAL_FIELD_LABELS:
         return ADDITIONAL_FIELD_LABELS[field_key]
-    if field_key in CONSENT_CUSTOM_FIELD_MAPPING:
-        return f"Согласие GetCourse {field_key.removeprefix('custom_')}"
+    if field_key in CONSENT_CUSTOM_FIELD_LABELS:
+        return CONSENT_CUSTOM_FIELD_LABELS[field_key]
     return field_key
 
 
