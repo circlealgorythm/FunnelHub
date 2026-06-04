@@ -499,6 +499,71 @@ h2 {
   font-weight: 800;
 }
 
+.reply-targets,
+.reply-unavailable {
+  grid-column: 1 / -1;
+}
+
+.reply-targets {
+  display: grid;
+  gap: 8px;
+}
+
+.reply-targets-title {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.reply-target-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.reply-target {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  max-width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-strong);
+  color: var(--ink);
+  cursor: pointer;
+  padding: 7px 10px;
+}
+
+.reply-target input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--plum);
+}
+
+.reply-target span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.reply-target strong,
+.reply-target small {
+  overflow-wrap: anywhere;
+}
+
+.reply-target small,
+.reply-unavailable {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.reply-unavailable {
+  margin: 0;
+}
+
 .reply-box textarea {
   width: 100%;
   min-height: 76px;

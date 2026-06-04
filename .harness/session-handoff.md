@@ -6,7 +6,26 @@ FunnelHub is being set up as a Harness-engineering project. GetCourse keeps cour
 
 ## Current Feature
 
-`email-provider` is in progress. The provider-agnostic email layer is implemented locally: internal provider protocol, debug provider, subscription checks, unsubscribe links, email message history, unsubscribe endpoint, and funnel runner support for `channel: email`. A concrete external provider adapter is still pending.
+`email-provider` is deployed with Unisender Go enabled on production. The Aisu Kam messenger and email sequences were rebuilt from the original DOCX as version 2 and now run through day 18; delivery/bounce/open/click provider webhooks and manual email broadcasts remain future work.
+
+## Latest Inbox State
+
+- Manual replies from Inbox can target one or more channels: Telegram, VK, and Email.
+- Conversation detail now returns `reply_channels`, derived from subscribed messenger identities and subscribed email subscriptions.
+- The React reply composer renders compact checkboxes under `Куда отправить`; the current conversation channel is selected by default, and the send button shows the selected channel count when more than one target is selected.
+- Manual reply messages for all selected channels are linked to the selected inbox conversation, while each message keeps its actual `channel` for traceability in the chat history.
+- Local verification for this change passed on 2026-06-04: `ruff check .`, `mypy src`, `pytest -x` with 104 tests, `npm run build` in `inbox-app/`, `docker compose -f docker-compose.prod.yml config --quiet`, and desktop/mobile in-app browser checks. Docker Compose only emitted the existing local unset-variable warnings.
+- Production deploy for this change completed on 2026-06-04. Public `/health` and `/inbox` returned HTTP 200, the deployed `/inbox` JS contains the new reply-target UI, `app`, `telegram-bot`, `funnel-worker`, `postgres`, and `redis` are running, and an in-container rollback smoke verified `reply_channels=telegram,vk,email` plus fake `sent_channels=telegram,email` without persisting data.
+
+## Latest Scenario State
+
+- `content/funnels/aisu_consultation.yml` is version 2. It starts with welcome, first questionnaire question, first video step, video/gift/review intro content, then daily CTA content from `day_02` through `day_18`.
+- `content/funnels/aisu_email.yml` is version 2 with 17 email steps: `day_02` through `day_18`.
+- All day CTA buttons point to `https://aisukam.ru/courses`.
+- There are no CTA steps after `day_18`; future autoposting should not inherit these buttons.
+- Long messenger day 7 is split into `day_07_part_1` and `day_07_part_2`; only `day_07_part_2` has the CTA button.
+- Questionnaire behavior: after the first question, the first video waits 5 minutes if answers are incomplete. If both answers are completed before the first video, the personalized response is sent immediately and the first video is scheduled 1 minute later. If questions remain unanswered, the pending question repeats after each subsequent messenger funnel message, not by an independent timer.
+- On production deploy, 2 active old `aisu_consultation` states at `step_08` were migrated to new `day_02`.
 
 ## Production Access
 
@@ -398,3 +417,82 @@ Recommended next step: run a real lead/inbound-message smoke through Telegram/VK
   - Unauthenticated `https://bot.aisukam.ru/api/inbox/database/leads/export.xlsx` returned HTTP 401, confirming the new XLSX route exists behind auth.
   - Logs showed Telegram polling started and funnel-worker completed a clean pass.
   - Production rollback smoke called `ingest_getcourse_webhook(...)` with extended GetCourse fields, verified `getcourse_groups`/`vk_id`, `form`/`getcourse_system` UTM snapshots, and non-empty XLSX bytes, then rolled back without persisting the smoke lead.
+- Changed Telegram/VK funnel day scheduling in `src/funnelhub/services/funnel_engine.py`: `delay: Nd` now schedules for 09:00 MSK (fixed UTC+3) on the target local calendar day instead of `now + 24h`; `0m`, minute/hour delays, and questionnaire `reminder_delay: 5m` remain relative.
+- Added day-scheduling regression coverage in `tests/test_funnel_engine.py`.
+- Local verification after the scheduling fix passed:
+  - `ruff check .`
+  - `mypy src`
+  - `pytest tests/test_funnel_engine.py tests/test_funnel_runner.py tests/test_funnel_answers.py -q` with 22 tests.
+  - `pytest -x` with 96 tests.
+  - `docker compose -f docker-compose.prod.yml config --quiet` with only existing local unset-variable warnings.
+- Production deploy completed for the scheduling fix:
+  - Uploaded project archive to `/opt/funnelhub`.
+  - Rebuilt and recreated `app`, `telegram-bot`, and `funnel-worker`.
+  - Preserved `EMAIL_PROVIDER=disabled`.
+  - Alembic remained `0003_inbox_statuses (head)`.
+  - Public `https://bot.aisukam.ru/health` returned HTTP 200 with `{"status":"ok","service":"FunnelHub"}`.
+  - Container smoke confirmed `schedule_after_delay(2026-06-04T14:30Z, "1d")` returns `2026-06-05T06:00:00Z`, i.e. 09:00 MSK.
+  - Two already-active daily pending production funnel states were adjusted from the old `+24h` schedule to 09:00 MSK on their existing target local date.
+  - Latest logs showed Telegram polling running and `funnel-worker` completing a clean pass.
+- Implemented and deployed a concrete Unisender Go email provider adapter:
+  - `src/funnelhub/services/email_messaging.py` now includes `UnisenderGoEmailProviderClient`.
+  - `src/funnelhub/config.py` has `EMAIL_REPLY_TO_EMAIL`, `EMAIL_REPLY_TO_NAME`, `EMAIL_UNISENDER_GO_API_KEY`, and `EMAIL_UNISENDER_GO_API_URL`.
+  - `.env.example` and `.harness/docs/email-provider.md` document `EMAIL_PROVIDER=unisender_go`.
+  - Adapter sends JSON to `https://goapi.unisender.ru/ru/transactional/api/v1/email/send.json` with `X-API-KEY`, from/reply-to fields, plaintext body, idempotence key, FunnelHub unsubscribe URL, and scalar metadata.
+- Local verification after Unisender Go adapter:
+  - `ruff check src/funnelhub/services/email_messaging.py src/funnelhub/config.py tests/test_email_messaging.py` passed.
+  - `pytest tests/test_email_messaging.py tests/test_funnel_runner.py -q` passed: 15 tests.
+  - `mypy src` passed.
+  - `ruff check .` passed.
+  - `pytest -x` passed: 100 tests.
+  - `docker compose -f docker-compose.prod.yml config --quiet` passed with existing local unset-variable warnings.
+- Production deploy for the adapter completed: code was uploaded to `/opt/funnelhub`, images were rebuilt, and `app`, `telegram-bot`, and `funnel-worker` were recreated.
+- Production `.env` was temporarily set to `EMAIL_PROVIDER=unisender_go` with `EMAIL_FROM_EMAIL=info@aisukam.ru`, `EMAIL_FROM_NAME=Айсу Кам`, `EMAIL_REPLY_TO_EMAIL=info@aisukam.ru`, and the supplied Unisender Go API key.
+- Production smoke result: app health was OK and settings loaded provider/from/reply-to/key presence correctly, but the real Unisender test send to `aisukam-info@yandex.ru` failed with HTTP 401, code `114`, message `user not found`.
+- Interpretation: DNS/domain/DKIM are not the problem; Unisender Go does not recognize the supplied API key for that API/account. User must provide a fresh API key from the Unisender Go `API-ключ` page, ideally after rotating the previously pasted key.
+- After the failed auth smoke, production `EMAIL_PROVIDER` was restored to `disabled` so no automatic email attempts fail while waiting for a valid key. The Unisender env fields remain present in production `.env`; public `/health` returned OK after the rollback.
+- User then provided a second key from the Unisender Go `API-ключ` page. Production env was updated and the real send was retried, but Unisender returned the same HTTP 401 / code `114` / `user not found`. Provider was restored to `disabled` again and public `/health` returned OK.
+- Likely next user-side action: ensure the `Доступ к API` toggle is on and press `Сохранить` in the Unisender Go API-key page, then ask Unisender support why both keys return code `114 user not found` from `https://goapi.unisender.ru/ru/transactional/api/v1/email/send.json` despite the domain being verified.
+- User confirmed they had not pressed `Сохранить` after generating the second API key. After saving, production was updated with the same key again and the real Unisender smoke succeeded:
+  - `EMAIL_PROVIDER=unisender_go`
+  - from/reply-to `info@aisukam.ru`
+  - recipient `aisukam-info@yandex.ru`
+  - Unisender response `status=success`, `job_id=1wUxhG-000zTe-9m4z`, `emails=['aisukam-info@yandex.ru']`
+  - `app`, `telegram-bot`, and `funnel-worker` were running after the smoke.
+  - Production remains enabled with `EMAIL_PROVIDER=unisender_go`.
+- Implemented and deployed the Aisu Kam email chain:
+  - New funnel file: `content/funnels/aisu_email.yml`.
+  - Funnel key: `aisu_email_sequence`.
+  - 13 daily email steps copied from the Telegram/VK scenario starting at the second-day CTA content.
+  - Every step has `delay: 1d`, so the existing scheduler sends at 09:00 MSK on the next local calendar day.
+  - All CTA buttons point to `https://aisukam.ru/courses`.
+  - GetCourse webhook and `/join/getcourse` now start this email funnel in parallel when the lead has a subscribed email; repeated webhooks reuse the same email funnel state.
+  - Worker loads `DEFAULT_EMAIL_FUNNEL_PATH` only when `EMAIL_PROVIDER` creates an email client, avoiding failed email passes if provider is disabled later.
+- Added HTML email rendering:
+  - Plain text fallback still includes button URLs and unsubscribe URL.
+  - HTML body renders paragraphs, green CTA buttons, unsubscribe link, and the signature text `С любовью, Айсу Кам. Школа искусства преображения жизни "Сатья-Юга"`.
+  - `EMAIL_SIGNATURE_IMAGE_URL` controls the round portrait in the signature.
+- Generated the requested mirrored round portrait from `C:/Users/circlealgorythm/Pictures/Ксюша/2E1Hr_0f5X7R6KjP_JNZ_xw2AMlj3j25oRCl7DTo6-9N0E_xAjgdEZoeCC7AcKCl3HCRpxBf3f4pS1y9PD7QxOgC.jpg`.
+  - Local output: `public/assets/email/aisu-kam-signature.png`.
+  - Production URL: `https://bot.aisukam.ru/assets/email/aisu-kam-signature.png`.
+  - FastAPI now mounts `public/assets` at `/assets`, and Dockerfile copies `public/`.
+- Production `.env` now includes:
+  - `DEFAULT_EMAIL_FUNNEL_PATH=content/funnels/aisu_email.yml`
+  - `EMAIL_SIGNATURE_IMAGE_URL=https://bot.aisukam.ru/assets/email/aisu-kam-signature.png`
+  - `EMAIL_PROVIDER=unisender_go`
+  - `EMAIL_FROM_EMAIL=info@aisukam.ru`
+  - `EMAIL_FROM_NAME=Айсу Кам`
+  - `EMAIL_REPLY_TO_EMAIL=info@aisukam.ru`
+  - `EMAIL_REPLY_TO_NAME=Айсу Кам`
+- Verification after email sequence/signature work:
+  - Local `ruff check .` passed.
+  - Local `mypy src` passed.
+  - Targeted pytest for email messaging, funnel runner, GetCourse webhook, and email funnel definition passed: 37 tests.
+  - Full local `pytest -x` passed: 101 tests.
+  - `docker compose -f docker-compose.prod.yml config --quiet` passed with existing local unset-variable warnings.
+  - Production `/health` returned HTTP 200.
+  - Production signature PNG returned HTTP 200 and `image/png`.
+  - Production app loaded `EMAIL_PROVIDER=unisender_go`, `EMAIL_SIGNATURE_IMAGE_URL`, and `aisu_email_sequence` with 13 steps.
+  - Production rollback GetCourse ingest smoke created an unsaved `aisu_email_sequence` state at `day_02_step_08`, due `2026-06-05 06:00:00+00:00` (09:00 MSK), then rolled back without persisting the test lead.
+  - Production `funnel-worker` logged repeated clean passes with no errors after deploy.
+- User later asked to move the email signature portrait higher inside the circle. The local and production `public/assets/email/aisu-kam-signature.png` crop was adjusted so the mirrored hair crown sits at the top edge without cutting the face. Production `app` was rebuilt/recreated, public `/health` returned HTTP 200, and the PNG URL returned HTTP 200 with `image/png`.

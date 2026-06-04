@@ -1,19 +1,25 @@
 from __future__ import annotations
 
+import json
 import uuid
 from collections.abc import AsyncGenerator
 from typing import Any
 
+import httpx
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import delete, func, select
 
+from funnelhub.config import Settings
 from funnelhub.db.base import Base
 from funnelhub.db.models import EmailSubscription, Event, Lead, Message
 from funnelhub.db.session import async_session_maker, engine
 from funnelhub.main import app
 from funnelhub.services.email_messaging import (
+    DebugEmailProviderClient,
     EmailProviderSendResult,
+    UnisenderGoEmailProviderClient,
+    build_email_provider_client,
     send_email_text_message,
 )
 
@@ -26,6 +32,7 @@ class FakeEmailClient:
         self.to_email: str | None = None
         self.subject: str | None = None
         self.text: str | None = None
+        self.html: str | None = None
         self.metadata: dict[str, Any] | None = None
 
     async def send_email(
@@ -42,6 +49,7 @@ class FakeEmailClient:
         self.to_email = to_email
         self.subject = subject
         self.text = text
+        self.html = html
         self.metadata = metadata
         return EmailProviderSendResult(
             external_message_id="email-123",
@@ -62,6 +70,11 @@ class FailingEmailClient(FakeEmailClient):
         metadata: dict[str, Any] | None = None,
     ) -> EmailProviderSendResult:
         raise RuntimeError("provider is down")
+
+
+@pytest.fixture
+def anyio_backend() -> str:
+    return "asyncio"
 
 
 @pytest.fixture
@@ -130,6 +143,12 @@ async def test_send_email_text_message_records_outbound_message(
             public_base_url="https://bot.aisukam.ru",
             from_email="hello@example.com",
             from_name="Aisu",
+            signature_image_url="https://bot.aisukam.ru/assets/email/aisu-kam.jpg",
+            metadata={
+                "buttons": [
+                    {"text": "Перейти к курсу", "url": "https://aisukam.ru/courses"}
+                ]
+            },
         )
         await session.commit()
 
@@ -137,7 +156,14 @@ async def test_send_email_text_message_records_outbound_message(
     assert client.to_email == TEST_EMAIL
     assert client.subject == "Первое письмо"
     assert client.text is not None
+    assert "Перейти к курсу: https://aisukam.ru/courses" in client.text
     assert "https://bot.aisukam.ru/email/unsubscribe/" in client.text
+    assert client.html is not None
+    assert 'href="https://aisukam.ru/courses"' in client.html
+    assert "Перейти к курсу" in client.html
+    assert 'src="https://bot.aisukam.ru/assets/email/aisu-kam.jpg"' in client.html
+    assert "С любовью, Айсу Кам." in client.html
+    assert "Сатья-Юга" in client.html
 
     async with async_session_maker() as session:
         subscription = await session.scalar(
@@ -243,3 +269,104 @@ async def test_unsubscribe_endpoint_is_idempotent(
             )
         )
         assert event_count == 1
+
+
+async def test_unisender_go_client_posts_expected_payload() -> None:
+    captured_requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured_requests.append(request)
+        return httpx.Response(200, json={"job_id": "unisender-job-123"})
+
+    http_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    client = UnisenderGoEmailProviderClient(
+        api_key="test-api-key",
+        api_url="https://goapi.unisender.ru/ru/transactional/api/v1/email/send.json",
+        default_from_email="info@aisukam.ru",
+        default_from_name="Айсу Кам",
+        default_reply_to_email="info@aisukam.ru",
+        http_client=http_client,
+    )
+
+    try:
+        result = await client.send_email(
+            to_email="lead@example.com",
+            subject="Тестовое письмо",
+            text="Здравствуйте",
+            html="<p>Здравствуйте</p>",
+            metadata={
+                "lead_id": "lead-123",
+                "message_id": "message-123",
+                "unsubscribe_url": "https://bot.aisukam.ru/email/unsubscribe/token",
+                "buttons": [{"text": "ignored"}],
+            },
+        )
+    finally:
+        await http_client.aclose()
+
+    assert result.external_message_id == "unisender-job-123"
+    assert len(captured_requests) == 1
+    request = captured_requests[0]
+    assert request.headers["X-API-KEY"] == "test-api-key"
+
+    payload = json.loads(request.content)
+    message = payload["message"]
+    assert message["recipients"] == [{"email": "lead@example.com"}]
+    assert message["subject"] == "Тестовое письмо"
+    assert message["from_email"] == "info@aisukam.ru"
+    assert message["from_name"] == "Айсу Кам"
+    assert message["reply_to"] == "info@aisukam.ru"
+    assert message["body"]["plaintext"] == "Здравствуйте"
+    assert message["body"]["html"] == "<p>Здравствуйте</p>"
+    assert message["idempotence_key"] == "message-123"
+    assert message["options"]["unsubscribe_url"] == (
+        "https://bot.aisukam.ru/email/unsubscribe/token"
+    )
+    assert message["global_metadata"] == {
+        "lead_id": "lead-123",
+        "message_id": "message-123",
+        "unsubscribe_url": "https://bot.aisukam.ru/email/unsubscribe/token",
+    }
+
+
+async def test_unisender_go_client_raises_on_provider_error() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(400, json={"error": "bad request"})
+
+    http_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    client = UnisenderGoEmailProviderClient(
+        api_key="test-api-key",
+        api_url="https://goapi.unisender.ru/ru/transactional/api/v1/email/send.json",
+        default_from_email="info@aisukam.ru",
+        http_client=http_client,
+    )
+
+    try:
+        with pytest.raises(RuntimeError, match="Unisender Go email send failed"):
+            await client.send_email(
+                to_email="lead@example.com",
+                subject="Ошибка",
+                text="Ошибка",
+            )
+    finally:
+        await http_client.aclose()
+
+
+def test_build_email_provider_client_supports_unisender_go() -> None:
+    client = build_email_provider_client(
+        Settings(
+            EMAIL_PROVIDER="unisender_go",
+            EMAIL_UNISENDER_GO_API_KEY="test-api-key",
+            EMAIL_FROM_EMAIL="info@aisukam.ru",
+            EMAIL_FROM_NAME="Айсу Кам",
+            EMAIL_REPLY_TO_EMAIL="info@aisukam.ru",
+        )
+    )
+
+    assert isinstance(client, UnisenderGoEmailProviderClient)
+
+
+def test_build_email_provider_client_debug() -> None:
+    client = build_email_provider_client(Settings(EMAIL_PROVIDER="debug"))
+
+    assert isinstance(client, DebugEmailProviderClient)

@@ -28,6 +28,7 @@ class FakeTelegramBot:
     def __init__(self) -> None:
         self.chat_id: str | None = None
         self.text: str | None = None
+        self.texts: list[str] = []
 
     async def send_message(
         self,
@@ -37,6 +38,7 @@ class FakeTelegramBot:
     ) -> FakeSentMessage:
         self.chat_id = chat_id
         self.text = text
+        self.texts.append(text)
         return FakeSentMessage(message_id=888)
 
 
@@ -62,6 +64,10 @@ class FakeEmailClient:
         self.to_email: str | None = None
         self.subject: str | None = None
         self.text: str | None = None
+        self.html: str | None = None
+        self.from_email: str | None = None
+        self.from_name: str | None = None
+        self.metadata: dict[str, Any] | None = None
 
     async def send_email(
         self,
@@ -77,6 +83,10 @@ class FakeEmailClient:
         self.to_email = to_email
         self.subject = subject
         self.text = text
+        self.html = html
+        self.from_email = from_email
+        self.from_name = from_name
+        self.metadata = metadata
         return EmailProviderSendResult(external_message_id="email-889")
 
 
@@ -272,6 +282,42 @@ def build_email_definition() -> FunnelDefinition:
                     "subject": "Email welcome",
                     "text": "Welcome from email runner",
                     "buttons": [{"text": "Open", "url": "https://example.com/email"}],
+                },
+            ],
+        }
+    )
+
+
+def build_questionnaire_definition() -> FunnelDefinition:
+    return FunnelDefinition.model_validate(
+        {
+            "key": "runner_question_funnel",
+            "version": 1,
+            "questionnaire": {
+                "questions": {
+                    "topic": {
+                        "key": "topic",
+                        "text": "Что актуальнее?",
+                        "reminder_delay": "5m",
+                        "options": [{"key": "money", "text": "Деньги"}],
+                    }
+                }
+            },
+            "steps": [
+                {
+                    "key": "question_topic",
+                    "delay": "0m",
+                    "channel": "telegram",
+                    "kind": "question",
+                    "question_key": "topic",
+                    "text": "Что актуальнее?",
+                    "buttons": [{"text": "Деньги"}],
+                },
+                {
+                    "key": "first_video",
+                    "delay": "5m",
+                    "channel": "telegram",
+                    "text": "Первое видео",
                 },
             ],
         }
@@ -482,6 +528,7 @@ async def test_run_due_funnel_once_sends_email_step(
             public_base_url="https://bot.aisukam.ru",
             email_from_email="hello@example.com",
             email_from_name="Aisu",
+            email_signature_image_url="https://bot.aisukam.ru/assets/email/aisu-kam.jpg",
             now=now,
         )
 
@@ -494,6 +541,13 @@ async def test_run_due_funnel_once_sends_email_step(
     assert email_client.text is not None
     assert "https://example.com/email" in email_client.text
     assert "https://bot.aisukam.ru/email/unsubscribe/" in email_client.text
+    assert email_client.html is not None
+    assert 'href="https://example.com/email"' in email_client.html
+    assert 'src="https://bot.aisukam.ru/assets/email/aisu-kam.jpg"' in email_client.html
+    assert email_client.from_email == "hello@example.com"
+    assert email_client.from_name == "Aisu"
+    assert email_client.metadata is not None
+    assert email_client.metadata["step_key"] == "email_welcome"
 
     async with async_session_maker() as session:
         message = await session.scalar(
@@ -518,6 +572,57 @@ async def test_run_due_funnel_once_sends_email_step(
         assert state is not None
         assert state.status == "completed"
         assert state.current_step_key is None
+
+
+async def test_run_due_funnel_once_repeats_pending_question_after_content_only(
+    prepare_database: None,
+) -> None:
+    lead_id = await create_lead_with_telegram_identity()
+    definition = build_questionnaire_definition()
+    now = datetime(2026, 5, 28, 12, 0, tzinfo=UTC)
+    bot = FakeTelegramBot()
+
+    async with async_session_maker() as session:
+        await start_funnel_for_lead(session, lead_id, definition, now=now)
+        await session.commit()
+
+    async with async_session_maker() as session:
+        first_stats = await run_due_funnel_once(
+            session=session,
+            definition=definition,
+            bot=bot,
+            now=now,
+        )
+
+    assert first_stats.sent == 1
+    assert bot.texts == ["Что актуальнее?"]
+
+    async with async_session_maker() as session:
+        second_stats = await run_due_funnel_once(
+            session=session,
+            definition=definition,
+            bot=bot,
+            now=now + timedelta(minutes=5),
+        )
+
+    assert second_stats.sent == 1
+    assert bot.texts == ["Что актуальнее?", "Первое видео", "Что актуальнее?"]
+
+    async with async_session_maker() as session:
+        messages = await session.scalars(
+            select(Message)
+            .where(
+                Message.lead_id == lead_id,
+                Message.channel == "telegram",
+                Message.direction == "outbound",
+            )
+            .order_by(Message.created_at.asc())
+        )
+        assert [message.body for message in messages] == [
+            "Что актуальнее?",
+            "Первое видео",
+            "Что актуальнее?",
+        ]
 
 
 async def test_run_due_funnel_once_retries_failed_email_step(

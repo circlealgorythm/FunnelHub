@@ -10,10 +10,11 @@ from sqlalchemy import delete, select
 
 from funnelhub.config import get_settings
 from funnelhub.db.base import Base
-from funnelhub.db.models import Conversation, Lead, Message, MessengerIdentity
+from funnelhub.db.models import Conversation, EmailSubscription, Lead, Message, MessengerIdentity
 from funnelhub.db.session import async_session_maker, engine
 from funnelhub.main import app
 from funnelhub.services.auth import hash_password
+from funnelhub.services.email_messaging import EmailProviderSendResult
 from funnelhub.services.inbox import (
     get_inbox_conversation_detail,
     list_inbox_conversations,
@@ -41,10 +42,31 @@ class FakeTelegramBot:
         return FakeSentMessage(message_id=1001)
 
 
+class FakeEmailClient:
+    async def send_email(
+        self,
+        *,
+        to_email: str,
+        subject: str,
+        text: str,
+        html: str | None = None,
+        from_email: str | None = None,
+        from_name: str | None = None,
+        metadata: dict[str, object] | None = None,
+    ) -> EmailProviderSendResult:
+        return EmailProviderSendResult(external_message_id="email-inbox-1")
+
+
 @dataclass(frozen=True)
 class FakeClients:
     telegram_bot: FakeTelegramBot | None = None
     vk_client: object | None = None
+    email_client: FakeEmailClient | None = None
+    email_subject: str = "Ответ от Айсу Кам"
+    public_base_url: str = "https://bot.aisukam.ru"
+    email_from_email: str | None = "info@aisukam.ru"
+    email_from_name: str | None = "Айсу Кам"
+    email_signature_image_url: str | None = None
 
 
 @pytest.fixture(autouse=True)
@@ -68,7 +90,7 @@ async def cleanup_test_leads() -> None:
         await session.commit()
 
 
-async def create_lead_with_identity() -> uuid.UUID:
+async def create_lead_with_identity(*, with_email: bool = False) -> uuid.UUID:
     async with async_session_maker() as session:
         lead = Lead(
             id=uuid.uuid4(),
@@ -90,6 +112,16 @@ async def create_lead_with_identity() -> uuid.UUID:
                 raw_profile={},
             )
         )
+        if with_email:
+            session.add(
+                EmailSubscription(
+                    id=uuid.uuid4(),
+                    lead_id=lead.id,
+                    email="inbox-email@example.com",
+                    normalized_email="inbox-email@example.com",
+                    status="subscribed",
+                )
+            )
         session.add(
             Message(
                 id=uuid.uuid4(),
@@ -176,7 +208,7 @@ async def test_send_inbox_reply_records_outbound_reply_on_conversation() -> None
             body="Нужен ответ",
         )
         assert inbound is not None
-        message = await send_inbox_reply(
+        messages = await send_inbox_reply(
             session=session,
             conversation_id=inbound.conversation_id,
             text="Отвечаем из inbox",
@@ -189,15 +221,54 @@ async def test_send_inbox_reply_records_outbound_reply_on_conversation() -> None
         assert conversation is not None
         assert conversation.status == "replied"
 
-        saved_message = await session.get(Message, message.id)
+        saved_message = await session.get(Message, messages[0].id)
         assert saved_message is not None
         assert saved_message.conversation_id == conversation.id
         assert saved_message.direction == "outbound"
         assert saved_message.body == "Отвечаем из inbox"
 
 
+async def test_send_inbox_reply_can_target_bot_and_email() -> None:
+    await create_lead_with_identity(with_email=True)
+
+    async with async_session_maker() as session:
+        inbound = await record_inbound_messenger_message(
+            session=session,
+            channel="telegram",
+            external_user_id="telegram-inbox",
+            body="Ответьте везде",
+        )
+        assert inbound is not None
+        messages = await send_inbox_reply(
+            session=session,
+            conversation_id=inbound.conversation_id,
+            text="Единый ответ",
+            channels=["telegram", "email"],
+            clients=FakeClients(
+                telegram_bot=FakeTelegramBot(),
+                email_client=FakeEmailClient(),
+            ),
+        )
+        await session.commit()
+
+    assert [message.channel for message in messages] == ["telegram", "email"]
+    async with async_session_maker() as session:
+        saved_messages = (
+            await session.scalars(
+                select(Message)
+                .where(
+                    Message.conversation_id == inbound.conversation_id,
+                    Message.direction == "outbound",
+                    Message.body.ilike("%Единый ответ%"),
+                )
+                .order_by(Message.channel.asc())
+            )
+        ).all()
+        assert {message.channel for message in saved_messages} == {"telegram", "email"}
+
+
 async def test_list_and_detail_inbox_conversations() -> None:
-    await create_lead_with_identity()
+    await create_lead_with_identity(with_email=True)
 
     async with async_session_maker() as session:
         inbound = await record_inbound_messenger_message(
@@ -222,6 +293,8 @@ async def test_list_and_detail_inbox_conversations() -> None:
             "Earlier funnel message",
             "Покажите в API",
         ]
+        assert [option.channel for option in detail.reply_channels] == ["telegram", "email"]
+        assert detail.reply_channels[0].is_default is True
 
 
 async def test_inbox_api_lists_and_returns_conversation_detail(

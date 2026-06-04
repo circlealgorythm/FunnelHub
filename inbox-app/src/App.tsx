@@ -19,6 +19,7 @@ import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useState } fro
 import type { ReactNode } from "react";
 
 type ConversationStatus = "open" | "needs_reply" | "replied" | "closed";
+type ReplyChannel = "telegram" | "vk" | "email";
 
 type Conversation = {
   id: string;
@@ -50,9 +51,17 @@ type InboxMessage = {
   metadata: Record<string, unknown>;
 };
 
+type ReplyChannelOption = {
+  channel: ReplyChannel;
+  label: string;
+  detail: string | null;
+  is_default: boolean;
+};
+
 type ConversationDetail = {
   conversation: Conversation;
   messages: InboxMessage[];
+  reply_channels: ReplyChannelOption[];
 };
 
 type LoadState = "idle" | "loading" | "error";
@@ -121,6 +130,7 @@ const statusLabels: Record<ConversationStatus, string> = {
 const channelLabels: Record<string, string> = {
   telegram: "Telegram",
   vk: "VK",
+  email: "Email",
 };
 
 const filters: Array<{ value: ConversationStatus | "all"; label: string }> = [
@@ -141,6 +151,7 @@ export function App() {
   const [filter, setFilter] = useState<ConversationStatus | "all">("needs_reply");
   const [query, setQuery] = useState("");
   const [draft, setDraft] = useState("");
+  const [replyChannels, setReplyChannels] = useState<ReplyChannel[]>([]);
   const [listState, setListState] = useState<LoadState>("idle");
   const [detailState, setDetailState] = useState<LoadState>("idle");
   const [replyState, setReplyState] = useState<LoadState>("idle");
@@ -343,8 +354,24 @@ export function App() {
       void loadDetail(selectedId);
     } else {
       setDetail(null);
+      setReplyChannels([]);
     }
   }, [loadDetail, selectedId]);
+
+  useEffect(() => {
+    if (!detail) {
+      setReplyChannels([]);
+      return;
+    }
+    const defaultChannels = detail.reply_channels
+      .filter((option) => option.is_default)
+      .map((option) => option.channel);
+    setReplyChannels(
+      defaultChannels.length > 0
+        ? defaultChannels
+        : detail.reply_channels.slice(0, 1).map((option) => option.channel)
+    );
+  }, [detail]);
 
   useEffect(() => {
     if (activeView === "database" && selectedLeadId) {
@@ -356,7 +383,7 @@ export function App() {
 
   async function submitReply(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!selectedId || !draft.trim()) {
+    if (!selectedId || !draft.trim() || replyChannels.length === 0) {
       return;
     }
 
@@ -369,7 +396,7 @@ export function App() {
           method: "POST",
           credentials: "include",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text: draft.trim() }),
+          body: JSON.stringify({ text: draft.trim(), channels: replyChannels }),
         }
       );
       if (!response.ok) {
@@ -416,6 +443,14 @@ export function App() {
     setActiveView(view);
     const url = view === "inbox" && selectedId ? `?conversation=${selectedId}` : window.location.pathname;
     window.history.replaceState(null, "", url);
+  }
+
+  function toggleReplyChannel(channel: ReplyChannel) {
+    setReplyChannels((current) =>
+      current.includes(channel)
+        ? current.filter((selectedChannel) => selectedChannel !== channel)
+        : [...current, channel]
+    );
   }
 
   function submitDatabaseSearch(event: FormEvent<HTMLFormElement>) {
@@ -709,7 +744,10 @@ export function App() {
                   >
                     <p>{message.body}</p>
                     <footer>
-                      <span>{message.direction === "outbound" ? "Айсу" : "Клиент"}</span>
+                      <span>
+                        {message.direction === "outbound" ? "Айсу" : "Клиент"} ·{" "}
+                        {channelLabels[message.channel] ?? message.channel}
+                      </span>
                       <time>{formatTime(message.created_at)}</time>
                     </footer>
                   </article>
@@ -743,6 +781,28 @@ export function App() {
 
             <form className="reply-box" onSubmit={(event) => void submitReply(event)}>
               <label htmlFor="reply">Ответ</label>
+              {detail.reply_channels.length > 0 ? (
+                <div className="reply-targets" role="group" aria-label="Куда отправить">
+                  <span className="reply-targets-title">Куда отправить</span>
+                  <div className="reply-target-list">
+                    {detail.reply_channels.map((option) => (
+                      <label className="reply-target" key={option.channel}>
+                        <input
+                          checked={replyChannels.includes(option.channel)}
+                          onChange={() => toggleReplyChannel(option.channel)}
+                          type="checkbox"
+                        />
+                        <span>
+                          <strong>{option.label}</strong>
+                          {option.detail ? <small>{option.detail}</small> : null}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <p className="reply-unavailable">Нет активного канала для ответа.</p>
+              )}
               <textarea
                 id="reply"
                 value={draft}
@@ -750,9 +810,19 @@ export function App() {
                 placeholder="Напишите личный ответ..."
                 rows={3}
               />
-              <button className="send-button" disabled={replyState === "loading"} type="submit">
+              <button
+                className="send-button"
+                disabled={replyState === "loading" || replyChannels.length === 0}
+                type="submit"
+              >
                 <Send aria-hidden="true" size={18} />
-                <span>{replyState === "loading" ? "Отправка" : "Отправить"}</span>
+                <span>
+                  {replyState === "loading"
+                    ? "Отправка"
+                    : replyChannels.length > 1
+                      ? `Отправить: ${replyChannels.length}`
+                      : "Отправить"}
+                </span>
               </button>
             </form>
           </>

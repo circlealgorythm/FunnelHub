@@ -47,6 +47,10 @@ class Settings(BaseSettings):
     default_funnel_path: str = Field(
         default="content/funnels/aisu_consultation.yml", validation_alias="DEFAULT_FUNNEL_PATH"
     )
+    default_email_funnel_path: str | None = Field(
+        default="content/funnels/aisu_email.yml",
+        validation_alias="DEFAULT_EMAIL_FUNNEL_PATH",
+    )
     funnel_runner_interval_seconds: int = Field(
         default=60, validation_alias="FUNNEL_RUNNER_INTERVAL_SECONDS"
     )
@@ -75,8 +79,22 @@ class Settings(BaseSettings):
     email_provider: str = Field(default="disabled", validation_alias="EMAIL_PROVIDER")
     email_from_email: str | None = Field(default=None, validation_alias="EMAIL_FROM_EMAIL")
     email_from_name: str = Field(default="FunnelHub", validation_alias="EMAIL_FROM_NAME")
+    email_reply_to_email: str | None = Field(default=None, validation_alias="EMAIL_REPLY_TO_EMAIL")
+    email_reply_to_name: str | None = Field(default=None, validation_alias="EMAIL_REPLY_TO_NAME")
     email_default_subject: str = Field(
         default="Сообщение от Aisu Kam", validation_alias="EMAIL_DEFAULT_SUBJECT"
+    )
+    email_signature_image_url: str | None = Field(
+        default=None,
+        validation_alias="EMAIL_SIGNATURE_IMAGE_URL",
+    )
+    email_unisender_go_api_key: str | None = Field(
+        default=None,
+        validation_alias="EMAIL_UNISENDER_GO_API_KEY",
+    )
+    email_unisender_go_api_url: str = Field(
+        default="https://goapi.unisender.ru/ru/transactional/api/v1/email/send.json",
+        validation_alias="EMAIL_UNISENDER_GO_API_URL",
     )
 
 

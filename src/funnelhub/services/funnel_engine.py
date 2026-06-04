@@ -4,7 +4,7 @@ import json
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, time, timedelta, timezone
 from pathlib import Path
 from typing import Any, Literal, Protocol
 
@@ -16,6 +16,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from funnelhub.db.models import FunnelState
 
 SUPPORTED_CHANNELS = {"messenger", "telegram", "vk", "email"}
+FUNNEL_LOCAL_TIMEZONE = timezone(timedelta(hours=3), name="Europe/Moscow")
+DAILY_FUNNEL_SEND_TIME = time(hour=9)
 
 
 class FunnelButton(BaseModel):
@@ -153,7 +155,7 @@ async def start_funnel_for_lead(
         funnel_key=definition.key,
         status="active",
         current_step_key=first_step.key,
-        next_run_at=current_time + parse_delay(first_step.delay),
+        next_run_at=schedule_after_delay(current_time, first_step.delay),
         metadata_=build_state_metadata(definition=definition, step_index=0),
     )
     session.add(state)
@@ -236,7 +238,7 @@ async def run_due_funnel_step(
 
     next_step = definition.steps[next_index]
     state.current_step_key = next_step.key
-    next_delay = parse_delay(next_step.delay)
+    next_delay = next_step.delay
     if step.kind == "question" and step.question_key is not None:
         question = (
             definition.questionnaire.questions.get(step.question_key)
@@ -244,10 +246,10 @@ async def run_due_funnel_step(
             else None
         )
         if question is not None:
-            next_delay = parse_delay(question.reminder_delay)
+            next_delay = question.reminder_delay
             metadata["questionnaire_waiting_for_step_key"] = next_step.key
 
-    state.next_run_at = current_time + next_delay
+    state.next_run_at = schedule_after_delay(current_time, next_delay)
     state.metadata_ = build_state_metadata(
         definition=definition,
         step_index=next_index,
@@ -303,6 +305,22 @@ def parse_delay(value: str) -> timedelta:
     if unit == "d":
         return timedelta(days=amount)
     raise ValueError("Delay unit must be one of: m, h, d.")
+
+
+def schedule_after_delay(current_time: datetime, delay: str) -> datetime:
+    normalized_time = normalize_datetime(current_time)
+    parsed_delay = parse_delay(delay)
+    if delay.endswith("d"):
+        day_count = int(delay[:-1])
+        local_time = normalized_time.astimezone(FUNNEL_LOCAL_TIMEZONE)
+        target_date = local_time.date() + timedelta(days=day_count)
+        target_local_time = datetime.combine(
+            target_date,
+            DAILY_FUNNEL_SEND_TIME,
+            tzinfo=FUNNEL_LOCAL_TIMEZONE,
+        )
+        return target_local_time.astimezone(UTC)
+    return normalized_time + parsed_delay
 
 
 def normalize_datetime(value: datetime | None) -> datetime:

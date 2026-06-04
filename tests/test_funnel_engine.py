@@ -18,6 +18,7 @@ from funnelhub.services.funnel_engine import (
     load_funnel_definition,
     parse_delay,
     run_due_funnel_step,
+    schedule_after_delay,
     start_funnel_for_lead,
 )
 
@@ -122,15 +123,67 @@ def test_parse_delay() -> None:
         parse_delay("1w")
 
 
+def test_schedule_day_delay_uses_next_local_morning() -> None:
+    current_time = datetime(2026, 5, 28, 14, 30, tzinfo=UTC)
+
+    assert schedule_after_delay(current_time, "1d") == datetime(2026, 5, 29, 6, 0, tzinfo=UTC)
+
+
+def test_schedule_day_delay_uses_next_calendar_day_even_before_morning() -> None:
+    current_time = datetime(2026, 5, 28, 5, 30, tzinfo=UTC)
+
+    assert schedule_after_delay(current_time, "1d") == datetime(2026, 5, 29, 6, 0, tzinfo=UTC)
+
+
+def test_schedule_short_delay_stays_relative() -> None:
+    current_time = datetime(2026, 5, 28, 14, 30, tzinfo=UTC)
+
+    assert schedule_after_delay(current_time, "0m") == current_time
+    assert schedule_after_delay(current_time, "30m") == current_time + timedelta(minutes=30)
+
+
 def test_load_funnel_definition_from_yaml() -> None:
     definition = load_funnel_definition(Path("content/funnels/aisu_consultation.yml"))
 
     assert definition.key == "aisu_consultation"
-    assert definition.version == 1
+    assert definition.version == 2
     assert definition.questionnaire is not None
     assert definition.questionnaire.questions["topic"].options[0].text == "Деньги"
     assert definition.steps[0].key == "welcome"
     assert definition.steps[1].kind == "question"
+
+
+def test_aisu_consultation_uses_day_02_through_day_18_buttons_only() -> None:
+    definition = load_funnel_definition(Path("content/funnels/aisu_consultation.yml"))
+
+    day_steps = [step for step in definition.steps if step.key.startswith("day_")]
+    button_steps = [step for step in day_steps if step.buttons]
+
+    assert [step.key for step in button_steps] == [
+        "day_02",
+        "day_03",
+        "day_04",
+        "day_05",
+        "day_06",
+        "day_07_part_2",
+        "day_08",
+        "day_09",
+        "day_10",
+        "day_11",
+        "day_12",
+        "day_13",
+        "day_14",
+        "day_15",
+        "day_16",
+        "day_17",
+        "day_18",
+    ]
+    assert definition.steps[-1].key == "day_18"
+    assert {
+        button.url
+        for step in button_steps
+        for button in step.buttons
+    } == {"https://aisukam.ru/courses"}
 
 
 async def test_start_funnel_for_lead_creates_state(
@@ -203,7 +256,7 @@ async def test_run_due_funnel_step_advances_state(
     assert result is not None
     assert result.sent_step_key == "welcome"
     assert result.next_step_key == "day_1"
-    assert result.next_run_at == now + timedelta(days=1)
+    assert result.next_run_at == datetime(2026, 5, 29, 6, 0, tzinfo=UTC)
     assert [sent.step.key for sent in sender.sent] == ["welcome"]
 
     async with async_session_maker() as session:
@@ -251,7 +304,7 @@ async def test_run_due_funnel_step_completes_after_last_step(
     async with async_session_maker() as session:
         state = await start_funnel_for_lead(session, lead_id, definition, now=now)
         await run_due_funnel_step(session, state, definition, sender, now=now)
-        second_run_at = now + timedelta(days=1)
+        second_run_at = datetime(2026, 5, 29, 6, 0, tzinfo=UTC)
         result = await run_due_funnel_step(session, state, definition, sender, now=second_run_at)
         await session.commit()
 

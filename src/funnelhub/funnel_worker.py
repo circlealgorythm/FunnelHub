@@ -25,7 +25,11 @@ async def main() -> None:
             "to run the funnel worker."
         )
 
-    definition = load_funnel_definition(settings.default_funnel_path)
+    definitions = [load_funnel_definition(settings.default_funnel_path)]
+    if settings.default_email_funnel_path and email_client is not None:
+        email_definition = load_funnel_definition(settings.default_email_funnel_path)
+        if email_definition.key != definitions[0].key:
+            definitions.append(email_definition)
     bot = Bot(token=settings.telegram_bot_token) if settings.telegram_bot_token else None
     vk_client = (
         HttpVkMessageClient(
@@ -38,29 +42,31 @@ async def main() -> None:
 
     try:
         while True:
-            async with async_session_maker() as session:
-                stats = await run_due_funnel_once(
-                    session=session,
-                    definition=definition,
-                    bot=bot,
-                    vk_client=vk_client,
-                    email_client=email_client,
-                    public_base_url=settings.public_base_url,
-                    email_from_email=settings.email_from_email,
-                    email_from_name=settings.email_from_name,
-                    email_default_subject=settings.email_default_subject,
-                    limit=settings.funnel_runner_batch_size,
+            for definition in definitions:
+                async with async_session_maker() as session:
+                    stats = await run_due_funnel_once(
+                        session=session,
+                        definition=definition,
+                        bot=bot,
+                        vk_client=vk_client,
+                        email_client=email_client,
+                        public_base_url=settings.public_base_url,
+                        email_from_email=settings.email_from_email,
+                        email_from_name=settings.email_from_name,
+                        email_signature_image_url=settings.email_signature_image_url,
+                        email_default_subject=settings.email_default_subject,
+                        limit=settings.funnel_runner_batch_size,
+                    )
+                logger.info(
+                    "Funnel runner pass completed",
+                    extra={
+                        "funnel_key": definition.key,
+                        "due": stats.due,
+                        "sent": stats.sent,
+                        "skipped": stats.skipped,
+                        "failed": stats.failed,
+                    },
                 )
-            logger.info(
-                "Funnel runner pass completed",
-                extra={
-                    "funnel_key": definition.key,
-                    "due": stats.due,
-                    "sent": stats.sent,
-                    "skipped": stats.skipped,
-                    "failed": stats.failed,
-                },
-            )
             await asyncio.sleep(settings.funnel_runner_interval_seconds)
     finally:
         if bot is not None:

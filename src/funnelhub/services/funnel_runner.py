@@ -52,6 +52,7 @@ class MessengerFunnelStepSender:
         public_base_url: str = "http://localhost:8000",
         email_from_email: str | None = None,
         email_from_name: str | None = None,
+        email_signature_image_url: str | None = None,
         email_default_subject: str = "Сообщение от Aisu Kam",
     ) -> None:
         self._session = session
@@ -61,6 +62,7 @@ class MessengerFunnelStepSender:
         self._public_base_url = public_base_url
         self._email_from_email = email_from_email
         self._email_from_name = email_from_name
+        self._email_signature_image_url = email_signature_image_url
         self._email_default_subject = email_default_subject
 
     async def send(self, payload: FunnelStepSend) -> None:
@@ -100,10 +102,11 @@ class MessengerFunnelStepSender:
             client=self._email_client,
             lead_id=payload.lead_id,
             subject=payload.step.subject or self._email_default_subject,
-            text=build_email_body(payload.step.text, payload.step.buttons),
+            text=payload.step.text,
             public_base_url=self._public_base_url,
             from_email=self._email_from_email,
             from_name=self._email_from_name,
+            signature_image_url=self._email_signature_image_url,
             metadata={
                 "funnel_key": payload.funnel_key,
                 "step_key": payload.step.key,
@@ -227,6 +230,7 @@ async def run_due_funnel_once(
     public_base_url: str = "http://localhost:8000",
     email_from_email: str | None = None,
     email_from_name: str | None = None,
+    email_signature_image_url: str | None = None,
     email_default_subject: str = "Сообщение от Aisu Kam",
     now: datetime | None = None,
     limit: int = 100,
@@ -245,6 +249,7 @@ async def run_due_funnel_once(
         public_base_url=public_base_url,
         email_from_email=email_from_email,
         email_from_name=email_from_name,
+        email_signature_image_url=email_signature_image_url,
         email_default_subject=email_default_subject,
     )
     sent = 0
@@ -269,13 +274,15 @@ async def run_due_funnel_once(
                 skipped += 1
             else:
                 sent += 1
-                await send_pending_question_reminder(
-                    session=session,
-                    state=state,
-                    definition=definition,
-                    sender=sender,
-                    now=now,
-                )
+                sent_step = definition.steps[definition.step_index(result.sent_step_key)]
+                if sent_step.kind != "question":
+                    await send_pending_question_reminder(
+                        session=session,
+                        state=state,
+                        definition=definition,
+                        sender=sender,
+                        now=now,
+                    )
             await session.commit()
         except Exception:
             failed += 1

@@ -31,6 +31,7 @@ def create_app() -> FastAPI:
     app.include_router(inbox_router)
     app.include_router(messenger_router)
     app.include_router(webhooks_router)
+    mount_public_assets(app)
     mount_inbox_app(app)
 
     @app.get("/health", tags=["system"])
@@ -38,6 +39,16 @@ def create_app() -> FastAPI:
         return {"status": "ok", "service": settings.app_name}
 
     return app
+
+
+def mount_public_assets(app: FastAPI) -> None:
+    assets_path = Path(__file__).resolve().parents[2] / "public" / "assets"
+    if assets_path.exists():
+        app.mount(
+            "/assets",
+            StaticFiles(directory=assets_path),
+            name="public-assets",
+        )
 
 
 def mount_inbox_app(app: FastAPI) -> None:

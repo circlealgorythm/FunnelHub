@@ -102,6 +102,17 @@ async def test_getcourse_webhook_creates_lead_from_query_params() -> None:
     assert body["bot_link_token"]
     assert body["join_url"] == f"http://localhost:8000/join/{body['bot_link_token']}"
 
+    async with async_session_maker() as session:
+        email_funnel_state = await session.scalar(
+            select(FunnelState).where(
+                FunnelState.lead_id == uuid.UUID(body["lead_id"]),
+                FunnelState.funnel_key == "aisu_email_sequence",
+            )
+        )
+        assert email_funnel_state is not None
+        assert email_funnel_state.status == "active"
+        assert email_funnel_state.current_step_key == "day_02"
+
 
 async def test_getcourse_webhook_persists_lead_contacts_and_custom_fields() -> None:
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
@@ -245,6 +256,18 @@ async def test_getcourse_webhook_reuses_active_bot_link_token_for_existing_lead(
         )
 
     assert first_response.json()["bot_link_token"] == second_response.json()["bot_link_token"]
+
+    lead_id = uuid.UUID(first_response.json()["lead_id"])
+    async with async_session_maker() as session:
+        email_funnel_count = await session.scalar(
+            select(func.count())
+            .select_from(FunnelState)
+            .where(
+                FunnelState.lead_id == lead_id,
+                FunnelState.funnel_key == "aisu_email_sequence",
+            )
+        )
+    assert email_funnel_count == 1
 
 
 async def test_join_page_renders_for_active_bot_link_token() -> None:

@@ -17,7 +17,10 @@ from funnelhub.services.bot_linking import (
     get_active_bot_link_token,
     link_messenger_identity,
 )
-from funnelhub.services.funnel_autostart import start_default_funnel_for_lead
+from funnelhub.services.funnel_autostart import (
+    start_default_email_funnel_for_lead,
+    start_default_funnel_for_lead,
+)
 from funnelhub.services.funnel_engine import load_funnel_definition, run_due_funnel_step
 from funnelhub.services.funnel_runner import MessengerFunnelStepSender
 from funnelhub.services.getcourse_webhook import ingest_getcourse_webhook
@@ -60,6 +63,11 @@ async def getcourse_redirect_join_page(
 
     try:
         result = await ingest_getcourse_webhook(session, payload)
+        await start_default_email_funnel_for_lead(
+            session=session,
+            settings=settings,
+            lead_id=result.lead_id,
+        )
     except ValueError:
         await session.rollback()
         return render_getcourse_join_error()

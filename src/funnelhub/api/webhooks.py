@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from funnelhub.config import Settings, get_settings
 from funnelhub.db.session import get_session
 from funnelhub.services.bot_linking import build_join_url
+from funnelhub.services.funnel_autostart import start_default_email_funnel_for_lead
 from funnelhub.services.getcourse_webhook import ingest_getcourse_webhook
 from funnelhub.vk_bot import handle_vk_message_allow, handle_vk_message_new
 
@@ -52,6 +53,11 @@ async def getcourse_webhook(
 
     try:
         result = await ingest_getcourse_webhook(session, payload)
+        await start_default_email_funnel_for_lead(
+            session=session,
+            settings=settings,
+            lead_id=result.lead_id,
+        )
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,

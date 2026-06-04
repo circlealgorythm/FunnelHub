@@ -189,7 +189,7 @@ async def test_handle_funnel_text_reply_asks_second_question_after_topic_answer(
         assert state is not None
         assert state.metadata_["answers"] == {"topic": "money"}
         assert state.metadata_["pending_question_key"] == "experience"
-        assert state.next_run_at == now + timedelta(minutes=5)
+        assert state.next_run_at == now + timedelta(minutes=3)
 
 
 async def test_handle_funnel_text_reply_sends_personalized_response_after_second_answer(
@@ -236,10 +236,10 @@ async def test_handle_funnel_text_reply_sends_personalized_response_after_second
         assert state.metadata_["answers"] == {"topic": "money", "experience": "newbie"}
         assert "pending_question_key" not in state.metadata_
         assert "questionnaire_waiting_for_step_key" not in state.metadata_
-        assert state.next_run_at == now
+        assert state.next_run_at == now + timedelta(minutes=1)
 
 
-async def test_send_pending_question_reminder_respects_reminder_delay(
+async def test_send_pending_question_reminder_repeats_after_each_funnel_message(
     prepare_database: None,
 ) -> None:
     lead_id = await create_lead_identity_and_state(
@@ -254,24 +254,16 @@ async def test_send_pending_question_reminder_respects_reminder_delay(
     async with async_session_maker() as session:
         state = await session.scalar(select(FunnelState).where(FunnelState.lead_id == lead_id))
         assert state is not None
-        too_early = await send_pending_question_reminder(
+        sent = await send_pending_question_reminder(
             session=session,
             state=state,
             definition=definition,
             sender=sender,
             now=datetime(2026, 6, 1, 10, 4, tzinfo=UTC),
         )
-        later = await send_pending_question_reminder(
-            session=session,
-            state=state,
-            definition=definition,
-            sender=sender,
-            now=datetime(2026, 6, 1, 10, 5, tzinfo=UTC),
-        )
         await session.commit()
 
-    assert too_early is False
-    assert later is True
+    assert sent is True
     assert sender.sent[0].text == "Что актуальнее?"
     assert sender.sent[0].buttons == [FunnelButton(text="Деньги")]
 

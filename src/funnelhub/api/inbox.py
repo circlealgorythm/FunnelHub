@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Annotated, Literal
+from typing import Annotated, Literal, cast
 
 from aiogram import Bot
 from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
@@ -14,10 +14,13 @@ from funnelhub.config import Settings, get_settings
 from funnelhub.db.models import Conversation
 from funnelhub.db.session import get_session
 from funnelhub.services.auth import require_admin_session
+from funnelhub.services.email_messaging import EmailProviderClient, build_email_provider_client
 from funnelhub.services.inbox import (
     InboxConversationDetail,
     InboxConversationSummary,
     InboxMessageView,
+    InboxReplyChannelOption,
+    ReplyChannel,
     get_inbox_conversation_detail,
     list_inbox_conversations,
     send_inbox_reply,
@@ -77,13 +80,26 @@ class InboxMessageResponse(BaseModel):
     metadata: dict[str, object]
 
 
+class InboxReplyChannelResponse(BaseModel):
+    channel: ReplyChannel
+    label: str
+    detail: str | None
+    is_default: bool
+
+
 class InboxConversationDetailResponse(BaseModel):
     conversation: InboxConversationResponse
     messages: list[InboxMessageResponse]
+    reply_channels: list[InboxReplyChannelResponse]
 
 
 class InboxReplyRequest(BaseModel):
     text: str = Field(min_length=1, max_length=4000)
+    channels: list[ReplyChannel] | None = Field(default=None, max_length=3)
+
+
+class InboxReplyResponse(BaseModel):
+    messages: list[InboxMessageResponse]
 
 
 class InboxStatusRequest(BaseModel):
@@ -144,6 +160,12 @@ class DatabaseImportResponse(BaseModel):
 class ApiInboxSendClients:
     telegram_bot: TelegramMessageClient | None
     vk_client: VkMessageClient | None
+    email_client: EmailProviderClient | None
+    email_subject: str
+    public_base_url: str
+    email_from_email: str | None
+    email_from_name: str | None
+    email_signature_image_url: str | None
 
 
 @router.get("/conversations", response_model=list[InboxConversationResponse])
@@ -171,14 +193,14 @@ async def get_conversation(
 
 @router.post(
     "/conversations/{conversation_id}/reply",
-    response_model=InboxMessageResponse,
+    response_model=InboxReplyResponse,
 )
 async def post_conversation_reply(
     conversation_id: uuid.UUID,
     request: InboxReplyRequest,
     session: SessionDep,
     settings: SettingsDep,
-) -> InboxMessageResponse:
+) -> InboxReplyResponse:
     conversation = await session.get(Conversation, conversation_id)
     if conversation is None:
         raise HTTPException(status_code=404, detail="Conversation not found.")
@@ -187,41 +209,69 @@ async def post_conversation_reply(
     try:
         telegram_client: TelegramMessageClient | None = None
         vk_client: VkMessageClient | None = None
-        if conversation.channel == "telegram":
+        email_client = None
+        selected_channels = request.channels or []
+        if not selected_channels:
+            if conversation.channel not in ("telegram", "vk", "email"):
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Unsupported inbox channel: {conversation.channel}",
+                )
+            selected_channels = [cast(ReplyChannel, conversation.channel)]
+        if "telegram" in selected_channels:
             if not settings.telegram_bot_token:
                 raise HTTPException(status_code=503, detail="Telegram client is not configured.")
             telegram_bot = Bot(token=settings.telegram_bot_token)
             telegram_client = telegram_bot
-        elif conversation.channel == "vk":
+        if "vk" in selected_channels:
             if not settings.vk_group_access_token:
                 raise HTTPException(status_code=503, detail="VK client is not configured.")
             vk_client = HttpVkMessageClient(
                 access_token=settings.vk_group_access_token,
                 api_version=settings.vk_api_version,
             )
+        if "email" in selected_channels:
+            try:
+                email_client = build_email_provider_client(settings)
+            except ValueError as exc:
+                raise HTTPException(status_code=503, detail=str(exc)) from exc
+            if email_client is None:
+                raise HTTPException(status_code=503, detail="Email client is not configured.")
 
-        message = await send_inbox_reply(
+        messages = await send_inbox_reply(
             session=session,
             conversation_id=conversation_id,
             text=request.text,
+            channels=request.channels,
             clients=ApiInboxSendClients(
                 telegram_bot=telegram_client,
                 vk_client=vk_client,
+                email_client=email_client,
+                email_subject=settings.email_default_subject,
+                public_base_url=settings.public_base_url,
+                email_from_email=settings.email_from_email,
+                email_from_name=settings.email_from_name,
+                email_signature_image_url=settings.email_signature_image_url,
             ),
         )
         await session.commit()
-        return message_response(
-            InboxMessageView(
-                id=message.id,
-                channel=message.channel,
-                direction=message.direction,
-                message_type=message.message_type,
-                body=message.body,
-                status=message.status,
-                created_at=message.created_at,
-                sent_at=message.sent_at,
-                metadata=message.metadata_ or {},
-            )
+        return InboxReplyResponse(
+            messages=[
+                message_response(
+                    InboxMessageView(
+                        id=message.id,
+                        channel=message.channel,
+                        direction=message.direction,
+                        message_type=message.message_type,
+                        body=message.body,
+                        status=message.status,
+                        created_at=message.created_at,
+                        sent_at=message.sent_at,
+                        metadata=message.metadata_ or {},
+                    )
+                )
+                for message in messages
+            ]
         )
     except ValueError as exc:
         await session.rollback()
@@ -365,12 +415,24 @@ def message_response(message: InboxMessageView) -> InboxMessageResponse:
     )
 
 
+def reply_channel_response(
+    option: InboxReplyChannelOption,
+) -> InboxReplyChannelResponse:
+    return InboxReplyChannelResponse(
+        channel=option.channel,
+        label=option.label,
+        detail=option.detail,
+        is_default=option.is_default,
+    )
+
+
 def conversation_detail_response(
     detail: InboxConversationDetail,
 ) -> InboxConversationDetailResponse:
     return InboxConversationDetailResponse(
         conversation=conversation_response(detail.conversation),
         messages=[message_response(message) for message in detail.messages],
+        reply_channels=[reply_channel_response(option) for option in detail.reply_channels],
     )
 
 

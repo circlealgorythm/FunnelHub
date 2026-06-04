@@ -3,19 +3,36 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any, Protocol, cast
+from typing import Any, Literal, Protocol, cast
 
 from sqlalchemy import Select, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from funnelhub.db.models import Conversation, Lead, LeadContact, Message, MessengerIdentity
+from funnelhub.db.models import (
+    Conversation,
+    EmailSubscription,
+    Lead,
+    LeadContact,
+    Message,
+    MessengerIdentity,
+)
+from funnelhub.services.email_messaging import EmailProviderClient, send_email_text_message
 from funnelhub.services.telegram_messaging import TelegramMessageClient, send_telegram_text_message
 from funnelhub.services.vk_messaging import VkMessageClient, send_vk_text_message
+
+ReplyChannel = Literal["telegram", "vk", "email"]
+SUPPORTED_REPLY_CHANNELS: tuple[ReplyChannel, ...] = ("telegram", "vk", "email")
 
 
 class InboxSendClients(Protocol):
     telegram_bot: TelegramMessageClient | None
     vk_client: VkMessageClient | None
+    email_client: EmailProviderClient | None
+    email_subject: str
+    public_base_url: str
+    email_from_email: str | None
+    email_from_name: str | None
+    email_signature_image_url: str | None
 
 
 @dataclass(frozen=True)
@@ -51,9 +68,18 @@ class InboxMessageView:
 
 
 @dataclass(frozen=True)
+class InboxReplyChannelOption:
+    channel: ReplyChannel
+    label: str
+    detail: str | None
+    is_default: bool
+
+
+@dataclass(frozen=True)
 class InboxConversationDetail:
     conversation: InboxConversationSummary
     messages: list[InboxMessageView]
+    reply_channels: list[InboxReplyChannelOption]
 
 
 async def record_inbound_messenger_message(
@@ -124,7 +150,8 @@ async def send_inbox_reply(
     conversation_id: uuid.UUID,
     text: str,
     clients: InboxSendClients,
-) -> Message:
+    channels: list[ReplyChannel] | None = None,
+) -> list[Message]:
     conversation = await session.get(Conversation, conversation_id)
     if conversation is None:
         raise ValueError("Conversation not found.")
@@ -133,39 +160,32 @@ async def send_inbox_reply(
     if not clean_text:
         raise ValueError("Reply text is required.")
 
-    message_id: uuid.UUID
-    if conversation.channel == "telegram":
-        if clients.telegram_bot is None:
-            raise ValueError("Telegram client is not configured.")
-        telegram_result = await send_telegram_text_message(
-            session=session,
-            bot=clients.telegram_bot,
-            lead_id=conversation.lead_id,
-            text=clean_text,
-        )
-        message_id = telegram_result.message_id
-    elif conversation.channel == "vk":
-        if clients.vk_client is None:
-            raise ValueError("VK client is not configured.")
-        vk_result = await send_vk_text_message(
-            session=session,
-            client=clients.vk_client,
-            lead_id=conversation.lead_id,
-            text=clean_text,
-        )
-        message_id = vk_result.message_id
-    else:
-        raise ValueError(f"Unsupported inbox channel: {conversation.channel}")
+    reply_channels = normalize_reply_channels(channels, fallback_channel=conversation.channel)
+    await validate_reply_channels(
+        session=session,
+        lead_id=conversation.lead_id,
+        channels=reply_channels,
+    )
 
-    message = await session.get(Message, message_id)
-    if message is None:
-        raise RuntimeError("Outbound message was not persisted.")
+    sent_messages: list[Message] = []
+    for channel in reply_channels:
+        message = await send_reply_to_channel(
+            session=session,
+            conversation=conversation,
+            channel=channel,
+            text=clean_text,
+            clients=clients,
+        )
+        message.conversation_id = conversation.id
+        sent_messages.append(message)
 
     conversation.status = "replied"
-    conversation.last_message_at = message.sent_at or datetime.now(UTC)
-    message.conversation_id = conversation.id
+    conversation.last_message_at = max(
+        (message.sent_at for message in sent_messages if message.sent_at is not None),
+        default=datetime.now(UTC),
+    )
     await session.flush()
-    return message
+    return sent_messages
 
 
 async def list_inbox_conversations(
@@ -216,7 +236,180 @@ async def get_inbox_conversation_detail(
             )
             for message in messages
         ],
+        reply_channels=await get_available_reply_channels(
+            session=session,
+            lead_id=row.lead_id,
+            current_channel=row.channel,
+        ),
     )
+
+
+async def send_reply_to_channel(
+    *,
+    session: AsyncSession,
+    conversation: Conversation,
+    channel: ReplyChannel,
+    text: str,
+    clients: InboxSendClients,
+) -> Message:
+    message_id: uuid.UUID
+    if channel == "telegram":
+        if clients.telegram_bot is None:
+            raise ValueError("Telegram client is not configured.")
+        telegram_result = await send_telegram_text_message(
+            session=session,
+            bot=clients.telegram_bot,
+            lead_id=conversation.lead_id,
+            text=text,
+        )
+        message_id = telegram_result.message_id
+    elif channel == "vk":
+        if clients.vk_client is None:
+            raise ValueError("VK client is not configured.")
+        vk_result = await send_vk_text_message(
+            session=session,
+            client=clients.vk_client,
+            lead_id=conversation.lead_id,
+            text=text,
+        )
+        message_id = vk_result.message_id
+    else:
+        if clients.email_client is None:
+            raise ValueError("Email client is not configured.")
+        email_result = await send_email_text_message(
+            session=session,
+            client=clients.email_client,
+            lead_id=conversation.lead_id,
+            subject=clients.email_subject,
+            text=text,
+            public_base_url=clients.public_base_url,
+            from_email=clients.email_from_email,
+            from_name=clients.email_from_name,
+            signature_image_url=clients.email_signature_image_url,
+            metadata={"source": "inbox_manual_reply"},
+        )
+        message_id = email_result.message_id
+
+    message = await session.get(Message, message_id)
+    if message is None:
+        raise RuntimeError("Outbound message was not persisted.")
+    return message
+
+
+async def validate_reply_channels(
+    *,
+    session: AsyncSession,
+    lead_id: uuid.UUID,
+    channels: list[ReplyChannel],
+) -> None:
+    available_channels = {
+        option.channel
+        for option in await get_available_reply_channels(
+            session=session,
+            lead_id=lead_id,
+            current_channel=None,
+        )
+    }
+    missing_channels = [channel for channel in channels if channel not in available_channels]
+    if missing_channels:
+        raise ValueError(f"Reply channel is not available: {', '.join(missing_channels)}")
+
+
+async def get_available_reply_channels(
+    *,
+    session: AsyncSession,
+    lead_id: uuid.UUID,
+    current_channel: str | None,
+) -> list[InboxReplyChannelOption]:
+    options: list[InboxReplyChannelOption] = []
+    identities = (
+        await session.scalars(
+            select(MessengerIdentity)
+            .where(
+                MessengerIdentity.lead_id == lead_id,
+                MessengerIdentity.channel.in_(("telegram", "vk")),
+                MessengerIdentity.is_subscribed.is_(True),
+            )
+            .order_by(MessengerIdentity.created_at.desc())
+        )
+    ).all()
+    seen_channels: set[str] = set()
+    for identity in identities:
+        if identity.channel in seen_channels:
+            continue
+        seen_channels.add(identity.channel)
+        channel = cast(ReplyChannel, identity.channel)
+        options.append(
+            InboxReplyChannelOption(
+                channel=channel,
+                label=channel_label(channel),
+                detail=identity.username or identity.display_name or identity.external_user_id,
+                is_default=identity.channel == current_channel,
+            )
+        )
+
+    subscription = await get_subscribed_email_subscription(session, lead_id)
+    if subscription is not None:
+        options.append(
+            InboxReplyChannelOption(
+                channel="email",
+                label=channel_label("email"),
+                detail=subscription.email,
+                is_default=current_channel == "email",
+            )
+        )
+
+    if not any(option.is_default for option in options) and options:
+        options[0] = InboxReplyChannelOption(
+            channel=options[0].channel,
+            label=options[0].label,
+            detail=options[0].detail,
+            is_default=True,
+        )
+    return options
+
+
+async def get_subscribed_email_subscription(
+    session: AsyncSession,
+    lead_id: uuid.UUID,
+) -> EmailSubscription | None:
+    return cast(
+        EmailSubscription | None,
+        await session.scalar(
+            select(EmailSubscription)
+            .where(
+                EmailSubscription.lead_id == lead_id,
+                EmailSubscription.status == "subscribed",
+                EmailSubscription.unsubscribed_at.is_(None),
+            )
+            .order_by(EmailSubscription.created_at.desc())
+        )
+    )
+
+
+def normalize_reply_channels(
+    channels: list[ReplyChannel] | None,
+    *,
+    fallback_channel: str,
+) -> list[ReplyChannel]:
+    raw_channels = channels or [cast(ReplyChannel, fallback_channel)]
+    normalized: list[ReplyChannel] = []
+    for channel in raw_channels:
+        if channel not in SUPPORTED_REPLY_CHANNELS:
+            raise ValueError(f"Unsupported inbox channel: {channel}")
+        if channel not in normalized:
+            normalized.append(channel)
+    if not normalized:
+        raise ValueError("At least one reply channel is required.")
+    return normalized
+
+
+def channel_label(channel: ReplyChannel) -> str:
+    return {
+        "telegram": "Telegram",
+        "vk": "VK",
+        "email": "Email",
+    }[channel]
 
 
 async def get_identity(

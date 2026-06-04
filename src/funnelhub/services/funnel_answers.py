@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Protocol, cast
 
 from sqlalchemy import select
@@ -13,8 +13,9 @@ from funnelhub.services.funnel_engine import (
     FunnelDefinition,
     FunnelQuestion,
     normalize_datetime,
-    parse_delay,
 )
+
+PERSONALIZED_RESPONSE_TO_FIRST_VIDEO_DELAY = timedelta(minutes=1)
 
 
 class FunnelTextSender(Protocol):
@@ -66,8 +67,6 @@ async def handle_funnel_text_reply(
         metadata["pending_question_key"] = "experience"
         metadata["last_question_sent_at"] = current_time.isoformat()
         state.metadata_ = metadata
-        if state.current_step_key == metadata.get("questionnaire_waiting_for_step_key"):
-            state.next_run_at = current_time + parse_delay(experience_question.reminder_delay)
         await sender.send_text(
             lead_id=identity.lead_id,
             channel=channel,
@@ -89,7 +88,7 @@ async def handle_funnel_text_reply(
         waiting_step_key = metadata.pop("questionnaire_waiting_for_step_key", None)
         state.metadata_ = metadata
         if state.current_step_key == waiting_step_key:
-            state.next_run_at = current_time
+            state.next_run_at = current_time + PERSONALIZED_RESPONSE_TO_FIRST_VIDEO_DELAY
         response_text = get_personalized_response(definition, answers["topic"], experience_answer)
         if response_text is not None:
             await sender.send_text(
@@ -123,10 +122,6 @@ async def send_pending_question_reminder(
         return False
 
     current_time = normalize_datetime(now)
-    last_sent = parse_iso_datetime(metadata.get("last_question_sent_at"))
-    if last_sent is not None and current_time - last_sent < parse_delay(question.reminder_delay):
-        return False
-
     preferred_channel = metadata.get("messenger_channel")
     identity = await get_subscribed_identity(
         session,
@@ -240,11 +235,3 @@ def get_personalized_response(
 def normalize_answer_text(text: str) -> str:
     return " ".join(text.strip().lower().replace("ё", "е").split())
 
-
-def parse_iso_datetime(value: object) -> datetime | None:
-    if not isinstance(value, str):
-        return None
-    try:
-        return datetime.fromisoformat(value)
-    except ValueError:
-        return None

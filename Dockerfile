@@ -11,6 +11,7 @@ COPY src ./src
 COPY tests ./tests
 COPY migrations ./migrations
 COPY content ./content
+COPY public ./public
 COPY inbox-app/dist ./inbox-app/dist
 RUN pip install --no-cache-dir -e ".[dev]"
 
