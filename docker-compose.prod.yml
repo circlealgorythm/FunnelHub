@@ -3,6 +3,7 @@ name: funnelhub
 services:
   app:
     build: .
+    command: uvicorn funnelhub.main:app --host 0.0.0.0 --port 8000 --no-access-log
     env_file:
       - .env
     environment:
