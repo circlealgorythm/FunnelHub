@@ -9,8 +9,16 @@ from typing import Any
 import pytest
 from sqlalchemy import delete, select
 
+from funnelhub.config import Settings
 from funnelhub.db.base import Base
-from funnelhub.db.models import EmailSubscription, FunnelState, Lead, Message, MessengerIdentity
+from funnelhub.db.models import (
+    BotLinkToken,
+    EmailSubscription,
+    FunnelState,
+    Lead,
+    Message,
+    MessengerIdentity,
+)
 from funnelhub.db.session import async_session_maker, engine
 from funnelhub.services.email_messaging import EmailProviderSendResult
 from funnelhub.services.funnel_engine import FunnelDefinition, start_funnel_for_lead
@@ -282,6 +290,28 @@ def build_email_definition() -> FunnelDefinition:
                     "subject": "Email welcome",
                     "text": "Welcome from email runner",
                     "buttons": [{"text": "Open", "url": "https://example.com/email"}],
+                },
+            ],
+        }
+    )
+
+
+def build_email_bot_buttons_definition() -> FunnelDefinition:
+    return FunnelDefinition.model_validate(
+        {
+            "key": "runner_test_email_bot_buttons_funnel",
+            "version": 1,
+            "steps": [
+                {
+                    "key": "email_bot_links",
+                    "delay": "0m",
+                    "channel": "email",
+                    "subject": "Email bot links",
+                    "text": "Choose a bot",
+                    "buttons": [
+                        {"text": "Telegram", "url": "funnelhub://bot/telegram"},
+                        {"text": "VK", "url": "funnelhub://bot/vk"},
+                    ],
                 },
             ],
         }
@@ -572,6 +602,63 @@ async def test_run_due_funnel_once_sends_email_step(
         assert state is not None
         assert state.status == "completed"
         assert state.current_step_key is None
+
+
+async def test_run_due_funnel_once_resolves_email_bot_buttons(
+    prepare_database: None,
+) -> None:
+    lead_id = await create_lead_with_email_subscription()
+    definition = build_email_bot_buttons_definition()
+    now = datetime(2026, 5, 28, 12, 0, tzinfo=UTC)
+    email_client = FakeEmailClient()
+    settings = Settings(
+        TELEGRAM_BOT_USERNAME="aisu_test_bot",
+        VK_GROUP_SCREEN_NAME="aisu_test_vk",
+    )
+
+    async with async_session_maker() as session:
+        await start_funnel_for_lead(session, lead_id, definition, now=now)
+        await session.commit()
+
+    async with async_session_maker() as session:
+        stats = await run_due_funnel_once(
+            session=session,
+            definition=definition,
+            email_client=email_client,
+            public_base_url="https://bot.aisukam.ru",
+            settings=settings,
+            now=now,
+        )
+
+    assert stats.sent == 1
+    assert email_client.text is not None
+
+    async with async_session_maker() as session:
+        bot_link_token = await session.scalar(
+            select(BotLinkToken).where(BotLinkToken.lead_id == lead_id)
+        )
+        assert bot_link_token is not None
+        telegram_url = f"https://t.me/aisu_test_bot?start={bot_link_token.token}"
+        vk_url = f"https://vk.me/aisu_test_vk?ref={bot_link_token.token}"
+
+        assert telegram_url in email_client.text
+        assert vk_url in email_client.text
+        assert email_client.html is not None
+        assert f'href="{telegram_url}"' in email_client.html
+        assert f'href="{vk_url}"' in email_client.html
+
+        message = await session.scalar(
+            select(Message).where(
+                Message.lead_id == lead_id,
+                Message.channel == "email",
+                Message.direction == "outbound",
+            )
+        )
+        assert message is not None
+        assert message.metadata_["buttons"] == [
+            {"type": "url", "text": "Telegram", "url": telegram_url},
+            {"type": "url", "text": "VK", "url": vk_url},
+        ]
 
 
 async def test_run_due_funnel_once_repeats_pending_question_after_content_only(

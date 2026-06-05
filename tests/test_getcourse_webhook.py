@@ -119,7 +119,8 @@ async def test_getcourse_webhook_creates_lead_from_query_params() -> None:
         )
         assert email_funnel_state is not None
         assert email_funnel_state.status == "active"
-        assert email_funnel_state.current_step_key == "day_02"
+        assert email_funnel_state.current_step_key == "day_01_intro"
+        assert email_funnel_state.next_run_at is not None
 
 
 async def test_getcourse_webhook_persists_lead_contacts_and_custom_fields() -> None:
@@ -301,6 +302,12 @@ async def test_join_page_renders_for_active_bot_link_token() -> None:
     assert "Спасибо за вашу заявку!" in join_response.text
     assert "Телеграм" in join_response.text
     assert "Вконтакте" in join_response.text
+    assert join_response.text.index('class="actions"') < join_response.text.index(
+        'class="gift-list"'
+    )
+    assert join_response.text.index('class="actions"') < join_response.text.index(
+        'class="visual"'
+    )
     assert token in join_response.text
 
 

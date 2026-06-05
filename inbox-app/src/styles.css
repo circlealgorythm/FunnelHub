@@ -976,6 +976,53 @@ h2 {
   overflow-wrap: anywhere;
 }
 
+.bot-link-list {
+  display: grid;
+  gap: 10px;
+}
+
+.bot-link-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbf8ef;
+  padding: 10px;
+}
+
+.bot-link-card strong,
+.bot-link-card span,
+.bot-link-card small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.bot-link-card strong {
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.bot-link-card span {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.bot-link-card small {
+  margin-top: 5px;
+  color: var(--gold);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.bot-link-actions {
+  display: flex;
+  gap: 6px;
+}
+
 .nested-detail {
   display: grid;
   gap: 7px;

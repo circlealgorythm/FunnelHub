@@ -8,7 +8,13 @@ from datetime import datetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from funnelhub.db.models import FunnelState, MessengerIdentity
+from funnelhub.config import Settings
+from funnelhub.db.models import FunnelState, Lead, MessengerIdentity
+from funnelhub.services.bot_linking import (
+    build_telegram_deep_link,
+    build_vk_deep_link,
+    create_or_get_active_bot_link_token,
+)
 from funnelhub.services.email_messaging import EmailProviderClient, send_email_text_message
 from funnelhub.services.funnel_answers import send_pending_question_reminder
 from funnelhub.services.funnel_engine import (
@@ -30,8 +36,13 @@ from funnelhub.services.vk_messaging import (
     VkUrlButton,
     send_vk_text_message,
 )
+from funnelhub.services.vk_oauth import build_vk_oauth_join_url
 
 logger = logging.getLogger(__name__)
+BOT_BUTTON_URLS = {
+    "funnelhub://bot/telegram": "telegram",
+    "funnelhub://bot/vk": "vk",
+}
 
 
 @dataclass(frozen=True)
@@ -54,6 +65,7 @@ class MessengerFunnelStepSender:
         email_from_name: str | None = None,
         email_signature_image_url: str | None = None,
         email_default_subject: str = "Сообщение от Aisu Kam",
+        settings: Settings | None = None,
     ) -> None:
         self._session = session
         self._telegram_bot = telegram_bot
@@ -64,6 +76,7 @@ class MessengerFunnelStepSender:
         self._email_from_name = email_from_name
         self._email_signature_image_url = email_signature_image_url
         self._email_default_subject = email_default_subject
+        self._settings = settings
 
     async def send(self, payload: FunnelStepSend) -> None:
         step = payload.step
@@ -97,6 +110,12 @@ class MessengerFunnelStepSender:
         if self._email_client is None:
             raise ValueError("Email client is not configured.")
 
+        buttons = await resolve_email_buttons(
+            session=self._session,
+            lead_id=payload.lead_id,
+            settings=self._settings,
+            buttons=payload.step.buttons,
+        )
         await send_email_text_message(
             session=self._session,
             client=self._email_client,
@@ -110,7 +129,7 @@ class MessengerFunnelStepSender:
             metadata={
                 "funnel_key": payload.funnel_key,
                 "step_key": payload.step.key,
-                **build_email_button_metadata(payload.step.buttons),
+                **build_email_button_metadata(buttons),
             },
         )
 
@@ -232,6 +251,7 @@ async def run_due_funnel_once(
     email_from_name: str | None = None,
     email_signature_image_url: str | None = None,
     email_default_subject: str = "Сообщение от Aisu Kam",
+    settings: Settings | None = None,
     now: datetime | None = None,
     limit: int = 100,
 ) -> FunnelRunnerStats:
@@ -251,6 +271,7 @@ async def run_due_funnel_once(
         email_from_name=email_from_name,
         email_signature_image_url=email_signature_image_url,
         email_default_subject=email_default_subject,
+        settings=settings,
     )
     sent = 0
     skipped = 0
@@ -346,3 +367,52 @@ def build_email_button_metadata(buttons: list[FunnelButton]) -> dict[str, object
             for button in buttons
         ]
     }
+
+
+async def resolve_email_buttons(
+    *,
+    session: AsyncSession,
+    lead_id: uuid.UUID,
+    settings: Settings | None,
+    buttons: list[FunnelButton],
+) -> list[FunnelButton]:
+    result: list[FunnelButton] = []
+    for button in buttons:
+        channel = BOT_BUTTON_URLS.get(button.url or "")
+        if channel is None:
+            result.append(button)
+            continue
+        if settings is None:
+            continue
+
+        link = await build_lead_bot_link(
+            session=session,
+            lead_id=lead_id,
+            settings=settings,
+            channel=channel,
+        )
+        if link is not None:
+            result.append(button.model_copy(update={"url": link}))
+    return result
+
+
+async def build_lead_bot_link(
+    *,
+    session: AsyncSession,
+    lead_id: uuid.UUID,
+    settings: Settings,
+    channel: str,
+) -> str | None:
+    lead = await session.get(Lead, lead_id)
+    if lead is None:
+        return None
+
+    bot_link_token = await create_or_get_active_bot_link_token(session, lead)
+    if channel == "telegram":
+        return build_telegram_deep_link(settings, bot_link_token.token)
+    if channel == "vk":
+        return (
+            build_vk_oauth_join_url(settings, bot_link_token.token)
+            or build_vk_deep_link(settings, bot_link_token.token)
+        )
+    return None

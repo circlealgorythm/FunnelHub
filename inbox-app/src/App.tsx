@@ -4,8 +4,10 @@ import {
   ChevronDown,
   ChevronLeft,
   Clock,
+  Copy,
   Database as DatabaseIcon,
   Download,
+  ExternalLink,
   LockKeyhole,
   LogOut,
   MessageCircle,
@@ -95,6 +97,13 @@ type DatabaseLeadList = {
 
 type DatabaseLeadDetail = {
   lead: DatabaseLead;
+  bot_links: Array<{
+    channel: string;
+    label: string;
+    url: string;
+    token: string;
+    expires_at: string | null;
+  }>;
   profile_fields: Array<Record<string, unknown>>;
   contacts: Array<Record<string, unknown>>;
   identities: Array<Record<string, unknown>>;
@@ -1041,6 +1050,13 @@ function DatabaseWorkspace({
 }
 
 function LeadDatabaseDetail({ detail }: { detail: DatabaseLeadDetail }) {
+  const [copiedLink, setCopiedLink] = useState<string | null>(null);
+
+  async function copyBotLink(url: string) {
+    await navigator.clipboard.writeText(url);
+    setCopiedLink(url);
+  }
+
   return (
     <div className="lead-detail">
       <div className="lead-detail-head">
@@ -1067,6 +1083,50 @@ function LeadDatabaseDetail({ detail }: { detail: DatabaseLeadDetail }) {
           <strong>{detail.lead.status}</strong>
         </div>
       </div>
+
+      <DetailSection count={detail.bot_links.length} defaultOpen title="Ссылки на ботов">
+        {detail.bot_links.length === 0 ? (
+          <p>Ссылки недоступны: проверьте настройки Telegram/VK ботов.</p>
+        ) : null}
+        <div className="bot-link-list">
+          {detail.bot_links.map((link) => (
+            <div className="bot-link-card" key={link.channel}>
+              <div>
+                <strong>{link.label}</strong>
+                <span>{link.url}</span>
+                {link.expires_at ? <small>Токен до {formatDetailValue(link.expires_at)}</small> : null}
+              </div>
+              <div className="bot-link-actions">
+                <button
+                  className="icon-button secondary"
+                  onClick={() => void copyBotLink(link.url)}
+                  title={`Скопировать ссылку ${link.label}`}
+                  type="button"
+                >
+                  {copiedLink === link.url ? (
+                    <Check aria-hidden="true" size={16} />
+                  ) : (
+                    <Copy aria-hidden="true" size={16} />
+                  )}
+                  <span className="sr-only">
+                    {copiedLink === link.url ? "Скопировано" : `Скопировать ${link.label}`}
+                  </span>
+                </button>
+                <a
+                  className="icon-button secondary"
+                  href={link.url}
+                  rel="noreferrer"
+                  target="_blank"
+                  title={`Открыть ${link.label}`}
+                >
+                  <ExternalLink aria-hidden="true" size={16} />
+                  <span className="sr-only">Открыть {link.label}</span>
+                </a>
+              </div>
+            </div>
+          ))}
+        </div>
+      </DetailSection>
 
       <DetailSection count={detail.profile_fields.length} defaultOpen title="Профиль GetCourse">
         <KeyValueRows items={detail.profile_fields} />

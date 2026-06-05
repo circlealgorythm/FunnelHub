@@ -55,6 +55,7 @@ async def main() -> None:
                         email_from_name=settings.email_from_name,
                         email_signature_image_url=settings.email_signature_image_url,
                         email_default_subject=settings.email_default_subject,
+                        settings=settings,
                         limit=settings.funnel_runner_batch_size,
                     )
                 logger.info(

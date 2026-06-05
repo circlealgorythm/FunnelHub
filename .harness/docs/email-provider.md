@@ -96,4 +96,11 @@ steps:
 
 If the email client is not configured, or the provider raises an error, the runner records the state as failed for that pass and rolls back the state advancement so the step remains due for retry.
 
-The production Aisu Kam email sequence is stored separately from the Telegram/VK scenario in `content/funnels/aisu_email.yml`. It starts from the second-day messenger CTA content and sends one email step per local calendar day at 09:00 MSK through the existing day-delay scheduler.
+The production Aisu Kam email sequence is stored separately from the Telegram/VK scenario in `content/funnels/aisu_email.yml`. Version 3 starts with three first-day emails: immediately due at `0m`, then `2m`, then `90m`; after that, day 2 through day 18 send one email step per local calendar day at 09:00 MSK through the existing day-delay scheduler.
+
+Email funnel buttons can use internal bot-link URLs:
+
+- `funnelhub://bot/telegram`
+- `funnelhub://bot/vk`
+
+The funnel runner resolves them at send time through the lead's active bot link token, using the same Telegram/VK link builders as the thank-you page. VK uses the configured VK OAuth join URL when available and falls back to the `vk.me` deep link.

@@ -533,7 +533,7 @@ async def test_database_api_requires_auth_and_supports_list_export_import(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     configure_auth(monkeypatch)
-    await create_database_lead()
+    lead_id = await create_database_lead()
 
     try:
         async with AsyncClient(
@@ -546,6 +546,7 @@ async def test_database_api_requires_auth_and_supports_list_export_import(
                 json={"username": "aisu", "password": "secret"},
             )
             list_response = await client.get("/api/inbox/database/leads?q=Database")
+            detail_response = await client.get(f"/api/inbox/database/leads/{lead_id}")
             export_response = await client.get("/api/inbox/database/leads/export")
             import_response = await client.post(
                 "/api/inbox/database/leads/import",
@@ -564,6 +565,14 @@ async def test_database_api_requires_auth_and_supports_list_export_import(
     assert login_response.status_code == 200
     assert list_response.status_code == 200
     assert list_response.json()["items"][0]["name"] == "Database Test Lead"
+    assert detail_response.status_code == 200
+    bot_links = detail_response.json()["bot_links"]
+    assert {item["channel"] for item in bot_links} == {"telegram", "vk"}
+    assert bot_links[0]["token"]
+    assert any(
+        item["url"].startswith("https://t.me/aisu_test_bot?start=") for item in bot_links
+    )
+    assert any(item["url"].startswith("https://vk.me/aisu_test_vk?ref=") for item in bot_links)
     assert export_response.status_code == 200
     assert "Database Test Lead" in export_response.text
     assert import_response.status_code == 200
@@ -572,6 +581,8 @@ async def test_database_api_requires_auth_and_supports_list_export_import(
 
 def configure_auth(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("PUBLIC_BASE_URL", "http://127.0.0.1:8000")
+    monkeypatch.setenv("TELEGRAM_BOT_USERNAME", "aisu_test_bot")
+    monkeypatch.setenv("VK_GROUP_SCREEN_NAME", "aisu_test_vk")
     monkeypatch.setenv("INBOX_ADMIN_USERNAME", "aisu")
     monkeypatch.setenv(
         "INBOX_ADMIN_PASSWORD_HASH",

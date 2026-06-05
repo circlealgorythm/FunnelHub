@@ -454,7 +454,8 @@ def render_join_page(settings: Settings, token: str) -> HTMLResponse:
 
     .lead {{
       max-width: 600px;
-      margin-bottom: 24px;
+      margin-top: 24px;
+      margin-bottom: 0;
     }}
 
     .gift-list {{
@@ -615,7 +616,7 @@ def render_join_page(settings: Settings, token: str) -> HTMLResponse:
       flex-wrap: wrap;
       gap: 14px;
       align-items: center;
-      margin-top: 32px;
+      margin: 0;
     }}
 
     .button {{
@@ -656,7 +657,7 @@ def render_join_page(settings: Settings, token: str) -> HTMLResponse:
 
     .note {{
       max-width: 560px;
-      margin-top: 18px;
+      margin-top: 16px;
       color: var(--gold-dark);
       font-size: 15px;
       line-height: 1.5;
@@ -693,7 +694,6 @@ def render_join_page(settings: Settings, token: str) -> HTMLResponse:
 
       .visual {{
         min-height: auto;
-        order: -1;
       }}
 
       .next-card {{
@@ -702,16 +702,47 @@ def render_join_page(settings: Settings, token: str) -> HTMLResponse:
 
       .actions {{
         display: grid;
+        gap: 12px;
       }}
 
       .button {{
         width: 100%;
+        min-height: 60px;
       }}
     }}
 
     @media (max-width: 460px) {{
+      main {{
+        width: min(100% - 22px, 620px);
+        padding: 20px 0 38px;
+      }}
+
       h1 {{
-        font-size: 32px;
+        margin-bottom: 18px;
+        font-size: 31px;
+      }}
+
+      .eyebrow {{
+        margin-bottom: 10px;
+      }}
+
+      .lead {{
+        margin-top: 18px;
+        font-size: 16px;
+        line-height: 1.48;
+      }}
+
+      .note {{
+        margin-top: 12px;
+        font-size: 14px;
+      }}
+
+      .gift-list {{
+        margin-top: 22px;
+      }}
+
+      .visual {{
+        margin-top: 6px;
       }}
 
       .gift {{
@@ -726,6 +757,13 @@ def render_join_page(settings: Settings, token: str) -> HTMLResponse:
       <div>
         <p class="eyebrow">Заявка принята</p>
         <h1 id="thanks-title">Спасибо за вашу заявку!</h1>
+        <div class="actions" aria-label="Выберите мессенджер">
+          {telegram_markup}
+          {vk_markup}
+        </div>
+        <p class="note">
+          Подпишитесь, чтобы получить бонусы и не пропустить сообщение по консультации.
+        </p>
         <p class="lead">
           Айсу Кам свяжется с вами по заявке на консультацию.
           А пока заберите подготовленные материалы в удобном мессенджере.
@@ -751,13 +789,6 @@ def render_join_page(settings: Settings, token: str) -> HTMLResponse:
           </article>
         </div>
 
-        <div class="actions" aria-label="Выберите мессенджер">
-          {telegram_markup}
-          {vk_markup}
-        </div>
-        <p class="note">
-          Подпишитесь, чтобы получить бонусы и не пропустить сообщение по консультации.
-        </p>
       </div>
 
       <div class="visual">

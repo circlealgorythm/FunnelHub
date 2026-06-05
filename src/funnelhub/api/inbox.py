@@ -11,9 +11,14 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from funnelhub.config import Settings, get_settings
-from funnelhub.db.models import Conversation
+from funnelhub.db.models import BotLinkToken, Conversation, Lead
 from funnelhub.db.session import get_session
 from funnelhub.services.auth import require_admin_session
+from funnelhub.services.bot_linking import (
+    build_telegram_deep_link,
+    build_vk_deep_link,
+    create_or_get_active_bot_link_token,
+)
 from funnelhub.services.email_messaging import EmailProviderClient, build_email_provider_client
 from funnelhub.services.inbox import (
     InboxConversationDetail,
@@ -131,8 +136,17 @@ class DatabaseLeadListResponse(BaseModel):
     offset: int
 
 
+class DatabaseBotLinkResponse(BaseModel):
+    channel: str
+    label: str
+    url: str
+    token: str
+    expires_at: datetime | None
+
+
 class DatabaseLeadDetailResponse(BaseModel):
     lead: DatabaseLeadResponse
+    bot_links: list[DatabaseBotLinkResponse]
     profile_fields: list[dict[str, object]]
     contacts: list[dict[str, object]]
     identities: list[dict[str, object]]
@@ -374,11 +388,20 @@ async def import_database_leads(
 async def get_database_lead(
     lead_id: uuid.UUID,
     session: SessionDep,
+    settings: SettingsDep,
 ) -> DatabaseLeadDetailResponse:
     detail = await get_database_lead_detail(session, lead_id)
     if detail is None:
         raise HTTPException(status_code=404, detail="Lead not found.")
-    return database_lead_detail_response(detail)
+    lead = await session.get(Lead, lead_id)
+    if lead is None:
+        raise HTTPException(status_code=404, detail="Lead not found.")
+    bot_link_token = await create_or_get_active_bot_link_token(session, lead)
+    await session.commit()
+    return database_lead_detail_response(
+        detail,
+        bot_links=database_bot_link_responses(settings, bot_link_token),
+    )
 
 
 def conversation_response(summary: InboxConversationSummary) -> InboxConversationResponse:
@@ -465,9 +488,14 @@ def database_lead_list_response(lead_list: DatabaseLeadList) -> DatabaseLeadList
     )
 
 
-def database_lead_detail_response(detail: DatabaseLeadDetail) -> DatabaseLeadDetailResponse:
+def database_lead_detail_response(
+    detail: DatabaseLeadDetail,
+    *,
+    bot_links: list[DatabaseBotLinkResponse] | None = None,
+) -> DatabaseLeadDetailResponse:
     return DatabaseLeadDetailResponse(
         lead=database_lead_response(detail.lead),
+        bot_links=bot_links or [],
         profile_fields=detail.profile_fields,
         contacts=detail.contacts,
         identities=detail.identities,
@@ -480,6 +508,38 @@ def database_lead_detail_response(detail: DatabaseLeadDetail) -> DatabaseLeadDet
         recent_messages=detail.recent_messages,
         raw_getcourse_data=detail.raw_getcourse_data,
     )
+
+
+def database_bot_link_responses(
+    settings: Settings,
+    bot_link_token: BotLinkToken,
+) -> list[DatabaseBotLinkResponse]:
+    token = bot_link_token.token
+    expires_at = bot_link_token.expires_at
+    links: list[DatabaseBotLinkResponse] = []
+    telegram_link = build_telegram_deep_link(settings, token)
+    if telegram_link:
+        links.append(
+            DatabaseBotLinkResponse(
+                channel="telegram",
+                label="Telegram",
+                url=telegram_link,
+                token=token,
+                expires_at=expires_at,
+            )
+        )
+    vk_link = build_vk_deep_link(settings, token)
+    if vk_link:
+        links.append(
+            DatabaseBotLinkResponse(
+                channel="vk",
+                label="ВКонтакте",
+                url=vk_link,
+                token=token,
+                expires_at=expires_at,
+            )
+        )
+    return links
 
 
 def database_import_response(result: DatabaseImportResult) -> DatabaseImportResponse:
