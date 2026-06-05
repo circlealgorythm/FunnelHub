@@ -976,6 +976,53 @@ h2 {
   overflow-wrap: anywhere;
 }
 
+.funnel-state-list {
+  display: grid;
+  gap: 9px;
+}
+
+.funnel-state-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 11px;
+  border: 1px solid rgba(30, 92, 71, 0.12);
+  border-radius: 8px;
+  background: rgba(249, 246, 237, 0.72);
+}
+
+.funnel-state-card div {
+  min-width: 0;
+}
+
+.funnel-state-card strong,
+.funnel-state-card span {
+  display: block;
+}
+
+.funnel-state-card strong {
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.3;
+}
+
+.funnel-state-card span {
+  margin-top: 3px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.funnel-state-card small {
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: var(--green-soft);
+  color: var(--green);
+  font-size: 11px;
+  font-weight: 900;
+}
+
 .bot-link-list {
   display: grid;
   gap: 10px;

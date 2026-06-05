@@ -1137,7 +1137,7 @@ function LeadDatabaseDetail({ detail }: { detail: DatabaseLeadDetail }) {
         {detail.contacts.map((contact, index) => (
           <KeyValueLine
             key={`${String(contact.type)}-${index}`}
-            label={String(contact.type)}
+            label={humanContactType(String(contact.type))}
             value={contact.value}
           />
         ))}
@@ -1161,7 +1161,7 @@ function LeadDatabaseDetail({ detail }: { detail: DatabaseLeadDetail }) {
         {detail.external_ids.map((item, index) => (
           <KeyValueLine
             key={`${String(item.provider)}-${index}`}
-            label={String(item.provider)}
+            label={humanExternalProvider(String(item.provider))}
             value={item.external_id}
           />
         ))}
@@ -1215,20 +1215,24 @@ function LeadDatabaseDetail({ detail }: { detail: DatabaseLeadDetail }) {
           <KeyValueLine
             key={`${String(subscription.email)}-${index}`}
             label={String(subscription.email)}
-            value={subscription.status}
+            value={humanSubscriptionStatus(String(subscription.status))}
           />
         ))}
       </DetailSection>
 
       <DetailSection count={detail.funnel_states.length} title="Воронка">
         {detail.funnel_states.length === 0 ? <p>Нет активных состояний.</p> : null}
-        {detail.funnel_states.map((state, index) => (
-          <KeyValueLine
-            key={`${String(state.funnel_key)}-${index}`}
-            label={String(state.status)}
-            value={state.current_step_key || state.funnel_key}
-          />
-        ))}
+        <div className="funnel-state-list">
+          {detail.funnel_states.map((state, index) => (
+            <div className="funnel-state-card" key={`${String(state.funnel_key)}-${index}`}>
+              <div>
+                <strong>{humanFunnelKey(String(state.funnel_key))}</strong>
+                <span>{humanFunnelStep(String(state.current_step_key || state.funnel_key))}</span>
+              </div>
+              <small>{humanFunnelStatus(String(state.status))}</small>
+            </div>
+          ))}
+        </div>
       </DetailSection>
 
       <DetailSection count={detail.recent_messages.length} title="Последние сообщения">
@@ -1237,7 +1241,7 @@ function LeadDatabaseDetail({ detail }: { detail: DatabaseLeadDetail }) {
           <KeyValueLine
             key={String(message.id)}
             label={`${channelLabels[String(message.channel)] ?? String(message.channel)} · ${String(
-              message.direction
+              humanMessageDirection(String(message.direction))
             )}`}
             value={message.body || "без текста"}
           />
@@ -1481,6 +1485,81 @@ function humanSourceKind(value: string) {
     form: "Источник пользователя",
     import: "Импорт",
     manual: "Ручные данные",
+  };
+  return labels[value] ?? value;
+}
+
+function humanContactType(value: string) {
+  const labels: Record<string, string> = {
+    email: "Email",
+    phone: "Телефон",
+  };
+  return labels[value] ?? value;
+}
+
+function humanExternalProvider(value: string) {
+  const labels: Record<string, string> = {
+    getcourse: "GetCourse ID",
+    getcourse_vk_id: "VK-ID из GetCourse",
+  };
+  return labels[value] ?? value;
+}
+
+function humanSubscriptionStatus(value: string) {
+  const labels: Record<string, string> = {
+    subscribed: "Подписан",
+    unsubscribed: "Отписан",
+    bounced: "Недоставляется",
+    complained: "Жалоба",
+  };
+  return labels[value] ?? value;
+}
+
+function humanFunnelKey(value: string) {
+  const labels: Record<string, string> = {
+    aisu_email_sequence: "Email-рассылка",
+    aisu_consultation: "Бот-воронка",
+  };
+  return labels[value] ?? value;
+}
+
+function humanFunnelStatus(value: string) {
+  const labels: Record<string, string> = {
+    active: "Активна",
+    completed: "Завершена",
+    paused: "Пауза",
+    failed: "Ошибка",
+  };
+  return labels[value] ?? value;
+}
+
+function humanFunnelStep(value: string) {
+  const labels: Record<string, string> = {
+    day_01_intro: "День 1: первое письмо",
+    day_01_video_steps: "День 1: видео-шаги",
+    day_01_meditation: "День 1: медитация",
+    step_03_video: "Видео 3",
+    welcome: "Приветствие",
+    question_topic: "Вопрос о теме",
+    question_experience: "Вопрос об опыте",
+    first_video: "Первое видео",
+  };
+  if (labels[value]) {
+    return labels[value];
+  }
+
+  const dayMatch = value.match(/^day_(\d{2})(?:_part_(\d+))?$/);
+  if (dayMatch) {
+    const day = Number(dayMatch[1]);
+    return dayMatch[2] ? `День ${day}, часть ${dayMatch[2]}` : `День ${day}`;
+  }
+  return value;
+}
+
+function humanMessageDirection(value: string) {
+  const labels: Record<string, string> = {
+    inbound: "входящее",
+    outbound: "исходящее",
   };
   return labels[value] ?? value;
 }
