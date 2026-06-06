@@ -57,7 +57,9 @@ async def handle_funnel_text_reply(
     if topic_question is None or experience_question is None:
         return False
 
-    if "topic" not in answers:
+    pending_question_key = metadata.get("pending_question_key")
+
+    if pending_question_key == "topic" and "topic" not in answers:
         topic_answer = match_question_option(topic_question, text)
         if topic_answer is None:
             return False
@@ -76,7 +78,7 @@ async def handle_funnel_text_reply(
         await session.flush()
         return True
 
-    if "experience" not in answers:
+    if pending_question_key == "experience" and "experience" not in answers:
         experience_answer = match_question_option(experience_question, text)
         if experience_answer is None:
             return False

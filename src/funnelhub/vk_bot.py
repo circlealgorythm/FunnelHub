@@ -218,11 +218,15 @@ def extract_token_from_payload(raw_payload: Any) -> str | None:
     elif isinstance(raw_payload, str):
         try:
             decoded = json.loads(raw_payload)
+            if isinstance(decoded, dict):
+                command = decoded.get("command")
+                if command == "start" and "token" in decoded:
+                    return normalize_token(decoded["token"])
+                payload = decoded
+            else:
+                return None
         except json.JSONDecodeError:
-            return normalize_token(raw_payload)
-        if not isinstance(decoded, dict):
             return None
-        payload = decoded
     else:
         return None
 
