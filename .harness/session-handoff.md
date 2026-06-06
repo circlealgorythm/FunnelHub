@@ -4,14 +4,15 @@
 
 FunnelHub is being set up as a Harness-engineering project. GetCourse keeps courses/payments/access. FunnelHub owns bots, email, inbox, lead database, imports, broadcasts, and analytics.
 
-## Latest Session - 2026-06-06 Old GetCourse Users / VK / Admin Email
+## Latest Session - 2026-06-06 Simultaneous Funnel Execution per Channel
 
-- Diagnosis: the latest site lead `Ольга` arrived in FunnelHub with only `name`, `email`, `phone`,
-  `form_type`, and consent. There was no `gc_user_id` or `VK-ID`, so after VK OAuth removal
-  FunnelHub could only redirect to `vk.me`; it could not infer the VK user id from a browser-only
-  transition and could not send a VK bot message server-side. GetCourse-origin payloads had a
-  `vk_id` key but the value was empty. The repository also had no admin email notification for
-  new applications to `aisukam-info@yandex.ru`.
+- Diagnosis: A single lead could not run the same funnel simultaneously in both Telegram and VK because the unique constraint `(lead_id, funnel_key)` on `funnel_states` would cause a collision. When restarting in a new channel, the old state was deleted.
+- Implemented: `FunnelState` decoupled by channel. Added `channel` column to `funnel_states` table. The unique constraint is now `(lead_id, funnel_key, channel)`.
+- Updated: `funnel_engine.py`, `funnel_autostart.py`, `funnel_answers.py`, and `funnel_runner.py` modified to strictly query, start, and advance funnel states based on the specific channel instead of generic `messenger_channel` metadata.
+- Implemented: Alembic migration `0004_funnelstate_channel` generated to apply the schema change, set default channels for existing states, and replace the unique constraint.
+- Verification: Deployed code to the VPS, applied migration `alembic upgrade head`, rebuilt and restarted `app`, `telegram-bot`, and `funnel-worker` containers.
+
+## Previous Session - 2026-06-06 Old GetCourse Users / VK / Admin Email
 - Implemented: `src/funnelhub/services/getcourse_api.py` adds optional GetCourse Export Users
   enrichment. `/join/getcourse` saves the lead, calls GetCourse API by email, polls the export,
   maps `info.fields`/`info.items`, then reuses normal ingestion to fill `gc_user_id`,
@@ -575,3 +576,6 @@ Recommended next step: run a real lead/inbound-message smoke through Telegram/VK
   - Production rollback GetCourse ingest smoke created an unsaved `aisu_email_sequence` state at `day_02_step_08`, due `2026-06-05 06:00:00+00:00` (09:00 MSK), then rolled back without persisting the test lead.
   - Production `funnel-worker` logged repeated clean passes with no errors after deploy.
 - User later asked to move the email signature portrait higher inside the circle. The local and production `public/assets/email/aisu-kam-signature.png` crop was adjusted so the mirrored hair crown sits at the top edge without cutting the face. Production `app` was rebuilt/recreated, public `/health` returned HTTP 200, and the PNG URL returned HTTP 200 with `image/png`.
+- 2026-06-06 fixed VK bot treating raw text payload as a start token, which caused funnel restarts when clicking questionnaire buttons. Updated funnel_answers.py to strictly validate pending_question_key, preventing old or out-of-order Telegram buttons from advancing the funnel state and dropping the next scheduled step. Deployed fixes to production server and restarted docker containers.
+- 2026-06-06 implemented lead deletion in Inbox UI. Added DELETE /api/inbox/database/leads/{lead_id} endpoint which performs a hard delete of the lead and all associated records. Added 'Удалить лида' button to Inbox React application.
+- 2026-06-06 fixed background DB connection drops. Added pool_pre_ping=True to SQLAlchemy create_async_engine config in src/funnelhub/db/session.py to prevent InterfaceError from crashing background workers.

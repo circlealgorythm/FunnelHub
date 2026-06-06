@@ -547,21 +547,22 @@ export function App() {
   }
 
   async function deleteDatabaseLead(leadId: string) {
-    if (!window.confirm("Вы уверены? Это действие необратимо и удалит все диалоги и историю воронки для этого лида.")) {
-      return;
-    }
     setError(null);
-    const response = await fetch(`${API_BASE_URL}/api/inbox/database/leads/${leadId}`, {
-      method: "DELETE",
-      credentials: "include",
-    });
-    if (!response.ok) {
-      const payload = (await response.json().catch(() => null)) as { detail?: string } | null;
-      throw new Error(payload?.detail || `Lead deletion failed: ${response.status}`);
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/inbox/database/leads/${leadId}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as { detail?: string } | null;
+        throw new Error(payload?.detail || `Ошибка удаления: ${response.status}`);
+      }
+      setSelectedLeadId(null);
+      setSelectedLeadDetail(null);
+      await loadDatabaseLeads();
+    } catch (caught) {
+      setError(formatError(caught));
     }
-    setSelectedLeadId(null);
-    setSelectedLeadDetail(null);
-    await loadDatabaseLeads();
   }
 
   async function handleLogin(username: string, password: string) {
@@ -1104,11 +1105,15 @@ function LeadDatabaseDetail({
   const [vkIdDraft, setVkIdDraft] = useState(existingVkId(detail));
   const [vkIdState, setVkIdState] = useState<LoadState>("idle");
   const [vkIdMessage, setVkIdMessage] = useState<string | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
     setVkIdDraft(existingVkId(detail));
     setVkIdState("idle");
     setVkIdMessage(null);
+    setShowDeleteConfirm(false);
+    setIsDeleting(false);
   }, [detail.lead.id, detail.external_ids]);
 
   async function copyBotLink(url: string) {
@@ -1150,9 +1155,9 @@ function LeadDatabaseDetail({
         </div>
         <button 
           type="button" 
-          className="button button-danger" 
-          style={{ backgroundColor: "#dc3545", color: "white", padding: "0.5rem 1rem", border: "none", borderRadius: "4px", cursor: "pointer", fontSize: "0.875rem" }}
-          onClick={() => onDeleteLead(detail.lead.id)}
+          className="soft-button" 
+          style={{ color: "#d94242", boxShadow: "inset 0 0 0 1px #d94242" }}
+          onClick={() => setShowDeleteConfirm(true)}
         >
           Удалить лида
         </button>
@@ -1364,6 +1369,34 @@ function LeadDatabaseDetail({
       <DetailSection title="GetCourse">
         <pre>{JSON.stringify(detail.raw_getcourse_data, null, 2)}</pre>
       </DetailSection>
+
+      {showDeleteConfirm && (
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <h3>Удалить лида?</h3>
+            <p>Вы уверены? Это действие необратимо и удалит все диалоги и историю воронки для этого лида.</p>
+            <div className="modal-actions">
+              <button className="soft-button" onClick={() => setShowDeleteConfirm(false)} disabled={isDeleting}>Отмена</button>
+              <button 
+                className="soft-button" 
+                style={{ backgroundColor: "#d94242", color: "white", border: "none" }} 
+                onClick={async () => {
+                  setIsDeleting(true);
+                  try {
+                    await onDeleteLead(detail.lead.id);
+                  } finally {
+                    setIsDeleting(false);
+                    setShowDeleteConfirm(false);
+                  }
+                }}
+                disabled={isDeleting}
+              >
+                {isDeleting ? "Удаление..." : "Удалить безвозвратно"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

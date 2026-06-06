@@ -12,8 +12,8 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = '0004'
-down_revision: Union[str, None] = '0003'
+revision: str = '0004_funnelstate_channel'
+down_revision: Union[str, None] = '0003_inbox_statuses'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
@@ -32,14 +32,14 @@ def upgrade() -> None:
     """)
     
     # 3. Drop old constraint and create new one
-    op.drop_constraint('funnel_states_lead_id_funnel_key_key', 'funnel_states', type_='unique')
-    op.create_unique_constraint('funnel_states_lead_id_funnel_key_channel_key', 'funnel_states', ['lead_id', 'funnel_key', 'channel'])
+    op.drop_constraint('uq_funnel_states_lead_funnel_key', 'funnel_states', type_='unique')
+    op.create_unique_constraint('uq_funnel_states_lead_funnel_channel_key', 'funnel_states', ['lead_id', 'funnel_key', 'channel'])
 
 
 def downgrade() -> None:
     # 1. Revert constraint
-    op.drop_constraint('funnel_states_lead_id_funnel_key_channel_key', 'funnel_states', type_='unique')
-    op.create_unique_constraint('funnel_states_lead_id_funnel_key_key', 'funnel_states', ['lead_id', 'funnel_key'])
+    op.drop_constraint('uq_funnel_states_lead_funnel_channel_key', 'funnel_states', type_='unique')
+    op.create_unique_constraint('uq_funnel_states_lead_funnel_key', 'funnel_states', ['lead_id', 'funnel_key'])
     
     # 2. Drop column
     op.drop_column('funnel_states', 'channel')

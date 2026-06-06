@@ -934,15 +934,27 @@ def human_consent_label(consent_type: str) -> str:
 def human_field_label(field_key: str) -> str:
     return ADDITIONAL_FIELD_LABELS.get(field_key, field_key)
 
-from sqlalchemy import delete
 
 async def delete_database_lead(session: AsyncSession, lead_id: uuid.UUID) -> None:
-    lead = await session.get(Lead, lead_id)
-    if not lead:
+    from sqlalchemy import select, delete
+    from funnelhub.db.models import (
+        Lead, Message, Conversation, LeadContact, FunnelState, 
+        LeadUtm, LeadConsent, LeadExternalId, LeadCustomField
+    )
+    
+    lead_exists = await session.scalar(select(Lead.id).where(Lead.id == lead_id))
+    if not lead_exists:
         raise ValueError("Lead not found.")
 
-    # Manually delete messages since their foreign keys are SET NULL
-    await session.execute(delete(Message).where(Message.lead_id == lead_id))
+    # Manually delete all dependent records to bypass ORM or DB cascade misconfigurations
+    await session.execute(delete(Message).where(Message.lead_id == lead_id).execution_options(synchronize_session=False))
+    await session.execute(delete(Conversation).where(Conversation.lead_id == lead_id).execution_options(synchronize_session=False))
+    await session.execute(delete(LeadContact).where(LeadContact.lead_id == lead_id).execution_options(synchronize_session=False))
+    await session.execute(delete(FunnelState).where(FunnelState.lead_id == lead_id).execution_options(synchronize_session=False))
+    await session.execute(delete(LeadUtm).where(LeadUtm.lead_id == lead_id).execution_options(synchronize_session=False))
+    await session.execute(delete(LeadConsent).where(LeadConsent.lead_id == lead_id).execution_options(synchronize_session=False))
+    await session.execute(delete(LeadExternalId).where(LeadExternalId.lead_id == lead_id).execution_options(synchronize_session=False))
+    await session.execute(delete(LeadCustomField).where(LeadCustomField.lead_id == lead_id).execution_options(synchronize_session=False))
     
-    # Deleting lead will cascade to conversations, funnels, contacts etc.
-    await session.delete(lead)
+    # Finally delete the lead
+    await session.execute(delete(Lead).where(Lead.id == lead_id).execution_options(synchronize_session=False))

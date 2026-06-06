@@ -1440,3 +1440,46 @@ h2 {
     padding: 26px 20px;
   }
 }
+
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  backdrop-filter: blur(4px);
+}
+
+.modal-content {
+  background: var(--surface-strong);
+  padding: 24px 32px;
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  max-width: 440px;
+  width: 100%;
+  text-align: center;
+}
+
+.modal-content h3 {
+  margin: 0 0 12px;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 24px;
+  color: var(--ink);
+}
+
+.modal-content p {
+  margin: 0 0 24px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+}
