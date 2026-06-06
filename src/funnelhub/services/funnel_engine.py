@@ -91,6 +91,7 @@ class FunnelDefinition(BaseModel):
 class FunnelStepSend:
     lead_id: uuid.UUID
     funnel_key: str
+    channel: str
     step: FunnelStep
     state_metadata: dict[str, Any] = field(default_factory=dict)
 
@@ -136,6 +137,7 @@ async def start_funnel_for_lead(
     session: AsyncSession,
     lead_id: uuid.UUID,
     definition: FunnelDefinition,
+    channel: str,
     now: datetime | None = None,
 ) -> FunnelState:
     current_time = normalize_datetime(now)
@@ -143,6 +145,7 @@ async def start_funnel_for_lead(
         select(FunnelState).where(
             FunnelState.lead_id == lead_id,
             FunnelState.funnel_key == definition.key,
+            FunnelState.channel == channel,
         )
     )
     if existing is not None:
@@ -153,6 +156,7 @@ async def start_funnel_for_lead(
         id=uuid.uuid4(),
         lead_id=lead_id,
         funnel_key=definition.key,
+        channel=channel,
         status="active",
         current_step_key=first_step.key,
         next_run_at=schedule_after_delay(current_time, first_step.delay),
@@ -210,6 +214,7 @@ async def run_due_funnel_step(
         FunnelStepSend(
             lead_id=state.lead_id,
             funnel_key=definition.key,
+            channel=state.channel,
             step=send_step,
             state_metadata=dict(state.metadata_ or {}),
         )

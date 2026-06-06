@@ -44,7 +44,7 @@ async def handle_funnel_text_reply(
     if identity is None:
         return False
 
-    state = await get_active_funnel_state(session, identity.lead_id, definition.key)
+    state = await get_active_funnel_state(session, identity.lead_id, definition.key, channel)
     if state is None:
         return False
 
@@ -124,11 +124,10 @@ async def send_pending_question_reminder(
         return False
 
     current_time = normalize_datetime(now)
-    preferred_channel = metadata.get("messenger_channel")
     identity = await get_subscribed_identity(
         session,
         state.lead_id,
-        preferred_channel if isinstance(preferred_channel, str) else None,
+        state.channel,
     )
     if identity is None:
         return False
@@ -196,6 +195,7 @@ async def get_active_funnel_state(
     session: AsyncSession,
     lead_id: uuid.UUID,
     funnel_key: str,
+    channel: str,
 ) -> FunnelState | None:
     return cast(
         FunnelState | None,
@@ -203,6 +203,7 @@ async def get_active_funnel_state(
         select(FunnelState).where(
             FunnelState.lead_id == lead_id,
             FunnelState.funnel_key == funnel_key,
+            FunnelState.channel == channel,
             FunnelState.status == "active",
         )
         ),

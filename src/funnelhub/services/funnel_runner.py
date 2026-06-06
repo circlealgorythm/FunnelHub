@@ -89,10 +89,9 @@ class MessengerFunnelStepSender:
             await self._send_vk(payload)
             return
         if step.channel == "messenger":
-            preferred_channel = payload.state_metadata.get("messenger_channel")
             identity = await self._get_supported_identity(
                 payload.lead_id,
-                preferred_channel if isinstance(preferred_channel, str) else None,
+                payload.channel,
             )
             if identity is None:
                 raise ValueError("Lead has no subscribed messenger identity.")

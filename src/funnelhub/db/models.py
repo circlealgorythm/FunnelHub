@@ -175,11 +175,12 @@ class EmailSubscription(Base, TimestampMixin):
 
 class FunnelState(Base, TimestampMixin):
     __tablename__ = "funnel_states"
-    __table_args__ = (UniqueConstraint("lead_id", "funnel_key"),)
+    __table_args__ = (UniqueConstraint("lead_id", "funnel_key", "channel"),)
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
     lead_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("leads.id", ondelete="CASCADE"))
     funnel_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    channel: Mapped[str] = mapped_column(String(32), nullable=False, server_default="unknown")
     status: Mapped[str] = mapped_column(String(64), default="active", nullable=False)
     current_step_key: Mapped[str | None] = mapped_column(String(255))
     next_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

@@ -28,6 +28,7 @@ async def start_default_funnel_for_lead(
         session=session,
         lead_id=lead_id,
         definition=definition,
+        channel=messenger_channel or "unknown",
         now=now,
     )
     if messenger_channel is not None:
@@ -57,6 +58,7 @@ async def start_default_email_funnel_for_lead(
         session=session,
         lead_id=lead_id,
         definition=definition,
+        channel="email",
         now=now,
     )
 
@@ -74,6 +76,7 @@ async def restart_default_funnel_for_lead(
         session=session,
         lead_id=lead_id,
         definition=definition,
+        channel=messenger_channel or "unknown",
         now=current_time,
     )
     first_step = definition.steps[0]
