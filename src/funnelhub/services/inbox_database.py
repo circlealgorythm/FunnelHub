@@ -933,3 +933,16 @@ def human_consent_label(consent_type: str) -> str:
 
 def human_field_label(field_key: str) -> str:
     return ADDITIONAL_FIELD_LABELS.get(field_key, field_key)
+
+from sqlalchemy import delete
+
+async def delete_database_lead(session: AsyncSession, lead_id: uuid.UUID) -> None:
+    lead = await session.get(Lead, lead_id)
+    if not lead:
+        raise ValueError("Lead not found.")
+
+    # Manually delete messages since their foreign keys are SET NULL
+    await session.execute(delete(Message).where(Message.lead_id == lead_id))
+    
+    # Deleting lead will cascade to conversations, funnels, contacts etc.
+    await session.delete(lead)

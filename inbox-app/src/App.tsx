@@ -546,6 +546,24 @@ export function App() {
     await loadDatabaseLeads();
   }
 
+  async function deleteDatabaseLead(leadId: string) {
+    if (!window.confirm("Вы уверены? Это действие необратимо и удалит все диалоги и историю воронки для этого лида.")) {
+      return;
+    }
+    setError(null);
+    const response = await fetch(`${API_BASE_URL}/api/inbox/database/leads/${leadId}`, {
+      method: "DELETE",
+      credentials: "include",
+    });
+    if (!response.ok) {
+      const payload = (await response.json().catch(() => null)) as { detail?: string } | null;
+      throw new Error(payload?.detail || `Lead deletion failed: ${response.status}`);
+    }
+    setSelectedLeadId(null);
+    setSelectedLeadDetail(null);
+    await loadDatabaseLeads();
+  }
+
   async function handleLogin(username: string, password: string) {
     setError(null);
     const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
@@ -615,9 +633,10 @@ export function App() {
           onImport={(event) => void importDatabase(event)}
           onLogout={() => void logout()}
           onQueryChange={setDatabaseQuery}
-          onRefresh={() => void loadDatabaseLeads()}
+          onRefresh={loadDatabaseLeads}
           onSaveLeadVkId={(leadId, vkId) => saveLeadVkId(leadId, vkId)}
-          onSearch={submitDatabaseSearch}
+          onDeleteLead={deleteDatabaseLead}
+          onSearch={(event) => void submitDatabaseSearch(event)}
           onSelectLead={setSelectedLeadId}
           onSwitchView={switchView}
           selectedLeadDetail={selectedLeadDetail}
@@ -924,6 +943,7 @@ function DatabaseWorkspace({
   onSwitchView,
   selectedLeadDetail,
   selectedLeadId,
+  onDeleteLead,
 }: {
   adminName: string | null;
   databaseDetailState: LoadState;
@@ -940,9 +960,10 @@ function DatabaseWorkspace({
   onSaveLeadVkId: (leadId: string, vkId: string) => Promise<void>;
   onSearch: (event: FormEvent<HTMLFormElement>) => void;
   onSelectLead: (leadId: string) => void;
-  onSwitchView: (view: AppView) => void;
+  onSwitchView: (view: "inbox" | "database") => void;
   selectedLeadDetail: DatabaseLeadDetail | null;
   selectedLeadId: string | null;
+  onDeleteLead: (leadId: string) => Promise<void>;
 }) {
   const leads = databaseList?.items ?? [];
   return (
@@ -1056,7 +1077,7 @@ function DatabaseWorkspace({
           {databaseDetailState === "loading" ? (
             <div className="detail-empty">Загружаем карточку...</div>
           ) : selectedLeadDetail ? (
-            <LeadDatabaseDetail detail={selectedLeadDetail} onSaveVkId={onSaveLeadVkId} />
+            <LeadDatabaseDetail detail={selectedLeadDetail} onSaveVkId={onSaveLeadVkId} onDeleteLead={onDeleteLead} />
           ) : (
             <div className="detail-empty">
               <DatabaseIcon aria-hidden="true" size={34} />
@@ -1073,9 +1094,11 @@ function DatabaseWorkspace({
 function LeadDatabaseDetail({
   detail,
   onSaveVkId,
+  onDeleteLead,
 }: {
   detail: DatabaseLeadDetail;
   onSaveVkId: (leadId: string, vkId: string) => Promise<void>;
+  onDeleteLead: (leadId: string) => Promise<void>;
 }) {
   const [copiedLink, setCopiedLink] = useState<string | null>(null);
   const [vkIdDraft, setVkIdDraft] = useState(existingVkId(detail));
@@ -1115,14 +1138,24 @@ function LeadDatabaseDetail({
 
   return (
     <div className="lead-detail">
-      <div className="lead-detail-head">
-        <div className="avatar" aria-hidden="true">
-          <UserRound size={22} />
+      <div className="lead-detail-head" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+        <div style={{ display: "flex", gap: "1rem" }}>
+          <div className="avatar" aria-hidden="true">
+            <UserRound size={22} />
+          </div>
+          <div>
+            <h2>{detail.lead.name ?? "Без имени"}</h2>
+            <p>{detail.lead.source ?? "источник не указан"}</p>
+          </div>
         </div>
-        <div>
-          <h2>{detail.lead.name ?? "Без имени"}</h2>
-          <p>{detail.lead.source ?? "источник не указан"}</p>
-        </div>
+        <button 
+          type="button" 
+          className="button button-danger" 
+          style={{ backgroundColor: "#dc3545", color: "white", padding: "0.5rem 1rem", border: "none", borderRadius: "4px", cursor: "pointer", fontSize: "0.875rem" }}
+          onClick={() => onDeleteLead(detail.lead.id)}
+        >
+          Удалить лида
+        </button>
       </div>
 
       <div className="detail-stats">

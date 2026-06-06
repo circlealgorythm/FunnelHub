@@ -41,6 +41,7 @@ from funnelhub.services.inbox_database import (
     import_database_leads_csv,
     list_database_leads,
     upsert_database_lead_vk_id,
+    delete_database_lead,
 )
 from funnelhub.services.telegram_messaging import TelegramMessageClient
 from funnelhub.services.vk_messaging import HttpVkMessageClient, VkMessageClient
@@ -440,6 +441,20 @@ async def put_database_lead_vk_id(
         detail,
         bot_links=database_bot_link_responses(settings, bot_link_token),
     )
+
+
+@router.delete("/database/leads/{lead_id}")
+async def delete_database_lead_endpoint(
+    lead_id: uuid.UUID,
+    session: SessionDep,
+) -> Response:
+    try:
+        await delete_database_lead(session, lead_id)
+        await session.commit()
+    except ValueError as exc:
+        await session.rollback()
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return Response(status_code=204)
 
 
 def conversation_response(summary: InboxConversationSummary) -> InboxConversationResponse:
