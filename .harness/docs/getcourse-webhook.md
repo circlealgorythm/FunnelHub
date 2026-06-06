@@ -274,6 +274,47 @@ Security notes:
   process, but should be replaced or backed by Redis if production scales to multiple app workers
   or multiple nodes.
 
+## GetCourse API Profile Enrichment
+
+Implemented on 2026-06-06 for browser submissions that reach `GET /join/getcourse`.
+
+The current live site can send only form fields such as `name`, `phone`, `email`,
+`form_type`, consent, and attribution. It does not know the GetCourse user id or the
+user's stored VK-ID. For existing GetCourse users, FunnelHub can therefore call the
+GetCourse Export Users API after saving the lead and before rendering the thank-you page:
+
+```text
+GET /pl/api/account/users?key=<secret>&email=<lead_email>
+GET /pl/api/account/exports/<export_id>?key=<secret>
+```
+
+The response is parsed from `info.fields` + `info.items`, then passed through the normal
+GetCourse ingestion mapper. This fills `getcourse_user_id`, `lead_external_ids` with
+`provider=getcourse_vk_id`, and the `vk_id` custom field when GetCourse has a stored VK-ID.
+
+Environment:
+
+```text
+GETCOURSE_API_BASE_URL=https://school.aisukam.ru
+GETCOURSE_API_KEY=<secret>
+GETCOURSE_API_POLL_ATTEMPTS=10
+GETCOURSE_API_POLL_INTERVAL_SECONDS=1
+```
+
+Operational notes:
+
+- The API key must stay in production `.env` only; do not commit it or copy it into Harness docs.
+- The key supplied during the 2026-06-06 session appeared in chat and should be rotated in
+  GetCourse after the fix is stable.
+- GetCourse documents Export API limits around 100 requests per 2 hours. To avoid doubling calls
+  for the current site flow, FunnelHub runs API enrichment on `/join/getcourse`, not on the
+  site's background `/webhooks/getcourse` beacon payloads with `form_type`.
+- Direct GetCourse webhook processes should still prefer passing `gc_user_id` and `vk_id`/`VK-ID`
+  directly, because that is faster and does not consume Export API quota.
+- If the export is not ready within the configured poll window, the lead is still saved, email
+  logic still starts, and messenger linking can still work through Telegram or VK callback/user
+  message.
+
 ## Captured Payload - 2026-05-22
 
 GetCourse was observed calling `webhook.site` with a `GET` request and query string fields. Request body and form values were empty.

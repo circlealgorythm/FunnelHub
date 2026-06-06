@@ -12,6 +12,7 @@ from funnelhub.config import get_settings
 from funnelhub.db.base import Base
 from funnelhub.db.models import (
     BotLinkToken,
+    Event,
     FunnelState,
     Lead,
     LeadConsent,
@@ -40,6 +41,8 @@ async def prepare_database(monkeypatch: pytest.MonkeyPatch) -> AsyncGenerator[No
     monkeypatch.setenv("GETCOURSE_WEBHOOK_SECRET", "")
     monkeypatch.setenv("GETCOURSE_WEBHOOK_SECRET_REQUIRED", "false")
     monkeypatch.setenv("GETCOURSE_WEBHOOK_RATE_LIMIT_PER_MINUTE", "120")
+    monkeypatch.setenv("GETCOURSE_API_BASE_URL", "")
+    monkeypatch.setenv("GETCOURSE_API_KEY", "")
     get_settings.cache_clear()
     getcourse_rate_limiter.reset()
     async with engine.begin() as connection:
@@ -83,6 +86,8 @@ async def cleanup_test_leads() -> None:
         lead_ids.update(lead_result.all())
 
         if lead_ids:
+            await session.execute(delete(Message).where(Message.lead_id.in_(lead_ids)))
+            await session.execute(delete(Event).where(Event.lead_id.in_(lead_ids)))
             await session.execute(delete(Lead).where(Lead.id.in_(lead_ids)))
         await session.commit()
 
@@ -243,6 +248,104 @@ async def test_getcourse_webhook_persists_extended_profile_and_source_fields() -
         assert utm_by_kind["form"].utm_content == "16736567277"
 
 
+async def test_getcourse_webhook_normalizes_vk_id_from_profile_url() -> None:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get(
+            "/webhooks/getcourse",
+            params={
+                "gc_user_id": TEST_GC_ID,
+                "email": TEST_EMAIL,
+                "ID VK": "https://vk.com/id88996633",
+            },
+        )
+
+    assert response.status_code == 200
+    lead_id = uuid.UUID(response.json()["lead_id"])
+
+    async with async_session_maker() as session:
+        external_id = await session.scalar(
+            select(LeadExternalId).where(
+                LeadExternalId.provider == "getcourse_vk_id",
+                LeadExternalId.external_id == "88996633",
+            )
+        )
+        assert external_id is not None
+        assert external_id.lead_id == lead_id
+
+        custom_field = await session.scalar(
+            select(LeadCustomField).where(
+                LeadCustomField.lead_id == lead_id,
+                LeadCustomField.field_key == "vk_id",
+            )
+        )
+        assert custom_field is not None
+        assert custom_field.value == "88996633"
+
+
+async def test_getcourse_webhook_sends_one_admin_notification_for_duplicate_ingest(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("EMAIL_PROVIDER", "debug")
+    monkeypatch.setenv("LEAD_NOTIFICATION_EMAIL_TO", "aisukam-info@example.com")
+    monkeypatch.setenv("LEAD_NOTIFICATION_COOLDOWN_SECONDS", "300")
+    get_settings.cache_clear()
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        first_response = await client.post(
+            "/webhooks/getcourse",
+            data={
+                "gc_user_id": TEST_GC_ID,
+                "email": TEST_EMAIL,
+                "phone": "+7 999 000-00-00",
+                "name": "Ольга",
+                "form_type": "consultation",
+            },
+        )
+        redirect_response = await client.get(
+            "/join/getcourse",
+            params={
+                "gc_user_id": TEST_GC_ID,
+                "email": TEST_EMAIL,
+                "phone": "+7 999 000-00-00",
+                "name": "Ольга",
+            },
+        )
+
+    assert first_response.status_code == 200
+    assert redirect_response.status_code == 200
+    lead_id = uuid.UUID(first_response.json()["lead_id"])
+
+    async with async_session_maker() as session:
+        messages = (
+            await session.scalars(
+                select(Message).where(
+                    Message.lead_id == lead_id,
+                    Message.channel == "email",
+                    Message.direction == "outbound",
+                )
+            )
+        ).all()
+        notification_messages = [
+            message
+            for message in messages
+            if message.metadata_.get("notification_type") == "lead_application"
+        ]
+        assert len(notification_messages) == 1
+        assert notification_messages[0].status == "sent"
+        assert notification_messages[0].metadata_["to_email"] == "aisukam-info@example.com"
+        assert "Ольга" in (notification_messages[0].body or "")
+
+        sent_events = (
+            await session.scalars(
+                select(Event).where(
+                    Event.lead_id == lead_id,
+                    Event.event_type == "lead.application.notification.sent",
+                )
+            )
+        ).all()
+        assert len(sent_events) == 1
+
+
 async def test_getcourse_webhook_updates_existing_lead_by_getcourse_id() -> None:
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         first_response = await client.get(
@@ -302,8 +405,8 @@ async def test_join_page_renders_for_active_bot_link_token() -> None:
 
     assert join_response.status_code == 200
     assert "Спасибо за вашу заявку!" in join_response.text
-    assert "Телеграм" in join_response.text
-    assert "Вконтакте" in join_response.text
+    assert "Открыть Telegram" in join_response.text
+    assert "Открыть VK" in join_response.text
     assert join_response.text.index('class="actions"') < join_response.text.index(
         'class="gift-list"'
     )
@@ -328,8 +431,8 @@ async def test_getcourse_redirect_join_page_creates_lead_and_renders_buttons() -
 
     assert response.status_code == 200
     assert "Спасибо за вашу заявку!" in response.text
-    assert "Телеграм" in response.text
-    assert "Вконтакте" in response.text
+    assert "Открыть Telegram" in response.text
+    assert "Открыть VK" in response.text
 
     async with async_session_maker() as session:
         lead = await session.scalar(
@@ -922,6 +1025,74 @@ async def test_vk_launch_redirect_uses_known_getcourse_vk_id_and_restarts_funnel
         )
         assert message is not None
         assert message.status == "sent"
+
+
+async def test_vk_callback_token_restarts_existing_funnel_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("VK_GROUP_ACCESS_TOKEN", "")
+    get_settings.cache_clear()
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            webhook_response = await client.get(
+                "/webhooks/getcourse",
+                params={"gc_user_id": TEST_GC_ID, "email": TEST_EMAIL},
+            )
+            token = webhook_response.json()["bot_link_token"]
+            lead_id = uuid.UUID(webhook_response.json()["lead_id"])
+            async with async_session_maker() as session:
+                session.add(
+                    FunnelState(
+                        id=uuid.uuid4(),
+                        lead_id=lead_id,
+                        funnel_key="aisu_consultation",
+                        status="active",
+                        current_step_key="step_02_video",
+                        next_run_at=datetime(2026, 6, 6, 5, 49, tzinfo=UTC),
+                        metadata_={
+                            "answers": {"topic": "all"},
+                            "step_index": 3,
+                            "messenger_channel": "vk",
+                            "definition_version": 2,
+                            "pending_question_key": "topic",
+                        },
+                    )
+                )
+                await session.commit()
+
+            response = await client.post(
+                "/webhooks/vk",
+                json={
+                    "type": "message_new",
+                    "secret": get_settings().vk_callback_secret,
+                    "group_id": 123,
+                    "object": {
+                        "message": {
+                            "from_id": 321,
+                            "peer_id": 321,
+                            "text": f"/start {token}",
+                        }
+                    },
+                },
+            )
+    finally:
+        get_settings.cache_clear()
+
+    assert response.status_code == 200
+
+    async with async_session_maker() as session:
+        funnel_state = await session.scalar(
+            select(FunnelState).where(
+                FunnelState.lead_id == lead_id,
+                FunnelState.funnel_key == "aisu_consultation",
+            )
+        )
+        assert funnel_state is not None
+        assert funnel_state.current_step_key == "welcome"
+        assert funnel_state.metadata_["messenger_channel"] == "vk"
+        assert funnel_state.metadata_["restart_reason"] == "bot_start"
+        assert "answers" not in funnel_state.metadata_
+        assert "pending_question_key" not in funnel_state.metadata_
 
 
 async def test_messenger_link_rejects_unknown_token() -> None:

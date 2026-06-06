@@ -32,6 +32,16 @@ class Settings(BaseSettings):
     getcourse_webhook_rate_limit_per_minute: int = Field(
         default=120, validation_alias="GETCOURSE_WEBHOOK_RATE_LIMIT_PER_MINUTE"
     )
+    getcourse_api_base_url: str | None = Field(
+        default=None, validation_alias="GETCOURSE_API_BASE_URL"
+    )
+    getcourse_api_key: str | None = Field(default=None, validation_alias="GETCOURSE_API_KEY")
+    getcourse_api_poll_attempts: int = Field(
+        default=5, validation_alias="GETCOURSE_API_POLL_ATTEMPTS"
+    )
+    getcourse_api_poll_interval_seconds: float = Field(
+        default=1.0, validation_alias="GETCOURSE_API_POLL_INTERVAL_SECONDS"
+    )
     telegram_bot_username: str | None = Field(
         default=None, validation_alias="TELEGRAM_BOT_USERNAME"
     )
@@ -104,6 +114,12 @@ class Settings(BaseSettings):
     email_unisender_go_api_url: str = Field(
         default="https://goapi.unisender.ru/ru/transactional/api/v1/email/send.json",
         validation_alias="EMAIL_UNISENDER_GO_API_URL",
+    )
+    lead_notification_email_to: str | None = Field(
+        default=None, validation_alias="LEAD_NOTIFICATION_EMAIL_TO"
+    )
+    lead_notification_cooldown_seconds: int = Field(
+        default=300, validation_alias="LEAD_NOTIFICATION_COOLDOWN_SECONDS"
     )
 
 

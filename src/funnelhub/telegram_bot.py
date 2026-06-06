@@ -14,7 +14,7 @@ from funnelhub.db.models import MessengerIdentity
 from funnelhub.db.session import async_session_maker
 from funnelhub.services.bot_linking import link_messenger_identity
 from funnelhub.services.funnel_answers import handle_funnel_text_reply
-from funnelhub.services.funnel_autostart import start_default_funnel_for_lead
+from funnelhub.services.funnel_autostart import restart_default_funnel_for_lead
 from funnelhub.services.funnel_engine import load_funnel_definition, run_due_funnel_step
 from funnelhub.services.funnel_runner import MessengerFunnelStepSender
 from funnelhub.services.inbox import (
@@ -60,7 +60,7 @@ async def handle_start(message: Message, command: CommandObject) -> None:
                 raw_profile=build_raw_profile(telegram_user),
                 allow_relink=True,
             )
-            state = await start_default_funnel_for_lead(
+            state = await restart_default_funnel_for_lead(
                 session=session,
                 settings=settings,
                 lead_id=result.lead_id,

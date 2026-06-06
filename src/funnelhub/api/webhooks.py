@@ -21,6 +21,7 @@ from funnelhub.services.ingestion_guard import (
     enforce_getcourse_ingestion_guard,
     strip_getcourse_webhook_secret_fields,
 )
+from funnelhub.services.lead_notifications import send_lead_application_notification
 from funnelhub.vk_bot import handle_vk_message_allow, handle_vk_message_new
 
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
@@ -92,6 +93,15 @@ async def getcourse_webhook(
             detail=str(exc),
         ) from exc
 
+    if "form_type" not in payload:
+        await session.commit()
+        await send_lead_application_notification(
+            session=session,
+            settings=settings,
+            lead_id=result.lead_id,
+            created=result.created,
+            source="webhooks/getcourse",
+        )
     await session.commit()
     return GetCourseWebhookResponse(
         status="ok",

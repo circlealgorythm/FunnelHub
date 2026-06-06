@@ -23,6 +23,9 @@ Implemented now:
 - `email.unsubscribed` event logging;
 - `channel: email` funnel steps in `run_due_funnel_once(...)`;
 - retry behavior through the existing funnel runner rollback path when provider sending fails.
+- lead application notification emails to configured admin recipients after `/join/getcourse`
+  submissions, with a short cooldown so the site's background webhook and redirect do not create
+  duplicate notifications.
 
 Not implemented yet:
 
@@ -63,6 +66,10 @@ The adapter returns an optional external provider message id and raw provider re
 - `EMAIL_UNISENDER_GO_API_KEY` stores the Unisender Go API key.
 - `EMAIL_UNISENDER_GO_API_URL` defaults to `https://goapi.unisender.ru/ru/transactional/api/v1/email/send.json`.
 - `PUBLIC_BASE_URL` is used to build unsubscribe links.
+- `LEAD_NOTIFICATION_EMAIL_TO` configures one or more comma/semicolon-separated admin recipients
+  for application notifications.
+- `LEAD_NOTIFICATION_COOLDOWN_SECONDS` prevents duplicate admin notifications for the same lead
+  within the configured window.
 
 ## Unisender Go
 

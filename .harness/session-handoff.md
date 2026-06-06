@@ -4,6 +4,43 @@
 
 FunnelHub is being set up as a Harness-engineering project. GetCourse keeps courses/payments/access. FunnelHub owns bots, email, inbox, lead database, imports, broadcasts, and analytics.
 
+## Latest Session - 2026-06-06 Old GetCourse Users / VK / Admin Email
+
+- Diagnosis: the latest site lead `Ольга` arrived in FunnelHub with only `name`, `email`, `phone`,
+  `form_type`, and consent. There was no `gc_user_id` or `VK-ID`, so after VK OAuth removal
+  FunnelHub could only redirect to `vk.me`; it could not infer the VK user id from a browser-only
+  transition and could not send a VK bot message server-side. GetCourse-origin payloads had a
+  `vk_id` key but the value was empty. The repository also had no admin email notification for
+  new applications to `aisukam-info@yandex.ru`.
+- Implemented: `src/funnelhub/services/getcourse_api.py` adds optional GetCourse Export Users
+  enrichment. `/join/getcourse` saves the lead, calls GetCourse API by email, polls the export,
+  maps `info.fields`/`info.items`, then reuses normal ingestion to fill `gc_user_id`,
+  normalized `VK-ID` values, and `lead_external_ids(provider=getcourse_vk_id)` before rendering
+  the thank-you page. `/webhooks/getcourse` site beacon payloads with `form_type` intentionally
+  do not call the API to avoid doubling Export API quota use.
+- Implemented: `src/funnelhub/services/lead_notifications.py` sends application notification
+  email to `LEAD_NOTIFICATION_EMAIL_TO` through the configured email provider. A 300-second
+  per-lead cooldown prevents duplicate notification emails from the site's background webhook
+  plus redirect.
+- Implemented: `restart_default_funnel_for_lead(...)` resets the messenger funnel on real bot
+  starts. Telegram `/start <token>` and VK `message_allow`/`message_new` with a token now relink
+  the identity to the current lead, clear old questionnaire answers/pending metadata, pin the
+  channel, and send from the beginning.
+- Production `.env` now has `GETCOURSE_API_BASE_URL`, `GETCOURSE_API_KEY`,
+  `GETCOURSE_API_POLL_ATTEMPTS=10`, `GETCOURSE_API_POLL_INTERVAL_SECONDS=1`,
+  `LEAD_NOTIFICATION_EMAIL_TO=aisukam-info@yandex.ru`, and
+  `LEAD_NOTIFICATION_COOLDOWN_SECONDS=300`. The key value must not be written to docs; it was
+  supplied in chat and should be rotated in GetCourse after the fix is stable.
+- Verification: local `ruff check .`, `mypy src`, focused GetCourse/API/reset tests, full
+  `pytest -x` with 133 tests, and production `/health` passed. Production rollback smoke
+  confirmed API enrichment gets `gc_id` and `VK-ID` for Olga, test admin notification sends
+  through Unisender without persisting smoke DB rows, and reset clears old answers back to
+  `welcome`. Production app, telegram-bot, and funnel-worker were rebuilt/recreated; services
+  are running.
+- Repair: real latest Olga lead `f4654a22-e6e3-4203-8eea-445c30018eaf` was enriched in
+  production, now has `gc_id`, `getcourse_vk_id`, subscribed VK identity, and one sent VK outbound
+  message.
+
 ## Latest Technical Audit
 
 - 2026-06-04 pre-development technical audit completed without changing production code.

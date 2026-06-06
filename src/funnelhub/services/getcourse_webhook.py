@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -44,7 +45,17 @@ KNOWN_ADDITIONAL_FIELD_ALIASES = {
     "partner_email": ("partner_email", "Email партнера"),
     "partner_name": ("partner_name", "ФИО партнера"),
     "manager_name": ("manager_name", "ФИО менеджера"),
-    "vk_id": ("vk_id", "vk_user_id", "VK-ID"),
+    "vk_id": (
+        "vk_id",
+        "vk_user_id",
+        "VK-ID",
+        "VK ID",
+        "ID VK",
+        "ВК-ID",
+        "ID ВК",
+        "ID ВКонтакте",
+        "Профиль ВКонтакте",
+    ),
     "getcourse_groups": (
         "getcourse_groups",
         "group_ids",
@@ -188,6 +199,11 @@ def normalize_getcourse_payload(payload: dict[str, Any]) -> dict[str, Any]:
     regular_utm = {key: clean_text(payload.get(key)) for key in UTM_KEYS}
     additional_fields = extract_custom_fields(payload)
     additional_fields.update(extract_known_additional_fields(payload))
+    vk_id = normalize_vk_external_id(additional_fields.get("vk_id"))
+    if vk_id is not None:
+        additional_fields["vk_id"] = vk_id
+    else:
+        additional_fields.pop("vk_id", None)
 
     return {
         "raw_payload": raw_payload,
@@ -648,6 +664,22 @@ def normalize_bool(value: str | None) -> bool | None:
     if normalized in {"no", "false", "0", "нет"}:
         return False
     return None
+
+
+def normalize_vk_external_id(value: str | None) -> str | None:
+    cleaned = clean_text(value)
+    if cleaned is None:
+        return None
+    if cleaned.isdigit() and int(cleaned) > 0:
+        return str(int(cleaned))
+
+    match = re.search(r"(?:^|[/\s])id(\d+)(?:\D|$)", cleaned, flags=re.IGNORECASE)
+    if match is None:
+        return None
+    normalized = match.group(1)
+    if int(normalized) <= 0:
+        return None
+    return str(int(normalized))
 
 
 def join_name(first_name: str | None, last_name: str | None) -> str | None:

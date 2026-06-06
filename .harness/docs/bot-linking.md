@@ -143,6 +143,19 @@ VK `message_allow` is not reliable enough as the only autostart path for users w
 
 New thank-you page, Inbox bot links, and email CTA links intentionally use FunnelHub's `GET /join/{token}/vk` launch endpoint instead of VK ID OAuth. The launch endpoint first tries to restart VK delivery server-side when the lead already has a subscribed VK identity or a stored GetCourse `VK-ID`, then redirects the browser to the plain `https://vk.me/...` deep link. This avoids VK ID authorization while still handling old/known VK users when FunnelHub already knows their VK user id. OAuth settings may remain configured for old links, but they are no longer preferred by public subscription buttons.
 
+As of 2026-06-06, `/join/getcourse` can enrich a just-submitted lead from the
+GetCourse API by email before rendering the thank-you page. This covers existing
+GetCourse users when the site only sends `name/email/phone` but GetCourse already
+stores a VK-ID. The follow-up VK button then uses the same `/join/{token}/vk`
+launch path and can send the first VK message server-side.
+
+Repeated real bot starts reset the messenger funnel to the first step. Telegram
+`/start <token>` and VK `message_allow`/`message_new` with a token relink the identity
+to the current lead, clear old questionnaire answers/pending-question metadata, set
+the messenger channel, and send from the beginning again. The `/join/{token}/vk`
+launch endpoint keeps its 10-minute duplicate guard to avoid double sends from repeated
+button taps.
+
 The thank-you page keeps the per-lead Telegram/VK token inside the button URL, but the visible user experience stays simple: the buttons read `Открыть Telegram` and `Открыть VK`. This preserves attribution in FunnelHub while avoiding instructions that ask the lead to copy or provide a personal link.
 
 OAuth callback support uses these settings:
