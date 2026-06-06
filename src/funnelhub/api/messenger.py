@@ -2,18 +2,22 @@ from __future__ import annotations
 
 import html
 import logging
-from typing import Annotated, Any, Literal
+from datetime import UTC, datetime, timedelta
+from typing import Annotated, Any, Literal, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from funnelhub.config import Settings, get_settings
+from funnelhub.db.models import LeadExternalId, MessengerIdentity
 from funnelhub.db.session import get_session
 from funnelhub.services.bot_linking import (
     build_telegram_deep_link,
     build_vk_deep_link,
+    build_vk_launch_link,
     get_active_bot_link_token,
     link_messenger_identity,
 )
@@ -33,13 +37,20 @@ from funnelhub.services.ingestion_guard import (
 )
 from funnelhub.services.vk_messaging import HttpVkMessageClient
 from funnelhub.services.vk_oauth import (
-    build_vk_oauth_join_url,
     exchange_vk_oauth_code,
     parse_vk_oauth_state,
 )
 
 router = APIRouter(tags=["messenger-linking"])
 logger = logging.getLogger(__name__)
+VK_RELAUNCH_COOLDOWN = timedelta(minutes=10)
+VK_RELAUNCH_RESET_METADATA_KEYS = {
+    "answers",
+    "pending_question_key",
+    "personalized_sent_at",
+    "last_question_sent_at",
+    "questionnaire_waiting_for_step_key",
+}
 JOIN_FORM_TYPE_CONSENT_FIELD_MAPPING = {
     "consultation": "custom_10616540",
     "baseTariff": "custom_10682754",
@@ -113,6 +124,42 @@ async def join_page(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Join token not found.")
 
     return render_join_page(settings=settings, token=token)
+
+
+@router.get("/join/{token}/vk")
+async def vk_launch_redirect(
+    token: str,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> RedirectResponse:
+    bot_link_token = await get_active_bot_link_token(session, token)
+    if bot_link_token is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Join token not found.")
+
+    vk_url = build_vk_deep_link(settings, token)
+    if vk_url is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="VK link is not configured.",
+        )
+
+    try:
+        await relaunch_vk_for_known_lead(
+            session=session,
+            settings=settings,
+            token=token,
+            lead_id=bot_link_token.lead_id,
+        )
+        await session.commit()
+    except (ValueError, RuntimeError) as exc:
+        await session.rollback()
+        logger.warning(
+            "VK launch relaunch failed; redirecting to vk.me fallback: %s",
+            exc,
+            extra={"lead_id": str(bot_link_token.lead_id)},
+        )
+
+    return RedirectResponse(vk_url, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
 
 
 @router.get("/oauth/vk/callback", response_class=HTMLResponse)
@@ -295,6 +342,146 @@ async def send_first_due_vk_step(
     )
 
 
+async def relaunch_vk_for_known_lead(
+    session: AsyncSession,
+    settings: Settings,
+    token: str,
+    lead_id: Any,
+) -> None:
+    external_user_id = await get_known_vk_external_user_id(session, lead_id)
+    if external_user_id is None:
+        return
+
+    existing_identity = await session.scalar(
+        select(MessengerIdentity).where(
+            MessengerIdentity.lead_id == lead_id,
+            MessengerIdentity.channel == "vk",
+            MessengerIdentity.external_user_id == external_user_id,
+        )
+    )
+    if existing_identity is None:
+        await link_messenger_identity(
+            session=session,
+            token=token,
+            channel="vk",
+            external_user_id=external_user_id,
+            username=None,
+            display_name=None,
+            raw_profile={"source": "getcourse_vk_id"},
+            allow_relink=False,
+        )
+    else:
+        existing_identity.is_subscribed = True
+        existing_identity.unsubscribed_at = None
+        await session.flush()
+
+    await restart_default_vk_funnel_and_send_first_step(
+        session=session,
+        settings=settings,
+        lead_id=lead_id,
+    )
+
+
+async def get_known_vk_external_user_id(
+    session: AsyncSession,
+    lead_id: Any,
+) -> str | None:
+    identity = await session.scalar(
+        select(MessengerIdentity)
+        .where(
+            MessengerIdentity.lead_id == lead_id,
+            MessengerIdentity.channel == "vk",
+            MessengerIdentity.is_subscribed.is_(True),
+        )
+        .order_by(MessengerIdentity.created_at.desc())
+    )
+    if identity is not None:
+        return identity.external_user_id
+
+    return cast(
+        str | None,
+        await session.scalar(
+            select(LeadExternalId.external_id)
+            .where(
+                LeadExternalId.lead_id == lead_id,
+                LeadExternalId.provider == "getcourse_vk_id",
+            )
+            .order_by(LeadExternalId.created_at.desc())
+        ),
+    )
+
+
+async def restart_default_vk_funnel_and_send_first_step(
+    session: AsyncSession,
+    settings: Settings,
+    lead_id: Any,
+) -> None:
+    if not settings.vk_group_access_token:
+        return
+
+    now = datetime.now(UTC)
+    definition = load_funnel_definition(settings.default_funnel_path)
+    state = await start_default_funnel_for_lead(
+        session=session,
+        settings=settings,
+        lead_id=lead_id,
+        messenger_channel="vk",
+    )
+    metadata = dict(state.metadata_ or {})
+    last_relaunch_at = parse_iso_datetime(metadata.get("last_vk_join_relaunch_at"))
+    if last_relaunch_at is not None and last_relaunch_at > now - VK_RELAUNCH_COOLDOWN:
+        return
+
+    first_step = definition.steps[0]
+    for key in VK_RELAUNCH_RESET_METADATA_KEYS:
+        metadata.pop(key, None)
+    metadata.update(
+        {
+            "messenger_channel": "vk",
+            "definition_version": definition.version,
+            "step_index": 0,
+            "last_vk_join_relaunch_at": now.isoformat(),
+            "last_vk_join_relaunch_reason": "vk_launch_link",
+        }
+    )
+    state.status = "active"
+    state.current_step_key = first_step.key
+    state.next_run_at = now
+    state.completed_at = None
+    state.paused_at = None
+    state.metadata_ = metadata
+    await session.flush()
+
+    vk_client = HttpVkMessageClient(
+        access_token=settings.vk_group_access_token,
+        api_version=settings.vk_api_version,
+    )
+    sender = MessengerFunnelStepSender(
+        session=session,
+        telegram_bot=None,
+        vk_client=vk_client,
+    )
+    await run_due_funnel_step(
+        session=session,
+        state=state,
+        definition=definition,
+        sender=sender,
+        now=now,
+    )
+
+
+def parse_iso_datetime(value: Any) -> datetime | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
+
+
 def render_vk_oauth_error() -> HTMLResponse:
     return HTMLResponse(
         """<!doctype html>
@@ -349,13 +536,13 @@ def render_join_page(settings: Settings, token: str) -> HTMLResponse:
     telegram_link = build_telegram_deep_link(settings, token)
     escaped_token = html.escape(token)
     telegram_markup = (
-        f'<a class="button telegram" href="{html.escape(telegram_link)}">Телеграм</a>'
+        f'<a class="button telegram" href="{html.escape(telegram_link)}">Открыть Telegram</a>'
         if telegram_link is not None
         else '<span class="button disabled">Телеграм</span>'
     )
-    vk_link = build_vk_oauth_join_url(settings, token) or build_vk_deep_link(settings, token)
+    vk_link = build_vk_launch_link(settings, token)
     vk_markup = (
-        f'<a class="button vk" href="{html.escape(vk_link)}">Вконтакте</a>'
+        f'<a class="button vk" href="{html.escape(vk_link)}">Открыть VK</a>'
         if vk_link is not None
         else '<span class="button disabled">Вконтакте</span>'
     )
@@ -762,7 +949,7 @@ def render_join_page(settings: Settings, token: str) -> HTMLResponse:
           {vk_markup}
         </div>
         <p class="note">
-          Подпишитесь, чтобы получить бонусы и не пропустить сообщение по консультации.
+          Нажмите на удобный мессенджер — бот сразу отправит материалы.
         </p>
         <p class="lead">
           Айсу Кам свяжется с вами по заявке на консультацию.
@@ -800,7 +987,7 @@ def render_join_page(settings: Settings, token: str) -> HTMLResponse:
               <span class="next-number">01</span>
               <span>
                 <strong>Выберите мессенджер</strong>
-                Нажмите Telegram или Вконтакте на этой странице.
+                Нажмите Telegram или VK на этой странице.
               </span>
             </li>
             <li class="next-step">

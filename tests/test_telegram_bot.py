@@ -38,7 +38,10 @@ def test_build_raw_profile() -> None:
 
 
 def test_build_status_text() -> None:
-    assert build_status_text(None) == "Telegram пока не привязан. Откройте бота по ссылке с сайта."
+    assert (
+        build_status_text(None)
+        == "Telegram пока не привязан. Нажмите кнопку Telegram на странице после заявки."
+    )
 
     subscribed_identity = MessengerIdentity(
         channel="telegram",
@@ -57,7 +60,7 @@ def test_build_status_text() -> None:
     assert (
         build_status_text(unsubscribed_identity)
         == "Telegram привязан, но подписка остановлена. "
-        "Нажмите ссылку с сайта, чтобы включить снова."
+        "Нажмите кнопку Telegram на странице после заявки, чтобы включить снова."
     )
 
 

@@ -30,7 +30,9 @@ from funnelhub.db.models import (
 from funnelhub.services.getcourse_webhook import (
     ADDITIONAL_FIELD_LABELS,
     CONSENT_CUSTOM_FIELD_MAPPING,
+    human_custom_field_label,
     ingest_getcourse_webhook,
+    normalize_bool,
 )
 
 CSV_EXPORT_COLUMNS = [
@@ -371,6 +373,100 @@ async def get_database_lead_detail(
         ],
         raw_getcourse_data=lead.raw_getcourse_data or {},
     )
+
+
+async def upsert_database_lead_vk_id(
+    session: AsyncSession,
+    lead_id: uuid.UUID,
+    vk_id: str,
+) -> None:
+    lead = await session.get(Lead, lead_id)
+    if lead is None:
+        raise ValueError("Lead not found.")
+
+    normalized_vk_id = normalize_vk_external_id(vk_id)
+    conflicting_external_id = await session.scalar(
+        select(LeadExternalId).where(
+            LeadExternalId.provider == "getcourse_vk_id",
+            LeadExternalId.external_id == normalized_vk_id,
+            LeadExternalId.lead_id != lead_id,
+        )
+    )
+    if conflicting_external_id is not None:
+        raise ValueError("VK-ID is already linked to another lead.")
+
+    existing_external_ids = (
+        await session.scalars(
+            select(LeadExternalId)
+            .where(
+                LeadExternalId.lead_id == lead_id,
+                LeadExternalId.provider == "getcourse_vk_id",
+            )
+            .order_by(LeadExternalId.created_at)
+        )
+    ).all()
+    if existing_external_ids:
+        primary_external_id = existing_external_ids[0]
+        primary_external_id.external_id = normalized_vk_id
+        primary_external_id.metadata_ = {"source": "inbox_manual_edit"}
+        for duplicate in existing_external_ids[1:]:
+            await session.delete(duplicate)
+    else:
+        session.add(
+            LeadExternalId(
+                id=uuid.uuid4(),
+                lead_id=lead_id,
+                provider="getcourse_vk_id",
+                external_id=normalized_vk_id,
+                metadata_={"source": "inbox_manual_edit"},
+            )
+        )
+
+    custom_field = await session.scalar(
+        select(LeadCustomField).where(
+            LeadCustomField.lead_id == lead_id,
+            LeadCustomField.source == "getcourse",
+            LeadCustomField.field_key == "vk_id",
+        )
+    )
+    raw_data = {
+        "field_key": "vk_id",
+        "value": normalized_vk_id,
+        "source": "inbox_manual_edit",
+    }
+    if custom_field is None:
+        session.add(
+            LeadCustomField(
+                id=uuid.uuid4(),
+                lead_id=lead_id,
+                source="getcourse",
+                field_key="vk_id",
+                field_label=human_custom_field_label("vk_id"),
+                value=normalized_vk_id,
+                normalized_bool=normalize_bool(normalized_vk_id),
+                raw_data=raw_data,
+            )
+        )
+    else:
+        custom_field.field_label = human_custom_field_label("vk_id")
+        custom_field.value = normalized_vk_id
+        custom_field.normalized_bool = normalize_bool(normalized_vk_id)
+        custom_field.raw_data = raw_data
+
+    await session.flush()
+
+
+def normalize_vk_external_id(vk_id: str) -> str:
+    cleaned = vk_id.strip()
+    if cleaned.startswith("id") and cleaned[2:].isdigit():
+        cleaned = cleaned[2:]
+    if not cleaned.isdigit():
+        raise ValueError("VK-ID must contain only digits.")
+    if len(cleaned) > 20:
+        raise ValueError("VK-ID is too long.")
+    if int(cleaned) <= 0:
+        raise ValueError("VK-ID must be positive.")
+    return cleaned
 
 
 async def export_database_leads_csv(session: AsyncSession, *, query: str | None = None) -> str:

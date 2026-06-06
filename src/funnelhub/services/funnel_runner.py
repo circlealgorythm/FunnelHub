@@ -12,7 +12,7 @@ from funnelhub.config import Settings
 from funnelhub.db.models import FunnelState, Lead, MessengerIdentity
 from funnelhub.services.bot_linking import (
     build_telegram_deep_link,
-    build_vk_deep_link,
+    build_vk_launch_link,
     create_or_get_active_bot_link_token,
 )
 from funnelhub.services.email_messaging import EmailProviderClient, send_email_text_message
@@ -36,7 +36,6 @@ from funnelhub.services.vk_messaging import (
     VkUrlButton,
     send_vk_text_message,
 )
-from funnelhub.services.vk_oauth import build_vk_oauth_join_url
 
 logger = logging.getLogger(__name__)
 BOT_BUTTON_URLS = {
@@ -411,8 +410,5 @@ async def build_lead_bot_link(
     if channel == "telegram":
         return build_telegram_deep_link(settings, bot_link_token.token)
     if channel == "vk":
-        return (
-            build_vk_oauth_join_url(settings, bot_link_token.token)
-            or build_vk_deep_link(settings, bot_link_token.token)
-        )
+        return build_vk_launch_link(settings, bot_link_token.token)
     return None

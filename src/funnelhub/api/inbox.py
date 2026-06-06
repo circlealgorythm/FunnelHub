@@ -16,7 +16,7 @@ from funnelhub.db.session import get_session
 from funnelhub.services.auth import require_admin_session
 from funnelhub.services.bot_linking import (
     build_telegram_deep_link,
-    build_vk_deep_link,
+    build_vk_launch_link,
     create_or_get_active_bot_link_token,
 )
 from funnelhub.services.email_messaging import EmailProviderClient, build_email_provider_client
@@ -40,6 +40,7 @@ from funnelhub.services.inbox_database import (
     get_database_lead_detail,
     import_database_leads_csv,
     list_database_leads,
+    upsert_database_lead_vk_id,
 )
 from funnelhub.services.telegram_messaging import TelegramMessageClient
 from funnelhub.services.vk_messaging import HttpVkMessageClient, VkMessageClient
@@ -168,6 +169,10 @@ class DatabaseImportResponse(BaseModel):
     created_rows: int
     updated_rows: int
     errors: list[dict[str, object]]
+
+
+class DatabaseLeadVkIdRequest(BaseModel):
+    vk_id: str = Field(min_length=1, max_length=32)
 
 
 @dataclass
@@ -404,6 +409,39 @@ async def get_database_lead(
     )
 
 
+@router.put("/database/leads/{lead_id}/vk-id", response_model=DatabaseLeadDetailResponse)
+async def put_database_lead_vk_id(
+    lead_id: uuid.UUID,
+    request: DatabaseLeadVkIdRequest,
+    session: SessionDep,
+    settings: SettingsDep,
+) -> DatabaseLeadDetailResponse:
+    try:
+        await upsert_database_lead_vk_id(session, lead_id, request.vk_id)
+    except ValueError as exc:
+        await session.rollback()
+        error_detail = str(exc)
+        if error_detail == "Lead not found.":
+            raise HTTPException(status_code=404, detail=error_detail) from exc
+        raise HTTPException(status_code=422, detail=error_detail) from exc
+
+    lead = await session.get(Lead, lead_id)
+    if lead is None:
+        await session.rollback()
+        raise HTTPException(status_code=404, detail="Lead not found.")
+    bot_link_token = await create_or_get_active_bot_link_token(session, lead)
+    detail = await get_database_lead_detail(session, lead_id)
+    if detail is None:
+        await session.rollback()
+        raise HTTPException(status_code=404, detail="Lead not found.")
+
+    await session.commit()
+    return database_lead_detail_response(
+        detail,
+        bot_links=database_bot_link_responses(settings, bot_link_token),
+    )
+
+
 def conversation_response(summary: InboxConversationSummary) -> InboxConversationResponse:
     return InboxConversationResponse(
         id=summary.id,
@@ -528,7 +566,7 @@ def database_bot_link_responses(
                 expires_at=expires_at,
             )
         )
-    vk_link = build_vk_deep_link(settings, token)
+    vk_link = build_vk_launch_link(settings, token)
     if vk_link:
         links.append(
             DatabaseBotLinkResponse(

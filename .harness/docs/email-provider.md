@@ -26,7 +26,6 @@ Implemented now:
 
 Not implemented yet:
 
-- provider delivery/bounce/open/click webhooks;
 - admin UI for manual email broadcasts.
 
 ## Provider Contract
@@ -81,6 +80,39 @@ The adapter sends:
 - FunnelHub unsubscribe URL in `options.unsubscribe_url`;
 - scalar FunnelHub metadata in `global_metadata`.
 
+## Provider Webhooks
+
+Unisender Go provider callbacks are accepted at:
+
+```text
+GET/POST https://bot.aisukam.ru/webhooks/email/unisender-go
+```
+
+`GET` returns `{"status":"ok"}` so Unisender Go can validate the webhook URL before saving it.
+
+`POST` expects Unisender Go `events_by_user` JSON with `event_data.status`, `job_id`, `email`, `metadata`, and `event_time`. The handler validates the Unisender `auth` MD5 hash against `EMAIL_UNISENDER_GO_API_KEY`, then records idempotent `events` and updates existing message/subscription rows without a migration.
+
+Tracked provider statuses:
+
+- `delivered` -> `email.delivered`, message `delivered_at`, status `delivered`;
+- `opened` -> `email.opened`, message `read_at`, status `read`;
+- `clicked` -> `email.clicked`, message `read_at`, status `read`, clicked URL in message metadata;
+- `soft_bounced` -> `email.soft_bounced`, message status `failed`, subscription remains active;
+- `hard_bounced` -> `email.hard_bounced`, message status `failed`, subscription status `bounced`;
+- `spam` / complaint -> `email.complained`, message status `failed`, subscription status `complained`;
+- `unsubscribed` -> `email.unsubscribed`, message status `failed`, subscription status `unsubscribed`;
+- `subscribed` -> `email.subscribed`.
+
+Production Unisender Go webhook is registered as active with:
+
+- `url=https://bot.aisukam.ru/webhooks/email/unisender-go`;
+- `event_format=json_post`;
+- `delivery_info=1`;
+- `single_event=0`;
+- `max_parallel=10`;
+- `events.email_status=delivered,opened,clicked,unsubscribed,subscribed,soft_bounced,hard_bounced,spam`;
+- `events.spam_block=*`.
+
 ## Funnel Usage
 
 Email steps can be defined in a funnel:
@@ -103,4 +135,4 @@ Email funnel buttons can use internal bot-link URLs:
 - `funnelhub://bot/telegram`
 - `funnelhub://bot/vk`
 
-The funnel runner resolves them at send time through the lead's active bot link token, using the same Telegram/VK link builders as the thank-you page. VK uses the configured VK OAuth join URL when available and falls back to the `vk.me` deep link.
+The funnel runner resolves them at send time through the lead's active bot link token, using the same Telegram/VK link builders as the thank-you page. VK email buttons use FunnelHub's `/join/{token}/vk` launch endpoint, which can restart VK delivery for already known VK identities or stored GetCourse `VK-ID` values, then redirects to the plain `vk.me` deep link without VK ID authorization.

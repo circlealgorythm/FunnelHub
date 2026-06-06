@@ -1028,6 +1028,52 @@ h2 {
   gap: 10px;
 }
 
+.vk-id-form {
+  display: grid;
+  gap: 7px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 10px;
+  margin-bottom: 10px;
+}
+
+.vk-id-form label {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.vk-id-form > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.vk-id-form input {
+  width: 100%;
+  min-width: 0;
+  height: 40px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f9faf7;
+  color: var(--ink);
+  font: inherit;
+  padding: 0 11px;
+}
+
+.form-message {
+  color: var(--green);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.form-message.is-error {
+  color: #9f341c;
+}
+
 .bot-link-card {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -1312,6 +1358,14 @@ h2 {
   .key-value-line {
     grid-template-columns: 1fr;
     gap: 3px;
+  }
+
+  .vk-id-form > div {
+    grid-template-columns: 1fr;
+  }
+
+  .vk-id-form .soft-button {
+    width: 100%;
   }
 
   .conversation-list {

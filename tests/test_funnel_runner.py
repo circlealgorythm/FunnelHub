@@ -614,6 +614,11 @@ async def test_run_due_funnel_once_resolves_email_bot_buttons(
     settings = Settings(
         TELEGRAM_BOT_USERNAME="aisu_test_bot",
         VK_GROUP_SCREEN_NAME="aisu_test_vk",
+        VK_GROUP_ID=123,
+        VK_CALLBACK_SECRET="callback-secret",
+        VK_OAUTH_CLIENT_ID="client-id",
+        VK_OAUTH_CLIENT_SECRET="client-secret",
+        VK_OAUTH_STATE_SECRET="state-secret",
     )
 
     async with async_session_maker() as session:
@@ -639,13 +644,15 @@ async def test_run_due_funnel_once_resolves_email_bot_buttons(
         )
         assert bot_link_token is not None
         telegram_url = f"https://t.me/aisu_test_bot?start={bot_link_token.token}"
-        vk_url = f"https://vk.me/aisu_test_vk?ref={bot_link_token.token}"
+        vk_url = f"http://localhost:8000/join/{bot_link_token.token}/vk"
 
         assert telegram_url in email_client.text
         assert vk_url in email_client.text
+        assert "id.vk.ru/authorize" not in email_client.text
         assert email_client.html is not None
         assert f'href="{telegram_url}"' in email_client.html
         assert f'href="{vk_url}"' in email_client.html
+        assert "id.vk.ru/authorize" not in email_client.html
 
         message = await session.scalar(
             select(Message).where(

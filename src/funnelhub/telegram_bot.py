@@ -36,7 +36,9 @@ router = Router()
 async def handle_start(message: Message, command: CommandObject) -> None:
     token = normalize_start_token(command.args)
     if token is None:
-        await message.answer("Откройте бота по ссылке с сайта, чтобы привязать Telegram.")
+        await message.answer(
+            "Чтобы получить материалы, нажмите кнопку Telegram на странице после заявки."
+        )
         return
 
     telegram_user = message.from_user
@@ -78,7 +80,10 @@ async def handle_start(message: Message, command: CommandObject) -> None:
             await session.commit()
     except ValueError:
         logger.info("Telegram start rejected for invalid or conflicting token")
-        await message.answer("Ссылка недействительна или устарела. Получите новую ссылку.")
+        await message.answer(
+            "Не удалось открыть материалы. Вернитесь на страницу после заявки "
+            "и нажмите кнопку Telegram еще раз."
+        )
         return
 
 
@@ -223,12 +228,12 @@ def normalize_start_token(args: str | None) -> str | None:
 
 def build_status_text(identity: MessengerIdentity | None) -> str:
     if identity is None:
-        return "Telegram пока не привязан. Откройте бота по ссылке с сайта."
+        return "Telegram пока не привязан. Нажмите кнопку Telegram на странице после заявки."
     if identity.is_subscribed:
         return "Telegram привязан. Подписка активна."
     return (
         "Telegram привязан, но подписка остановлена. "
-        "Нажмите ссылку с сайта, чтобы включить снова."
+        "Нажмите кнопку Telegram на странице после заявки, чтобы включить снова."
     )
 
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import AsyncGenerator
+from datetime import UTC, datetime
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -18,6 +19,7 @@ from funnelhub.db.models import (
     LeadCustomField,
     LeadExternalId,
     LeadUtm,
+    Message,
     MessengerIdentity,
 )
 from funnelhub.db.session import async_session_maker, engine
@@ -806,6 +808,120 @@ async def test_vk_callback_message_allow_links_identity_and_starts_funnel(
             )
         )
         assert funnel_state is not None
+
+
+async def test_vk_launch_redirect_uses_known_getcourse_vk_id_and_restarts_funnel(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sent_messages: list[dict[str, object]] = []
+
+    class FakeHttpVkMessageClient:
+        def __init__(self, **kwargs: object) -> None:
+            self.kwargs = kwargs
+
+        async def send_message(
+            self,
+            peer_id: int | str,
+            message: str,
+            *,
+            keyboard: dict[str, object] | None = None,
+        ) -> dict[str, object]:
+            sent_messages.append(
+                {
+                    "peer_id": str(peer_id),
+                    "message": message,
+                    "keyboard": keyboard,
+                }
+            )
+            return {"response": 889}
+
+    monkeypatch.setenv("VK_GROUP_SCREEN_NAME", "aisu_test_vk")
+    monkeypatch.setenv("VK_GROUP_ACCESS_TOKEN", "vk-access-token")
+    monkeypatch.setattr("funnelhub.api.messenger.HttpVkMessageClient", FakeHttpVkMessageClient)
+    get_settings.cache_clear()
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            webhook_response = await client.get(
+                "/webhooks/getcourse",
+                params={
+                    "gc_user_id": TEST_GC_ID,
+                    "email": TEST_EMAIL,
+                    "VK-ID": "321654",
+                },
+            )
+            token = webhook_response.json()["bot_link_token"]
+            lead_id = uuid.UUID(webhook_response.json()["lead_id"])
+            async with async_session_maker() as session:
+                session.add(
+                    FunnelState(
+                        id=uuid.uuid4(),
+                        lead_id=lead_id,
+                        funnel_key="aisu_consultation",
+                        status="active",
+                        current_step_key="step_02_video",
+                        next_run_at=datetime(2026, 6, 6, 5, 49, tzinfo=UTC),
+                        metadata_={
+                            "answers": {
+                                "topic": "all",
+                                "experience": "self_practice",
+                            },
+                            "step_index": 3,
+                            "messenger_channel": "vk",
+                            "definition_version": 2,
+                            "pending_question_key": "topic",
+                            "personalized_sent_at": "2026-06-05T13:57:29.947739+00:00",
+                            "last_question_sent_at": "2026-06-06T05:19:04.790701+00:00",
+                            "questionnaire_waiting_for_step_key": "step_01_video",
+                        },
+                    )
+                )
+                await session.commit()
+            response = await client.get(f"/join/{token}/vk")
+    finally:
+        get_settings.cache_clear()
+
+    assert response.status_code == 307
+    assert response.headers["location"] == f"https://vk.me/aisu_test_vk?ref={token}"
+    assert sent_messages
+    assert sent_messages[0]["peer_id"] == "321654"
+    assert "Ваша заявка на консультацию принята" in str(sent_messages[0]["message"])
+
+    async with async_session_maker() as session:
+        identity = await session.scalar(
+            select(MessengerIdentity).where(
+                MessengerIdentity.lead_id == lead_id,
+                MessengerIdentity.channel == "vk",
+                MessengerIdentity.external_user_id == "321654",
+            )
+        )
+        assert identity is not None
+        assert identity.is_subscribed is True
+
+        funnel_state = await session.scalar(
+            select(FunnelState).where(
+                FunnelState.lead_id == lead_id,
+                FunnelState.funnel_key == "aisu_consultation",
+            )
+        )
+        assert funnel_state is not None
+        assert funnel_state.current_step_key == "question_topic"
+        assert funnel_state.metadata_["messenger_channel"] == "vk"
+        assert funnel_state.metadata_["last_vk_join_relaunch_reason"] == "vk_launch_link"
+        assert "answers" not in funnel_state.metadata_
+        assert "pending_question_key" not in funnel_state.metadata_
+        assert "questionnaire_waiting_for_step_key" not in funnel_state.metadata_
+        assert "last_question_sent_at" not in funnel_state.metadata_
+        assert "personalized_sent_at" not in funnel_state.metadata_
+
+        message = await session.scalar(
+            select(Message).where(
+                Message.lead_id == lead_id,
+                Message.channel == "vk",
+                Message.direction == "outbound",
+            )
+        )
+        assert message is not None
+        assert message.status == "sent"
 
 
 async def test_messenger_link_rejects_unknown_token() -> None:

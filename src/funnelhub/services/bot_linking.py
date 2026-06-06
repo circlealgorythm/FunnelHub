@@ -5,6 +5,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from urllib.parse import quote
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -148,6 +149,12 @@ def build_vk_deep_link(settings: Settings, token: str) -> str | None:
     if not screen_name:
         return None
     return f"https://vk.me/{screen_name}?ref={token}"
+
+
+def build_vk_launch_link(settings: Settings, token: str) -> str | None:
+    if build_vk_deep_link(settings, token) is None:
+        return None
+    return f"{settings.public_base_url.rstrip('/')}/join/{quote(token, safe='')}/vk"
 
 
 def generate_bot_link_token() -> str:

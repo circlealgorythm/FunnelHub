@@ -11,7 +11,15 @@ from sqlalchemy import delete, select
 
 from funnelhub.config import get_settings
 from funnelhub.db.base import Base
-from funnelhub.db.models import ImportBatch, Lead, LeadContact, Message, MessengerIdentity
+from funnelhub.db.models import (
+    ImportBatch,
+    Lead,
+    LeadContact,
+    LeadCustomField,
+    LeadExternalId,
+    Message,
+    MessengerIdentity,
+)
 from funnelhub.db.session import async_session_maker, engine
 from funnelhub.main import app
 from funnelhub.services.auth import hash_password
@@ -547,6 +555,10 @@ async def test_database_api_requires_auth_and_supports_list_export_import(
             )
             list_response = await client.get("/api/inbox/database/leads?q=Database")
             detail_response = await client.get(f"/api/inbox/database/leads/{lead_id}")
+            vk_id_response = await client.put(
+                f"/api/inbox/database/leads/{lead_id}/vk-id",
+                json={"vk_id": "id321654"},
+            )
             export_response = await client.get("/api/inbox/database/leads/export")
             import_response = await client.post(
                 "/api/inbox/database/leads/import",
@@ -572,11 +584,91 @@ async def test_database_api_requires_auth_and_supports_list_export_import(
     assert any(
         item["url"].startswith("https://t.me/aisu_test_bot?start=") for item in bot_links
     )
-    assert any(item["url"].startswith("https://vk.me/aisu_test_vk?ref=") for item in bot_links)
+    assert any("/join/" in item["url"] and item["url"].endswith("/vk") for item in bot_links)
+    assert vk_id_response.status_code == 200
+    vk_external_ids = vk_id_response.json()["external_ids"]
+    assert any(
+        item["provider"] == "getcourse_vk_id" and item["external_id"] == "321654"
+        for item in vk_external_ids
+    )
     assert export_response.status_code == 200
     assert "Database Test Lead" in export_response.text
     assert import_response.status_code == 200
     assert import_response.json()["processed_rows"] == 1
+
+    async with async_session_maker() as session:
+        external_id = await session.scalar(
+            select(LeadExternalId).where(
+                LeadExternalId.lead_id == lead_id,
+                LeadExternalId.provider == "getcourse_vk_id",
+            )
+        )
+        custom_field = await session.scalar(
+            select(LeadCustomField).where(
+                LeadCustomField.lead_id == lead_id,
+                LeadCustomField.field_key == "vk_id",
+            )
+        )
+        assert external_id is not None
+        assert external_id.external_id == "321654"
+        assert custom_field is not None
+        assert custom_field.value == "321654"
+
+
+async def test_database_api_rejects_invalid_and_conflicting_vk_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    configure_auth(monkeypatch)
+    first_lead_id = await create_database_lead()
+    async with async_session_maker() as session:
+        second_lead = Lead(
+            id=uuid.uuid4(),
+            getcourse_user_id=TEST_GC_ID + 7,
+            full_name="Second VK Lead",
+            raw_getcourse_data={},
+        )
+        session.add(second_lead)
+        await session.flush()
+        session.add(
+            LeadExternalId(
+                id=uuid.uuid4(),
+                lead_id=second_lead.id,
+                provider="getcourse_vk_id",
+                external_id="555777",
+                metadata_={},
+            )
+        )
+        await session.commit()
+        second_lead_id = second_lead.id
+
+    try:
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://127.0.0.1:8000",
+        ) as client:
+            await client.post(
+                "/api/auth/login",
+                json={"username": "aisu", "password": "secret"},
+            )
+            invalid_response = await client.put(
+                f"/api/inbox/database/leads/{first_lead_id}/vk-id",
+                json={"vk_id": "not-vk-id"},
+            )
+            conflict_response = await client.put(
+                f"/api/inbox/database/leads/{first_lead_id}/vk-id",
+                json={"vk_id": "555777"},
+            )
+            second_detail_response = await client.get(
+                f"/api/inbox/database/leads/{second_lead_id}"
+            )
+    finally:
+        get_settings.cache_clear()
+
+    assert invalid_response.status_code == 422
+    assert invalid_response.json()["detail"] == "VK-ID must contain only digits."
+    assert conflict_response.status_code == 422
+    assert conflict_response.json()["detail"] == "VK-ID is already linked to another lead."
+    assert second_detail_response.status_code == 200
 
 
 def configure_auth(monkeypatch: pytest.MonkeyPatch) -> None:

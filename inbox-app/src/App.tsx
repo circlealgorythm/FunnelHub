@@ -12,6 +12,7 @@ import {
   LogOut,
   MessageCircle,
   RefreshCw,
+  Save,
   Search,
   Send,
   Upload,
@@ -528,6 +529,23 @@ export function App() {
     }
   }
 
+  async function saveLeadVkId(leadId: string, vkId: string) {
+    setError(null);
+    const response = await fetch(`${API_BASE_URL}/api/inbox/database/leads/${leadId}/vk-id`, {
+      method: "PUT",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ vk_id: vkId }),
+    });
+    if (!response.ok) {
+      const payload = (await response.json().catch(() => null)) as { detail?: string } | null;
+      throw new Error(payload?.detail || `VK-ID save failed: ${response.status}`);
+    }
+    const payload = (await response.json()) as DatabaseLeadDetail;
+    setSelectedLeadDetail(payload);
+    await loadDatabaseLeads();
+  }
+
   async function handleLogin(username: string, password: string) {
     setError(null);
     const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
@@ -598,6 +616,7 @@ export function App() {
           onLogout={() => void logout()}
           onQueryChange={setDatabaseQuery}
           onRefresh={() => void loadDatabaseLeads()}
+          onSaveLeadVkId={(leadId, vkId) => saveLeadVkId(leadId, vkId)}
           onSearch={submitDatabaseSearch}
           onSelectLead={setSelectedLeadId}
           onSwitchView={switchView}
@@ -899,6 +918,7 @@ function DatabaseWorkspace({
   onLogout,
   onQueryChange,
   onRefresh,
+  onSaveLeadVkId,
   onSearch,
   onSelectLead,
   onSwitchView,
@@ -917,6 +937,7 @@ function DatabaseWorkspace({
   onLogout: () => void;
   onQueryChange: (query: string) => void;
   onRefresh: () => void;
+  onSaveLeadVkId: (leadId: string, vkId: string) => Promise<void>;
   onSearch: (event: FormEvent<HTMLFormElement>) => void;
   onSelectLead: (leadId: string) => void;
   onSwitchView: (view: AppView) => void;
@@ -1035,7 +1056,7 @@ function DatabaseWorkspace({
           {databaseDetailState === "loading" ? (
             <div className="detail-empty">Загружаем карточку...</div>
           ) : selectedLeadDetail ? (
-            <LeadDatabaseDetail detail={selectedLeadDetail} />
+            <LeadDatabaseDetail detail={selectedLeadDetail} onSaveVkId={onSaveLeadVkId} />
           ) : (
             <div className="detail-empty">
               <DatabaseIcon aria-hidden="true" size={34} />
@@ -1049,12 +1070,47 @@ function DatabaseWorkspace({
   );
 }
 
-function LeadDatabaseDetail({ detail }: { detail: DatabaseLeadDetail }) {
+function LeadDatabaseDetail({
+  detail,
+  onSaveVkId,
+}: {
+  detail: DatabaseLeadDetail;
+  onSaveVkId: (leadId: string, vkId: string) => Promise<void>;
+}) {
   const [copiedLink, setCopiedLink] = useState<string | null>(null);
+  const [vkIdDraft, setVkIdDraft] = useState(existingVkId(detail));
+  const [vkIdState, setVkIdState] = useState<LoadState>("idle");
+  const [vkIdMessage, setVkIdMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    setVkIdDraft(existingVkId(detail));
+    setVkIdState("idle");
+    setVkIdMessage(null);
+  }, [detail.lead.id, detail.external_ids]);
 
   async function copyBotLink(url: string) {
     await navigator.clipboard.writeText(url);
     setCopiedLink(url);
+  }
+
+  async function submitVkId(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const cleanVkId = vkIdDraft.trim();
+    if (!cleanVkId) {
+      setVkIdState("error");
+      setVkIdMessage("Введите VK-ID");
+      return;
+    }
+    setVkIdState("loading");
+    setVkIdMessage(null);
+    try {
+      await onSaveVkId(detail.lead.id, cleanVkId);
+      setVkIdState("idle");
+      setVkIdMessage("VK-ID сохранен");
+    } catch (caught) {
+      setVkIdState("error");
+      setVkIdMessage(formatError(caught));
+    }
   }
 
   return (
@@ -1085,6 +1141,27 @@ function LeadDatabaseDetail({ detail }: { detail: DatabaseLeadDetail }) {
       </div>
 
       <DetailSection count={detail.bot_links.length} defaultOpen title="Ссылки на ботов">
+        <form className="vk-id-form" onSubmit={(event) => void submitVkId(event)}>
+          <label htmlFor={`vk-id-${detail.lead.id}`}>VK-ID</label>
+          <div>
+            <input
+              id={`vk-id-${detail.lead.id}`}
+              inputMode="numeric"
+              onChange={(event) => setVkIdDraft(event.target.value)}
+              placeholder="Например 123456789"
+              value={vkIdDraft}
+            />
+            <button className="soft-button" disabled={vkIdState === "loading"} type="submit">
+              <Save aria-hidden="true" size={16} />
+              <span>{vkIdState === "loading" ? "Сохраняем" : "Сохранить"}</span>
+            </button>
+          </div>
+          {vkIdMessage ? (
+            <small className={vkIdState === "error" ? "form-message is-error" : "form-message"}>
+              {vkIdMessage}
+            </small>
+          ) : null}
+        </form>
         {detail.bot_links.length === 0 ? (
           <p>Ссылки недоступны: проверьте настройки Telegram/VK ботов.</p>
         ) : null}
@@ -1415,6 +1492,13 @@ function leadMessengerLabels(lead: DatabaseLead) {
     lead.telegram ? "TG" : null,
     lead.vk ? "VK" : null,
   ].filter((label): label is string => label !== null);
+}
+
+function existingVkId(detail: DatabaseLeadDetail) {
+  const externalId = detail.external_ids.find(
+    (item) => item.provider === "getcourse_vk_id" && typeof item.external_id === "string"
+  );
+  return typeof externalId?.external_id === "string" ? externalId.external_id : "";
 }
 
 function formatRelativeDate(value: string | null) {

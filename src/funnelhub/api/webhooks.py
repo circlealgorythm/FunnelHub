@@ -10,6 +10,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from funnelhub.config import Settings, get_settings
 from funnelhub.db.session import get_session
 from funnelhub.services.bot_linking import build_join_url
+from funnelhub.services.email_provider_webhooks import (
+    load_unisender_go_webhook_payload,
+    process_unisender_go_webhook,
+    verify_unisender_go_webhook_auth,
+)
 from funnelhub.services.funnel_autostart import start_default_email_funnel_for_lead
 from funnelhub.services.getcourse_webhook import ingest_getcourse_webhook
 from funnelhub.services.ingestion_guard import (
@@ -35,6 +40,18 @@ class VkCallbackEvent(BaseModel):
     group_id: int | None = None
     secret: str | None = None
     object: dict[str, Any] = Field(default_factory=dict)
+
+
+class EmailProviderWebhookResponse(BaseModel):
+    status: str
+    processed: int
+    matched_messages: int
+    updated_subscriptions: int
+    skipped: int
+
+
+class EmailProviderWebhookHealthResponse(BaseModel):
+    status: str
 
 
 @router.api_route(
@@ -82,6 +99,71 @@ async def getcourse_webhook(
         created=result.created,
         bot_link_token=result.bot_link_token,
         join_url=build_join_url(settings, result.bot_link_token),
+    )
+
+
+@router.get(
+    "/email/unisender-go",
+    status_code=status.HTTP_200_OK,
+    response_model=EmailProviderWebhookHealthResponse,
+)
+async def unisender_go_email_webhook_health() -> EmailProviderWebhookHealthResponse:
+    return EmailProviderWebhookHealthResponse(status="ok")
+
+
+@router.post(
+    "/email/unisender-go",
+    status_code=status.HTTP_200_OK,
+    response_model=EmailProviderWebhookResponse,
+)
+async def unisender_go_email_webhook(
+    request: Request,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> EmailProviderWebhookResponse:
+    if not settings.email_unisender_go_api_key:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Unisender Go webhook auth is not configured.",
+        )
+
+    raw_body = await request.body()
+    try:
+        payload = load_unisender_go_webhook_payload(raw_body)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+    received_auth = payload.get("auth")
+    if not isinstance(received_auth, str) or not verify_unisender_go_webhook_auth(
+        raw_body=raw_body,
+        payload=payload,
+        api_key=settings.email_unisender_go_api_key,
+        received_auth=received_auth,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid Unisender Go webhook auth.",
+        )
+
+    try:
+        result = await process_unisender_go_webhook(session, payload)
+    except ValueError as exc:
+        await session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(exc),
+        ) from exc
+
+    await session.commit()
+    return EmailProviderWebhookResponse(
+        status="ok",
+        processed=result.processed,
+        matched_messages=result.matched_messages,
+        updated_subscriptions=result.updated_subscriptions,
+        skipped=result.skipped,
     )
 
 

@@ -137,11 +137,15 @@ Supported VK events:
 
 VK outbound delivery uses the community access token from `VK_GROUP_ACCESS_TOKEN`.
 
-## VK OAuth Autostart
+## VK OAuth Compatibility
 
-VK `message_allow` is not reliable enough as the only autostart path for users who have already allowed messages before. The production code therefore also supports a VK OAuth join flow.
+VK `message_allow` is not reliable enough as the only autostart path for users who have already allowed messages before. The production code therefore still supports the VK OAuth callback flow for compatibility with already issued links.
 
-When these settings are present, the VK button on the thank-you page links to VK OAuth instead of the plain `vk.me` deep link:
+New thank-you page, Inbox bot links, and email CTA links intentionally use FunnelHub's `GET /join/{token}/vk` launch endpoint instead of VK ID OAuth. The launch endpoint first tries to restart VK delivery server-side when the lead already has a subscribed VK identity or a stored GetCourse `VK-ID`, then redirects the browser to the plain `https://vk.me/...` deep link. This avoids VK ID authorization while still handling old/known VK users when FunnelHub already knows their VK user id. OAuth settings may remain configured for old links, but they are no longer preferred by public subscription buttons.
+
+The thank-you page keeps the per-lead Telegram/VK token inside the button URL, but the visible user experience stays simple: the buttons read `Открыть Telegram` and `Открыть VK`. This preserves attribution in FunnelHub while avoiding instructions that ask the lead to copy or provide a personal link.
+
+OAuth callback support uses these settings:
 
 ```text
 VK_GROUP_ID=<numeric VK community id>
@@ -163,7 +167,14 @@ OAuth callback behavior:
 - links the VK user to the saved lead;
 - starts the default funnel and sends the first due step immediately.
 
-If the OAuth settings are missing, the thank-you page falls back to the existing `https://vk.me/...` deep link.
+New public VK buttons require `VK_GROUP_SCREEN_NAME`; if it is missing, the button is disabled instead of sending the lead through VK ID OAuth.
+
+For unknown VK users who have already allowed messages to the community, VK may open an existing empty dialog without sending a new `message_allow` event. FunnelHub cannot infer the VK user id from that browser transition alone without OAuth or a user-sent message. The `/join/{token}/vk` launch endpoint therefore covers the cases FunnelHub can know without auth:
+
+- already linked VK identities;
+- imported/stored GetCourse `VK-ID` external ids.
+
+Admins can add or correct a lead's stored `VK-ID` from Inbox `База` lead detail. The field is saved into `lead_external_ids` as `provider=getcourse_vk_id` and mirrored into the `vk_id` custom field so exports and detail views remain consistent. The API rejects non-numeric IDs and IDs already linked to another lead.
 
 Production notes:
 
@@ -177,4 +188,4 @@ Production notes:
 
 - Test the Telegram adapter end-to-end against the new test bot.
 - Replace the placeholder funnel YAML with the real customer scenario.
-- Add production VK OAuth app credentials and retest VK autostart from the thank-you page.
+- Monitor whether the restored `vk.me` flow receives `message_allow` / `message_new` callback events reliably for new leads.
