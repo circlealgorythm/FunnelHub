@@ -353,6 +353,7 @@ async def get_database_lead_detail(
         funnel_states=[
             {
                 "funnel_key": state.funnel_key,
+                "channel": state.channel,
                 "status": state.status,
                 "current_step_key": state.current_step_key,
                 "next_run_at": state.next_run_at,

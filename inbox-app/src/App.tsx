@@ -1301,9 +1301,12 @@ function LeadDatabaseDetail({
         {detail.funnel_states.length === 0 ? <p>Нет активных состояний.</p> : null}
         <div className="funnel-state-list">
           {detail.funnel_states.map((state, index) => (
-            <div className="funnel-state-card" key={`${String(state.funnel_key)}-${index}`}>
+            <div className="funnel-state-card" key={`${String(state.funnel_key)}-${String(state.channel)}-${index}`}>
               <div>
-                <strong>{humanFunnelKey(String(state.funnel_key))}</strong>
+                <strong>
+                  {String(state.channel) !== "unknown" ? `${channelLabels[String(state.channel)] ?? String(state.channel)}: ` : ""}
+                  {humanFunnelKey(String(state.funnel_key))}
+                </strong>
                 <span>{humanFunnelStep(String(state.current_step_key || state.funnel_key))}</span>
               </div>
               <small>{humanFunnelStatus(String(state.status))}</small>
