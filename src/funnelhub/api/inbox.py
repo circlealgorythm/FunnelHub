@@ -5,8 +5,9 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Annotated, Literal, cast
 
+import json
 from aiogram import Bot
-from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -32,13 +33,19 @@ from funnelhub.services.inbox import (
 )
 from funnelhub.services.inbox_database import (
     DatabaseImportResult,
+    DatabaseImportBatchDetail,
+    DatabaseImportBatchSummary,
+    ImportPreviewResult,
     DatabaseLeadDetail,
     DatabaseLeadList,
     DatabaseLeadSummary,
     export_database_leads_csv,
     export_database_leads_xlsx,
     get_database_lead_detail,
-    import_database_leads_csv,
+    preview_import_file,
+    execute_import_file,
+    list_import_batches,
+    get_import_batch_detail,
     list_database_leads,
     upsert_database_lead_vk_id,
     delete_database_lead,
@@ -169,6 +176,28 @@ class DatabaseImportResponse(BaseModel):
     failed_rows: int
     created_rows: int
     updated_rows: int
+    errors: list[dict[str, object]]
+
+
+class ImportPreviewResponse(BaseModel):
+    headers: list[str]
+    rows: list[list[str]]
+    suggested_mapping: dict[str, str]
+
+
+class DatabaseImportBatchSummaryResponse(BaseModel):
+    id: uuid.UUID
+    file_name: str
+    file_format: str
+    status: str
+    total_rows: int
+    processed_rows: int
+    failed_rows: int
+    created_at: datetime
+
+
+class DatabaseImportBatchDetailResponse(BaseModel):
+    batch: DatabaseImportBatchSummaryResponse
     errors: list[dict[str, object]]
 
 
@@ -365,22 +394,52 @@ async def export_database_leads_as_xlsx(
     )
 
 
+@router.post("/database/leads/import/preview", response_model=ImportPreviewResponse)
+async def preview_database_leads_import(
+    session: SessionDep,
+    file: UploadCsvFile,
+) -> ImportPreviewResponse:
+    file_name = file.filename or "leads.csv"
+    if not (file_name.lower().endswith(".csv") or file_name.lower().endswith(".xlsx")):
+        raise HTTPException(status_code=422, detail="Only CSV and XLSX files are supported.")
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=422, detail="File is empty.")
+    try:
+        result = preview_import_file(file_name=file_name, content=content)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return ImportPreviewResponse(
+        headers=result.headers,
+        rows=result.rows,
+        suggested_mapping=result.suggested_mapping,
+    )
+
+
 @router.post("/database/leads/import", response_model=DatabaseImportResponse)
 async def import_database_leads(
     session: SessionDep,
     file: UploadCsvFile,
+    mapping: str = Form(...),
 ) -> DatabaseImportResponse:
     file_name = file.filename or "leads.csv"
-    if not file_name.lower().endswith(".csv"):
-        raise HTTPException(status_code=422, detail="Only CSV files are supported.")
+    if not (file_name.lower().endswith(".csv") or file_name.lower().endswith(".xlsx")):
+        raise HTTPException(status_code=422, detail="Only CSV and XLSX files are supported.")
     content = await file.read()
     if not content:
-        raise HTTPException(status_code=422, detail="CSV file is empty.")
+        raise HTTPException(status_code=422, detail="File is empty.")
+        
     try:
-        result = await import_database_leads_csv(
+        mapping_dict = json.loads(mapping)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=422, detail="Invalid mapping JSON.")
+
+    try:
+        result = await execute_import_file(
             session,
             file_name=file_name,
             content=content,
+            mapping=mapping_dict,
         )
     except ValueError as exc:
         await session.rollback()
@@ -388,6 +447,28 @@ async def import_database_leads(
 
     await session.commit()
     return database_import_response(result)
+
+
+@router.get("/database/leads/import/batches", response_model=list[DatabaseImportBatchSummaryResponse])
+async def get_import_batches(
+    session: SessionDep,
+) -> list[DatabaseImportBatchSummaryResponse]:
+    batches = await list_import_batches(session, limit=20)
+    return [database_import_batch_summary_response(b) for b in batches]
+
+
+@router.get("/database/leads/import/batches/{batch_id}", response_model=DatabaseImportBatchDetailResponse)
+async def get_import_batch(
+    batch_id: uuid.UUID,
+    session: SessionDep,
+) -> DatabaseImportBatchDetailResponse:
+    detail = await get_import_batch_detail(session, batch_id)
+    if detail is None:
+        raise HTTPException(status_code=404, detail="Batch not found.")
+    return DatabaseImportBatchDetailResponse(
+        batch=database_import_batch_summary_response(detail.batch),
+        errors=detail.errors,
+    )
 
 
 @router.get("/database/leads/{lead_id}", response_model=DatabaseLeadDetailResponse)
@@ -604,4 +685,17 @@ def database_import_response(result: DatabaseImportResult) -> DatabaseImportResp
         created_rows=result.created_rows,
         updated_rows=result.updated_rows,
         errors=result.errors,
+    )
+
+
+def database_import_batch_summary_response(summary: DatabaseImportBatchSummary) -> DatabaseImportBatchSummaryResponse:
+    return DatabaseImportBatchSummaryResponse(
+        id=summary.id,
+        file_name=summary.file_name,
+        file_format=summary.file_format,
+        status=summary.status,
+        total_rows=summary.total_rows,
+        processed_rows=summary.processed_rows,
+        failed_rows=summary.failed_rows,
+        created_at=summary.created_at,
     )

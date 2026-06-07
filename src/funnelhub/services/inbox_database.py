@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from openpyxl import Workbook  # type: ignore[import-untyped]
+from openpyxl import Workbook, load_workbook  # type: ignore[import-untyped]
 from openpyxl.styles import Alignment, Font, PatternFill  # type: ignore[import-untyped]
 from sqlalchemy import Select, false, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -166,6 +166,31 @@ class DatabaseImportResult:
     failed_rows: int
     created_rows: int
     updated_rows: int
+    errors: list[dict[str, Any]]
+
+
+@dataclass(frozen=True)
+class ImportPreviewResult:
+    headers: list[str]
+    rows: list[list[str]]
+    suggested_mapping: dict[str, str]
+
+
+@dataclass(frozen=True)
+class DatabaseImportBatchSummary:
+    id: uuid.UUID
+    file_name: str
+    file_format: str
+    status: str
+    total_rows: int
+    processed_rows: int
+    failed_rows: int
+    created_at: datetime
+
+
+@dataclass(frozen=True)
+class DatabaseImportBatchDetail:
+    batch: DatabaseImportBatchSummary
     errors: list[dict[str, Any]]
 
 
@@ -517,31 +542,85 @@ async def export_database_leads_xlsx(session: AsyncSession, *, query: str | None
     return buffer.getvalue()
 
 
-async def import_database_leads_csv(
+def read_import_file_rows(file_name: str, content: bytes) -> tuple[list[str], list[list[str]], str | None]:
+    if file_name.lower().endswith(".xlsx"):
+        wb = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
+        sheet = wb.active
+        rows_iter = sheet.iter_rows(values_only=True)
+        try:
+            raw_headers = next(rows_iter)
+        except StopIteration:
+            raise ValueError("XLSX file is empty.") from None
+        if not raw_headers:
+            raise ValueError("XLSX file must contain a header row.")
+            
+        headers = [str(cell) if cell is not None else "" for cell in raw_headers]
+        
+        rows: list[list[str]] = []
+        for row in rows_iter:
+            rows.append([str(cell) if cell is not None else "" for cell in row])
+        return headers, rows, None
+    else:
+        text = decode_csv_content(content)
+        delimiter = detect_csv_delimiter(text)
+        csv_reader = csv.reader(io.StringIO(text), delimiter=delimiter)
+        try:
+            headers = next(csv_reader)
+        except StopIteration:
+            raise ValueError("CSV file is empty.") from None
+        if not headers:
+            raise ValueError("CSV file must contain a header row.")
+            
+        rows = [row for row in csv_reader]
+        return headers, rows, delimiter
+
+
+def suggest_import_mapping(headers: list[str]) -> dict[str, str]:
+    mapping: dict[str, str] = {}
+    for header in headers:
+        cleaned = header.strip()
+        if not cleaned:
+            continue
+        matched_key = None
+        for key, aliases in IMPORT_FIELD_ALIASES.items():
+            if cleaned.lower() in [a.lower() for a in aliases]:
+                matched_key = key
+                break
+        if matched_key:
+            mapping[header] = matched_key
+    return mapping
+
+
+def preview_import_file(file_name: str, content: bytes) -> ImportPreviewResult:
+    headers, rows, _ = read_import_file_rows(file_name, content)
+    suggested_mapping = suggest_import_mapping(headers)
+    return ImportPreviewResult(
+        headers=headers,
+        rows=rows[:5],
+        suggested_mapping=suggested_mapping,
+    )
+
+
+async def execute_import_file(
     session: AsyncSession,
     *,
     file_name: str,
     content: bytes,
+    mapping: dict[str, str],
 ) -> DatabaseImportResult:
-    text = decode_csv_content(content)
-    delimiter = detect_csv_delimiter(text)
-    csv_reader = csv.reader(io.StringIO(text), delimiter=delimiter)
-    try:
-        fieldnames = next(csv_reader)
-    except StopIteration:
-        raise ValueError("CSV file must contain a header row.") from None
-    if not fieldnames:
-        raise ValueError("CSV file must contain a header row.")
-
+    headers, all_rows, delimiter = read_import_file_rows(file_name, content)
+    
+    file_format = "xlsx" if file_name.lower().endswith(".xlsx") else "csv"
+    
     batch = ImportBatch(
         id=uuid.uuid4(),
         source="inbox",
         file_name=file_name,
-        file_format="csv",
-        encoding="utf-8-sig",
+        file_format=file_format,
+        encoding="utf-8-sig" if file_format == "csv" else None,
         delimiter=delimiter,
         status="processing",
-        metadata_={"fieldnames": fieldnames},
+        metadata_={"fieldnames": headers, "mapping": mapping},
     )
     session.add(batch)
     await session.flush()
@@ -553,15 +632,23 @@ async def import_database_leads_csv(
     updated_rows = 0
     errors: list[dict[str, Any]] = []
 
-    for row_number, values in enumerate(csv_reader, start=2):
+    for row_number, values in enumerate(all_rows, start=2):
         total_rows += 1
-        row = import_values_to_row(fieldnames, values)
-        payload = import_row_to_payload(row)
+        
+        # Zip safely, some rows might be shorter than headers
+        row_dict = dict(zip(headers, values))
+        
+        payload: dict[str, Any] = {}
+        for header, target_key in mapping.items():
+            value = clean_import_value(row_dict.get(header))
+            if value is not None:
+                payload[target_key] = value
+
         import_row = ImportRow(
             id=uuid.uuid4(),
             batch_id=batch.id,
             row_number=row_number,
-            raw_data={key: value for key, value in row.items() if key is not None},
+            raw_data={k: v for k, v in row_dict.items() if v},
             errors=[],
         )
         session.add(import_row)
@@ -601,6 +688,69 @@ async def import_database_leads_csv(
         created_rows=created_rows,
         updated_rows=updated_rows,
         errors=errors[:20],
+    )
+
+
+async def list_import_batches(session: AsyncSession, limit: int = 20) -> list[DatabaseImportBatchSummary]:
+    rows = (
+        await session.execute(
+            select(ImportBatch)
+            .where(ImportBatch.source == "inbox")
+            .order_by(ImportBatch.created_at.desc())
+            .limit(limit)
+        )
+    ).scalars().all()
+    
+    return [
+        DatabaseImportBatchSummary(
+            id=row.id,
+            file_name=row.file_name,
+            file_format=row.file_format,
+            status=row.status,
+            total_rows=row.total_rows,
+            processed_rows=row.processed_rows,
+            failed_rows=row.failed_rows,
+            created_at=row.created_at,
+        ) for row in rows
+    ]
+
+
+async def get_import_batch_detail(session: AsyncSession, batch_id: uuid.UUID) -> DatabaseImportBatchDetail | None:
+    batch = await session.get(ImportBatch, batch_id)
+    if batch is None:
+        return None
+        
+    summary = DatabaseImportBatchSummary(
+        id=batch.id,
+        file_name=batch.file_name,
+        file_format=batch.file_format,
+        status=batch.status,
+        total_rows=batch.total_rows,
+        processed_rows=batch.processed_rows,
+        failed_rows=batch.failed_rows,
+        created_at=batch.created_at,
+    )
+    
+    failed_rows = (
+        await session.execute(
+            select(ImportRow)
+            .where(ImportRow.batch_id == batch_id, ImportRow.status == "failed")
+            .order_by(ImportRow.row_number)
+            .limit(100)
+        )
+    ).scalars().all()
+    
+    errors: list[dict[str, Any]] = []
+    for row in failed_rows:
+        for err in row.errors:
+            errors.append({
+                "row_number": row.row_number,
+                "message": err.get("message", "Unknown error"),
+            })
+            
+    return DatabaseImportBatchDetail(
+        batch=summary,
+        errors=errors,
     )
 
 

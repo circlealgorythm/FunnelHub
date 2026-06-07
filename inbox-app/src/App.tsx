@@ -128,6 +128,28 @@ type DatabaseImportSummary = {
   errors: Array<Record<string, unknown>>;
 };
 
+type ImportPreview = {
+  headers: string[];
+  rows: string[][];
+  suggested_mapping: Record<string, string>;
+};
+
+type ImportBatchSummary = {
+  id: string;
+  file_name: string;
+  file_format: string;
+  status: string;
+  total_rows: number;
+  processed_rows: number;
+  failed_rows: number;
+  created_at: string;
+};
+
+type ImportBatchDetail = {
+  batch: ImportBatchSummary;
+  errors: Array<Record<string, unknown>>;
+};
+
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
 
 const statusLabels: Record<ConversationStatus, string> = {
@@ -498,34 +520,14 @@ export function App() {
     }
   }
 
-  async function importDatabase(event: ChangeEvent<HTMLInputElement>) {
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [showImportHistory, setShowImportHistory] = useState(false);
+
+  function openImportModal(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     event.target.value = "";
-    if (!file) {
-      return;
-    }
-
-    setDatabaseImportState("loading");
-    setDatabaseImportSummary(null);
-    setError(null);
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
-      const response = await fetch(`${API_BASE_URL}/api/inbox/database/leads/import`, {
-        method: "POST",
-        credentials: "include",
-        body: formData,
-      });
-      if (!response.ok) {
-        throw new Error(`Import failed: ${response.status}`);
-      }
-      const payload = (await response.json()) as DatabaseImportSummary;
-      setDatabaseImportSummary(payload);
-      setDatabaseImportState("idle");
-      await loadDatabaseLeads();
-    } catch (caught) {
-      setDatabaseImportState("error");
-      setError(formatError(caught));
+    if (file) {
+      setImportFile(file);
     }
   }
 
@@ -631,7 +633,8 @@ export function App() {
           databaseQuery={databaseQuery}
           databaseState={databaseState}
           onExport={() => void exportDatabase()}
-          onImport={(event) => void importDatabase(event)}
+          onImport={openImportModal}
+          onOpenHistory={() => setShowImportHistory(true)}
           onLogout={() => void logout()}
           onQueryChange={setDatabaseQuery}
           onRefresh={loadDatabaseLeads}
@@ -643,6 +646,20 @@ export function App() {
           selectedLeadDetail={selectedLeadDetail}
           selectedLeadId={selectedLeadId}
         />
+        {importFile ? (
+          <ImportManagerModal
+            file={importFile}
+            onClose={() => setImportFile(null)}
+            onSuccess={(summary) => {
+              setDatabaseImportSummary(summary);
+              setImportFile(null);
+              void loadDatabaseLeads();
+            }}
+          />
+        ) : null}
+        {showImportHistory ? (
+          <ImportHistoryModal onClose={() => setShowImportHistory(false)} />
+        ) : null}
         {error ? (
           <div className="toast" role="status">
             {error}
@@ -935,6 +952,7 @@ function DatabaseWorkspace({
   databaseState,
   onExport,
   onImport,
+  onOpenHistory,
   onLogout,
   onQueryChange,
   onRefresh,
@@ -955,6 +973,7 @@ function DatabaseWorkspace({
   databaseState: LoadState;
   onExport: () => void;
   onImport: (event: ChangeEvent<HTMLInputElement>) => void;
+  onOpenHistory: () => void;
   onLogout: () => void;
   onQueryChange: (query: string) => void;
   onRefresh: () => void;
@@ -984,10 +1003,14 @@ function DatabaseWorkspace({
             <Download aria-hidden="true" size={17} />
             <span>Выгрузить XLSX</span>
           </button>
+          <button className="soft-button" onClick={onOpenHistory} type="button">
+            <Clock aria-hidden="true" size={17} />
+            <span>История импортов</span>
+          </button>
           <label className="soft-button file-button">
             <Upload aria-hidden="true" size={17} />
-            <span>{databaseImportState === "loading" ? "Загрузка" : "Загрузить CSV"}</span>
-            <input accept=".csv,text/csv" onChange={onImport} type="file" />
+            <span>Импорт CSV/XLSX</span>
+            <input accept=".csv,text/csv,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={onImport} type="file" />
           </label>
           <button className="icon-button secondary" onClick={onLogout} type="button">
             <LogOut aria-hidden="true" size={18} />
@@ -1726,4 +1749,291 @@ function formatError(caught: unknown) {
     return caught.message;
   }
   return "Не удалось выполнить действие.";
+}
+
+function ImportManagerModal({
+  file,
+  onClose,
+  onSuccess,
+}: {
+  file: File;
+  onClose: () => void;
+  onSuccess: (summary: DatabaseImportSummary) => void;
+}) {
+  const [step, setStep] = useState<"preview" | "mapping" | "importing">("preview");
+  const [preview, setPreview] = useState<ImportPreview | null>(null);
+  const [mapping, setMapping] = useState<Record<string, string>>({});
+  const [error, setError] = useState<string | null>(null);
+
+  const TARGET_FIELDS = [
+    { value: "", label: "-- Пропустить --" },
+    { value: "gc_user_id", label: "GetCourse ID" },
+    { value: "name", label: "ФИО" },
+    { value: "first_name", label: "Имя" },
+    { value: "last_name", label: "Фамилия" },
+    { value: "email", label: "Email" },
+    { value: "phone", label: "Телефон" },
+    { value: "city", label: "Город" },
+    { value: "country", label: "Страна" },
+    { value: "source", label: "Источник" },
+    { value: "registration_type", label: "Тип регистрации" },
+    { value: "created", label: "Создан в GC" },
+    { value: "last_activity", label: "Последняя активность в GC" },
+    { value: "utm_source", label: "UTM Source" },
+    { value: "utm_medium", label: "UTM Medium" },
+    { value: "utm_campaign", label: "UTM Campaign" },
+    { value: "utm_term", label: "UTM Term" },
+    { value: "utm_content", label: "UTM Content" },
+    { value: "utm_group", label: "UTM Group" },
+    { value: "vk_id", label: "VK-ID" },
+    { value: "getcourse_groups", label: "Группы GetCourse" },
+  ];
+
+  useEffect(() => {
+    async function loadPreview() {
+      try {
+        const formData = new FormData();
+        formData.append("file", file);
+        const response = await fetch(`${API_BASE_URL}/api/inbox/database/leads/import/preview`, {
+          method: "POST",
+          credentials: "include",
+          body: formData,
+        });
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(text || "Ошибка предпросмотра");
+        }
+        const data = (await response.json()) as ImportPreview;
+        setPreview(data);
+        
+        // Initialize mapping
+        const initMap: Record<string, string> = {};
+        for (const header of data.headers) {
+            initMap[header] = data.suggested_mapping[header] || `custom_${header}`;
+        }
+        setMapping(initMap);
+        setStep("mapping");
+      } catch (err) {
+        setError(formatError(err));
+      }
+    }
+    void loadPreview();
+  }, [file]);
+
+  async function handleImport() {
+    setStep("importing");
+    setError(null);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      // Only include fields that are actually mapped to something
+      const cleanMapping = Object.fromEntries(
+          Object.entries(mapping).filter(([_, v]) => v !== "")
+      );
+      formData.append("mapping", JSON.stringify(cleanMapping));
+
+      const response = await fetch(`${API_BASE_URL}/api/inbox/database/leads/import`, {
+        method: "POST",
+        credentials: "include",
+        body: formData,
+      });
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as { detail?: string } | null;
+        throw new Error(payload?.detail || `Ошибка импорта: ${response.status}`);
+      }
+      const summary = (await response.json()) as DatabaseImportSummary;
+      onSuccess(summary);
+    } catch (err) {
+      setError(formatError(err));
+      setStep("mapping"); // back to mapping to allow retry
+    }
+  }
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal-content" style={{ maxWidth: "800px", width: "90%" }}>
+        <h3>Импорт файла: {file.name}</h3>
+        
+        {step === "preview" ? (
+          <p>Загрузка предпросмотра...</p>
+        ) : null}
+
+        {step === "mapping" && preview ? (
+          <div className="import-mapping">
+            <p>Настройте соответствие колонок из файла к полям базы.</p>
+            <div className="table-responsive" style={{ maxHeight: "50vh", overflowY: "auto" }}>
+                <table className="lead-table">
+                <thead>
+                    <tr>
+                    <th>Колонка в файле</th>
+                    <th>Поле в базе</th>
+                    <th>Пример данных (первая строка)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {preview.headers.map((header, idx) => (
+                    <tr key={`${header}-${idx}`}>
+                        <td><strong>{header}</strong></td>
+                        <td>
+                        <select 
+                            value={mapping[header] || ""} 
+                            onChange={(e) => {
+                                const val = e.target.value;
+                                setMapping(m => ({ ...m, [header]: val }));
+                            }}
+                        >
+                            {TARGET_FIELDS.map(f => (
+                                <option key={f.value} value={f.value}>{f.label}</option>
+                            ))}
+                            <option value={`custom_${header}`}>Новое доп. поле (custom_{header})</option>
+                        </select>
+                        </td>
+                        <td>{preview.rows[0]?.[idx] || ""}</td>
+                    </tr>
+                    ))}
+                </tbody>
+                </table>
+            </div>
+          </div>
+        ) : null}
+
+        {step === "importing" ? (
+            <p>Выполняется импорт... Пожалуйста, подождите.</p>
+        ) : null}
+
+        {error ? <p className="form-message is-error">{error}</p> : null}
+
+        <div className="modal-actions" style={{ marginTop: "20px" }}>
+          <button className="soft-button" onClick={onClose} disabled={step === "importing"}>Отмена</button>
+          {step === "mapping" ? (
+              <button className="soft-button" onClick={() => void handleImport()} style={{ backgroundColor: "#24483C", color: "white" }}>
+                Запустить импорт
+              </button>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ImportHistoryModal({ onClose }: { onClose: () => void }) {
+  const [batches, setBatches] = useState<ImportBatchSummary[]>([]);
+  const [selectedBatch, setSelectedBatch] = useState<ImportBatchDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function loadBatches() {
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/inbox/database/leads/import/batches`, {
+          credentials: "include",
+        });
+        if (!response.ok) throw new Error("Не удалось загрузить историю");
+        const data = await response.json();
+        setBatches(data);
+      } catch (err) {
+        setError(formatError(err));
+      } finally {
+        setLoading(false);
+      }
+    }
+    void loadBatches();
+  }, []);
+
+  async function loadDetail(batchId: string) {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/inbox/database/leads/import/batches/${batchId}`, {
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error("Не удалось загрузить детали");
+      const data = await response.json();
+      setSelectedBatch(data);
+    } catch (err) {
+      setError(formatError(err));
+    }
+  }
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal-content" style={{ maxWidth: "800px", width: "90%" }}>
+        <h3>История импортов</h3>
+
+        {error ? <p className="form-message is-error">{error}</p> : null}
+
+        {!selectedBatch ? (
+          <>
+            {loading ? <p>Загрузка...</p> : (
+              <div className="table-responsive" style={{ maxHeight: "50vh", overflowY: "auto" }}>
+                  <table className="lead-table">
+                  <thead>
+                      <tr>
+                      <th>Дата</th>
+                      <th>Файл</th>
+                      <th>Статус</th>
+                      <th>Строк</th>
+                      <th>Ошибок</th>
+                      </tr>
+                  </thead>
+                  <tbody>
+                      {batches.length === 0 ? <tr><td colSpan={5}>Нет истории импортов</td></tr> : null}
+                      {batches.map(b => (
+                          <tr key={b.id} onClick={() => void loadDetail(b.id)} style={{ cursor: "pointer" }}>
+                              <td>{formatRelativeDate(b.created_at)}</td>
+                              <td>{b.file_name}</td>
+                              <td>{humanFunnelStatus(b.status)}</td>
+                              <td>{b.processed_rows} / {b.total_rows}</td>
+                              <td style={{ color: b.failed_rows > 0 ? "#d94242" : "inherit" }}>{b.failed_rows}</td>
+                          </tr>
+                      ))}
+                  </tbody>
+                  </table>
+              </div>
+            )}
+            <div className="modal-actions" style={{ marginTop: "20px" }}>
+                <button className="soft-button" onClick={onClose}>Закрыть</button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div style={{ marginBottom: "20px" }}>
+              <button className="soft-button" onClick={() => setSelectedBatch(null)}>&larr; Назад к списку</button>
+            </div>
+            
+            <p><strong>Файл:</strong> {selectedBatch.batch.file_name}</p>
+            <p><strong>Статус:</strong> {humanFunnelStatus(selectedBatch.batch.status)} ({selectedBatch.batch.processed_rows} обработано, {selectedBatch.batch.failed_rows} ошибок)</p>
+            
+            {selectedBatch.errors && selectedBatch.errors.length > 0 ? (
+                <div style={{ marginTop: "20px" }}>
+                    <h4>Список ошибок</h4>
+                    <div className="table-responsive" style={{ maxHeight: "35vh", overflowY: "auto" }}>
+                        <table className="lead-table">
+                        <thead>
+                            <tr>
+                            <th>Строка</th>
+                            <th>Ошибка</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {selectedBatch.errors.map((e, idx) => (
+                                <tr key={idx}>
+                                    <td>{e.row_number as number}</td>
+                                    <td style={{ color: "#d94242" }}>{e.message as string}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                        </table>
+                    </div>
+                </div>
+            ) : (
+                <p style={{ marginTop: "20px" }}>Ошибок нет.</p>
+            )}
+
+            <div className="modal-actions" style={{ marginTop: "20px" }}>
+                <button className="soft-button" onClick={onClose}>Закрыть</button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
 }
