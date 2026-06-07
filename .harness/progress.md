@@ -2,6 +2,9 @@
 
 ## Current State
 
+- 2026-06-07 CSV and XLSX import fully implemented and deployed. Added file preview, column mapping, and import history table to Inbox.
+- 2026-06-07 Fixed deploy_files.py to handle Windows-created ZIP files correctly on Linux by using Python zip module, and changed Docker restart command to up -d --build to correctly apply code and frontend asset changes.
+- 2026-06-07 Added avicon.ico to the Inbox React app and deployed to production.
 - Project: FunnelHub.
 - Methodology: Harness-engineering.
 - Current feature: `email-provider`.

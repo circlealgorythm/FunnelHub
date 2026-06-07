@@ -4,6 +4,14 @@
 
 FunnelHub is being set up as a Harness-engineering project. GetCourse keeps courses/payments/access. FunnelHub owns bots, email, inbox, lead database, imports, broadcasts, and analytics.
 
+
+## Latest Session - 2026-06-07 CSV/XLSX Import & Deploy Fixes
+- Implemented full CSV and XLSX import with column mapping and error history in Inbox База.
+- Added support for reading XLSX files using openpyxl.
+- Created preview API endpoints and UI modals for mapping GetCourse export columns to database fields.
+- Fixed deployment script deploy_files.py to properly build the React app and safely unpack the .zip archive on the Linux server without Windows backslash path issues.
+- Added and deployed avicon.ico for the Inbox frontend.
+- Rebuilt Docker containers with the properly unpacked frontend dist and verified functionality.
 ## Latest Session - 2026-06-06 Simultaneous Funnel Execution per Channel
 
 - Diagnosis: A single lead could not run the same funnel simultaneously in both Telegram and VK because the unique constraint `(lead_id, funnel_key)` on `funnel_states` would cause a collision. When restarting in a new channel, the old state was deleted.
