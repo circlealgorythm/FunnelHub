@@ -266,3 +266,28 @@ class Event(Base, TimestampMixin):
     )
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
     dedupe_key: Mapped[str | None] = mapped_column(String(512), unique=True)
+
+
+class Broadcast(Base, TimestampMixin):
+    __tablename__ = "broadcasts"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    segment_query: Mapped[str | None] = mapped_column(String(1024))
+    channels: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
+    message_text: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(64), default="created", nullable=False)
+    total_leads: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    processed_leads: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    failed_leads: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    skipped_leads: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+
+class BroadcastTarget(Base, TimestampMixin):
+    __tablename__ = "broadcast_targets"
+    __table_args__ = (UniqueConstraint("broadcast_id", "lead_id"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    broadcast_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("broadcasts.id", ondelete="CASCADE"))
+    lead_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("leads.id", ondelete="CASCADE"))
+    status: Mapped[str] = mapped_column(String(64), default="pending", nullable=False)
+    error: Mapped[str | None] = mapped_column(Text)

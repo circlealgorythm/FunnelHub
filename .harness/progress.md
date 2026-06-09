@@ -8,7 +8,7 @@
 - Project: FunnelHub.
 - Methodology: Harness-engineering.
 - Current feature: `email-provider`.
-- WIP: Unisender Go provider, the Aisu Kam email sequence, and provider delivery/bounce/open/click webhooks are deployed; manual email broadcasts remain future work.
+- WIP: Manual broadcasts feature is partially complete. Added Broadcast database models, background runner service, API endpoints, and Inbox frontend views (creation modal, list view, and detail view for targets).
 - 2026-06-04 technical audit completed before further development. Highest-priority finding `/inbox/{path:path}` encoded path traversal is now fixed locally and covered by regression tests.
 - 2026-06-05 audit item 2, GetCourse webhook authentication/rate limiting, is completed and deployed in safe compatibility mode with `GETCOURSE_WEBHOOK_SECRET_REQUIRED=false`.
 - 2026-06-05 production test-lead cleanup completed before further live checks: 2 test leads and their lead-owned contacts, bot/email subscriptions, funnel states, messages, conversations, consents, custom fields, tokens, and messenger identities were deleted after a pg_dump backup.
@@ -129,6 +129,13 @@
 - `INBOX_ADMIN_PASSWORD_HASH` stores only a password hash; the real inbox password must not be committed.
 
 ## Completed
+
+- Implemented Broadcast and BroadcastTarget models with tracking for total, processed, failed, and skipped leads.
+- Added src/funnelhub/services/broadcasts.py for broadcast creation and segmentation logic.
+- Added src/funnelhub/services/broadcast_runner.py for background processing.
+- Hooked broadcast runner into unnel_worker.py.
+- Added /api/inbox/broadcasts endpoints.
+- Added Inbox UI: Рассылки workspace, BroadcastCreateModal, BroadcastDetailModal, and table counts.
 
 - Project architecture captured in `.harness/AGENTS.md`.
 - Harness-engineering files created in `.harness/`.

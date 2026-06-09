@@ -193,7 +193,7 @@ async def test_start_funnel_for_lead_creates_state(
     now = datetime(2026, 5, 28, 10, 0, tzinfo=UTC)
 
     async with async_session_maker() as session:
-        state = await start_funnel_for_lead(session, lead_id, definition, now=now)
+        state = await start_funnel_for_lead(session, lead_id, definition, channel='telegram', now=now)
         await session.commit()
 
     assert state.lead_id == lead_id
@@ -212,12 +212,8 @@ async def test_start_funnel_for_lead_reuses_existing_state(
     now = datetime(2026, 5, 28, 10, 0, tzinfo=UTC)
 
     async with async_session_maker() as session:
-        first_state = await start_funnel_for_lead(session, lead_id, definition, now=now)
-        second_state = await start_funnel_for_lead(
-            session,
-            lead_id,
-            definition,
-            now=now + timedelta(hours=1),
+        first_state = await start_funnel_for_lead(session, lead_id, definition, channel='telegram', now=now)
+        second_state = await start_funnel_for_lead(session, lead_id, definition, channel="telegram", now=now + timedelta(hours=1),
         )
         await session.commit()
 
@@ -232,7 +228,7 @@ async def test_get_due_funnel_states(
     now = datetime(2026, 5, 28, 10, 0, tzinfo=UTC)
 
     async with async_session_maker() as session:
-        await start_funnel_for_lead(session, lead_id, definition, now=now)
+        await start_funnel_for_lead(session, lead_id, definition, channel='telegram', now=now)
         due_states = await get_due_funnel_states(session, now=now)
 
     assert len(due_states) == 1
@@ -248,7 +244,7 @@ async def test_run_due_funnel_step_advances_state(
     sender = DryRunFunnelStepSender()
 
     async with async_session_maker() as session:
-        state = await start_funnel_for_lead(session, lead_id, definition, now=now)
+        state = await start_funnel_for_lead(session, lead_id, definition, channel='telegram', now=now)
         result = await run_due_funnel_step(session, state, definition, sender, now=now)
         await session.commit()
 
@@ -274,7 +270,7 @@ async def test_question_step_waits_for_reminder_delay_before_next_content(
     sender = DryRunFunnelStepSender()
 
     async with async_session_maker() as session:
-        state = await start_funnel_for_lead(session, lead_id, definition, now=now)
+        state = await start_funnel_for_lead(session, lead_id, definition, channel='telegram', now=now)
         result = await run_due_funnel_step(session, state, definition, sender, now=now)
         await session.commit()
 
@@ -302,7 +298,7 @@ async def test_run_due_funnel_step_completes_after_last_step(
     sender = DryRunFunnelStepSender()
 
     async with async_session_maker() as session:
-        state = await start_funnel_for_lead(session, lead_id, definition, now=now)
+        state = await start_funnel_for_lead(session, lead_id, definition, channel='telegram', now=now)
         await run_due_funnel_step(session, state, definition, sender, now=now)
         second_run_at = datetime(2026, 5, 29, 6, 0, tzinfo=UTC)
         result = await run_due_funnel_step(session, state, definition, sender, now=second_run_at)

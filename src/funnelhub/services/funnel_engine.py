@@ -137,7 +137,7 @@ async def start_funnel_for_lead(
     session: AsyncSession,
     lead_id: uuid.UUID,
     definition: FunnelDefinition,
-    channel: str,
+    channel: str = "telegram",
     now: datetime | None = None,
 ) -> FunnelState:
     current_time = normalize_datetime(now)

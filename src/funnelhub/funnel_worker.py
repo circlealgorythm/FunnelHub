@@ -5,8 +5,10 @@ import logging
 
 from aiogram import Bot
 
+from funnelhub.api.inbox import ApiInboxSendClients
 from funnelhub.config import get_settings
 from funnelhub.db.session import async_session_maker
+from funnelhub.services.broadcast_runner import run_due_broadcasts_once
 from funnelhub.services.email_messaging import build_email_provider_client
 from funnelhub.services.funnel_engine import load_funnel_definition
 from funnelhub.services.funnel_runner import run_due_funnel_once
@@ -58,6 +60,24 @@ async def main() -> None:
                         settings=settings,
                         limit=settings.funnel_runner_batch_size,
                     )
+                
+                async with async_session_maker() as session:
+                    clients = ApiInboxSendClients(
+                        telegram_bot=bot,
+                        vk_client=vk_client,
+                        email_client=email_client,
+                        email_subject=settings.email_default_subject,
+                        public_base_url=settings.public_base_url,
+                        email_from_email=settings.email_from_email,
+                        email_from_name=settings.email_from_name,
+                        email_signature_image_url=settings.email_signature_image_url,
+                    )
+                    await run_due_broadcasts_once(
+                        session=session,
+                        clients=clients,
+                        limit=settings.funnel_runner_batch_size,
+                    )
+
                 logger.info(
                     "Funnel runner pass completed",
                     extra={

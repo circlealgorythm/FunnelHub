@@ -363,7 +363,7 @@ async def test_run_due_funnel_once_sends_telegram_step_and_advances_state(
     bot = FakeTelegramBot()
 
     async with async_session_maker() as session:
-        await start_funnel_for_lead(session, lead_id, definition, now=now)
+        await start_funnel_for_lead(session, lead_id, definition, channel="telegram", now=now)
         await session.commit()
 
     async with async_session_maker() as session:
@@ -416,7 +416,7 @@ async def test_run_due_funnel_once_sends_messenger_step_to_vk_identity(
     vk_client = FakeVkClient()
 
     async with async_session_maker() as session:
-        await start_funnel_for_lead(session, lead_id, definition, now=now)
+        await start_funnel_for_lead(session, lead_id, definition, channel="vk", now=now)
         await session.commit()
 
     async with async_session_maker() as session:
@@ -457,7 +457,7 @@ async def test_run_due_funnel_once_uses_preferred_messenger_channel(
     vk_client = FakeVkClient()
 
     async with async_session_maker() as session:
-        state = await start_funnel_for_lead(session, lead_id, definition, now=now)
+        state = await start_funnel_for_lead(session, lead_id, definition, channel="telegram", now=now)
         state.metadata_ = {**state.metadata_, "messenger_channel": "telegram"}
         await session.commit()
 
@@ -485,7 +485,7 @@ async def test_run_due_funnel_once_records_failed_step_without_crashing(
     now = datetime(2026, 5, 28, 12, 0, tzinfo=UTC)
 
     async with async_session_maker() as session:
-        await start_funnel_for_lead(session, lead_id, definition, now=now)
+        await start_funnel_for_lead(session, lead_id, definition, channel="telegram", now=now)
         await session.commit()
 
     async with async_session_maker() as session:
@@ -547,7 +547,7 @@ async def test_run_due_funnel_once_sends_email_step(
     email_client = FakeEmailClient()
 
     async with async_session_maker() as session:
-        await start_funnel_for_lead(session, lead_id, definition, now=now)
+        await start_funnel_for_lead(session, lead_id, definition, channel="telegram", now=now)
         await session.commit()
 
     async with async_session_maker() as session:
@@ -622,7 +622,7 @@ async def test_run_due_funnel_once_resolves_email_bot_buttons(
     )
 
     async with async_session_maker() as session:
-        await start_funnel_for_lead(session, lead_id, definition, now=now)
+        await start_funnel_for_lead(session, lead_id, definition, channel="telegram", now=now)
         await session.commit()
 
     async with async_session_maker() as session:
@@ -677,7 +677,7 @@ async def test_run_due_funnel_once_repeats_pending_question_after_content_only(
     bot = FakeTelegramBot()
 
     async with async_session_maker() as session:
-        await start_funnel_for_lead(session, lead_id, definition, now=now)
+        await start_funnel_for_lead(session, lead_id, definition, channel="telegram", now=now)
         await session.commit()
 
     async with async_session_maker() as session:
@@ -727,7 +727,7 @@ async def test_run_due_funnel_once_retries_failed_email_step(
     now = datetime(2026, 5, 28, 12, 0, tzinfo=UTC)
 
     async with async_session_maker() as session:
-        await start_funnel_for_lead(session, lead_id, definition, now=now)
+        await start_funnel_for_lead(session, lead_id, definition, channel="telegram", now=now)
         await session.commit()
 
     async with async_session_maker() as session:

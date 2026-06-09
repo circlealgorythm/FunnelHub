@@ -69,7 +69,41 @@ type ConversationDetail = {
 
 type LoadState = "idle" | "loading" | "error";
 type AuthState = "checking" | "authenticated" | "anonymous";
-type AppView = "inbox" | "database";
+type AppView = "inbox" | "database" | "broadcasts";
+
+type Broadcast = {
+  id: string;
+  segment_query: string | null;
+  channels: string[];
+  status: string;
+  total_leads: number;
+  processed_leads: number;
+  failed_leads: number;
+  skipped_leads: number;
+  created_at: string;
+  updated_at: string;
+};
+
+
+type BroadcastTarget = {
+  id: string;
+  lead_id: string;
+  lead_name: string | null;
+  lead_contact: string | null;
+  status: string;
+  error: string | null;
+};
+
+type BroadcastTargetList = {
+  items: BroadcastTarget[];
+  total: number;
+};
+type BroadcastList = {
+  items: Broadcast[];
+  total: number;
+  limit: number;
+  offset: number;
+};
 
 type DatabaseLead = {
   id: string;
@@ -669,6 +703,25 @@ export function App() {
     );
   }
 
+
+  if (activeView === "broadcasts") {
+    return (
+      <main className="database-shell">
+        <BroadcastsWorkspace
+          adminName={adminName}
+          activeView={activeView}
+          onSwitchView={switchView}
+          onLogout={() => void logout()}
+        />
+        {error ? (
+          <div className="toast" role="status">
+            {error}
+          </div>
+        ) : null}
+      </main>
+    );
+  }
+
   return (
     <main className="app-shell">
       <section className={`conversation-panel ${selectedId ? "is-hidden-mobile" : ""}`}>
@@ -930,13 +983,21 @@ function ViewSwitch({
         <MessageCircle aria-hidden="true" size={16} />
         <span>Inbox</span>
       </button>
-      <button
+            <button
         className={activeView === "database" ? "view-tab is-active" : "view-tab"}
         onClick={() => onSwitchView("database")}
         type="button"
       >
         <DatabaseIcon aria-hidden="true" size={16} />
         <span>База</span>
+      </button>
+      <button
+        className={activeView === "broadcasts" ? "view-tab is-active" : "view-tab"}
+        onClick={() => onSwitchView("broadcasts")}
+        type="button"
+      >
+        <Send aria-hidden="true" size={16} />
+        <span>Рассылки</span>
       </button>
     </nav>
   );
@@ -980,7 +1041,7 @@ function DatabaseWorkspace({
   onSaveLeadVkId: (leadId: string, vkId: string) => Promise<void>;
   onSearch: (event: FormEvent<HTMLFormElement>) => void;
   onSelectLead: (leadId: string) => void;
-  onSwitchView: (view: "inbox" | "database") => void;
+  onSwitchView: (view: AppView) => void;
   selectedLeadDetail: DatabaseLeadDetail | null;
   selectedLeadId: string | null;
   onDeleteLead: (leadId: string) => Promise<void>;
@@ -2033,6 +2094,326 @@ function ImportHistoryModal({ onClose }: { onClose: () => void }) {
             </div>
           </>
         )}
+      </div>
+    </div>
+  );
+}
+
+
+// --- Broadcasts Components ---
+
+function BroadcastsWorkspace({
+  adminName,
+  activeView,
+  onSwitchView,
+  onLogout,
+}: {
+  adminName: string | null;
+  activeView: AppView;
+  onSwitchView: (view: AppView) => void;
+  onLogout: () => void;
+}) {
+  const [broadcasts, setBroadcasts] = useState<Broadcast[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [showCreate, setShowCreate] = useState(false);
+  const [selectedBroadcastId, setSelectedBroadcastId] = useState<string | null>(null);
+
+  const loadBroadcasts = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/inbox/broadcasts`, {
+        credentials: "include",
+      });
+      if (!response.ok) {
+        throw new Error(`Load failed: ${response.status}`);
+      }
+      const data = (await response.json()) as BroadcastList;
+      setBroadcasts(data.items);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadBroadcasts();
+  }, [loadBroadcasts]);
+
+  return (
+    <>
+      <header className="panel-header">
+        <div>
+          <p className="eyebrow">FunnelHub</p>
+          <h1>Рассылки</h1>
+          <ViewSwitch activeView={activeView} onSwitchView={onSwitchView} />
+        </div>
+        <div className="panel-actions">
+          <button className="primary-button" onClick={() => setShowCreate(true)} type="button">
+            Создать
+          </button>
+          <button className="icon-button" onClick={loadBroadcasts} type="button">
+            <RefreshCw aria-hidden="true" size={18} />
+          </button>
+          <button className="icon-button secondary" onClick={onLogout} type="button">
+            <LogOut aria-hidden="true" size={18} />
+          </button>
+        </div>
+      </header>
+
+      <div className="workspace is-list-only">
+        {error ? <div className="toast" role="status">{error}</div> : null}
+        <div className="table-wrapper">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Дата</th>
+                <th>Каналы</th>
+                <th>Сегмент</th>
+                <th>Статус</th>
+                <th>Пропущено</th>
+                <th>Прогресс</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr>
+                  <td colSpan={5} style={{ textAlign: "center", padding: "2rem" }}>Загрузка...</td>
+                </tr>
+              ) : broadcasts.length === 0 ? (
+                <tr>
+                  <td colSpan={5} style={{ textAlign: "center", padding: "2rem" }}>Нет рассылок</td>
+                </tr>
+              ) : (
+                broadcasts.map((b) => (
+                  <tr key={b.id} onClick={() => setSelectedBroadcastId(b.id)} style={{ cursor: "pointer" }}>
+                    <td>{new Date(b.created_at).toLocaleString("ru-RU")}</td>
+                    <td>{b.channels.map(c => channelLabels[c] || c).join(", ")}</td>
+                    <td><code className="mono-badge">{b.segment_query || "Все"}</code></td>
+                    <td><StatusPill status={b.status as ConversationStatus} /></td>
+                    <td>{b.skipped_leads}</td>
+                    <td>
+                      {b.processed_leads} / {b.total_leads}
+                      {b.failed_leads > 0 && ` (${b.failed_leads} err)`}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      
+      {selectedBroadcastId ? (
+        <BroadcastDetailModal
+          broadcastId={selectedBroadcastId}
+          onClose={() => setSelectedBroadcastId(null)}
+        />
+      ) : null}
+
+      {showCreate ? (
+        <BroadcastCreateModal
+          onClose={() => setShowCreate(false)}
+          onSuccess={() => {
+            setShowCreate(false);
+            void loadBroadcasts();
+          }}
+        />
+      ) : null}
+    </>
+  );
+}
+
+function BroadcastCreateModal({
+  onClose,
+  onSuccess,
+}: {
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [text, setText] = useState("");
+  const [channels, setChannels] = useState<string[]>(["telegram"]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const toggleChannel = (ch: string) => {
+    setChannels(prev => prev.includes(ch) ? prev.filter(c => c !== ch) : [...prev, ch]);
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (channels.length === 0) {
+      setError("Выберите хотя бы один канал");
+      return;
+    }
+    if (!text.trim()) {
+      setError("Введите текст рассылки");
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/inbox/broadcasts`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          segment_query: query.trim() || null,
+          channels,
+          message_text: text.trim(),
+        }),
+      });
+
+      if (!res.ok) {
+        const payload = await res.json().catch(() => null);
+        throw new Error(payload?.detail || `Ошибка ${res.status}`);
+      }
+      onSuccess();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal-dialog">
+        <header className="modal-header">
+          <h2>Новая рассылка</h2>
+          <button className="icon-button soft-button" onClick={onClose} type="button">
+            <LogOut aria-hidden="true" size={18} />
+          </button>
+        </header>
+        <form className="modal-body" onSubmit={handleSubmit}>
+          {error ? <div className="form-error">{error}</div> : null}
+          
+          <div className="form-group">
+            <label>Сегмент (запрос как в базе)</label>
+            <input 
+              type="text" 
+              value={query} 
+              onChange={e => setQuery(e.target.value)} 
+              placeholder="Например: status:active"
+            />
+            <p className="field-hint">Оставьте пустым, чтобы отправить всем лидам.</p>
+          </div>
+
+          <div className="form-group">
+            <label>Каналы отправки</label>
+            <div className="channel-toggles">
+              {["telegram", "vk", "email"].map((ch) => (
+                <button
+                  key={ch}
+                  type="button"
+                  className={channels.includes(ch) ? "channel-toggle is-active" : "channel-toggle"}
+                  onClick={() => toggleChannel(ch)}
+                >
+                  <span className={`channel-dot channel-${ch}`} />
+                  {channelLabels[ch] || ch}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="form-group">
+            <label>Текст сообщения</label>
+            <textarea 
+              value={text}
+              onChange={e => setText(e.target.value)}
+              placeholder="Введите текст рассылки..."
+              rows={6}
+              required
+            />
+          </div>
+
+          <footer className="modal-footer">
+            <button className="secondary-button" type="button" onClick={onClose} disabled={loading}>Отмена</button>
+            <button className="primary-button" type="submit" disabled={loading}>
+              <Send size={16} />
+              {loading ? "Запуск..." : "Запустить рассылку"}
+            </button>
+          </footer>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function BroadcastDetailModal({
+  broadcastId,
+  onClose,
+}: {
+  broadcastId: string;
+  onClose: () => void;
+}) {
+  const [targets, setTargets] = useState<BroadcastTarget[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/inbox/broadcasts/${broadcastId}/targets`, {
+          credentials: "include"
+        });
+        if (!res.ok) throw new Error(`Load failed: ${res.status}`);
+        const data = (await res.json()) as BroadcastTargetList;
+        setTargets(data.items);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setLoading(false);
+      }
+    }
+    void load();
+  }, [broadcastId]);
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal-dialog" style={{ maxWidth: 800 }}>
+        <header className="modal-header">
+          <h2>Детали рассылки</h2>
+          <button className="icon-button soft-button" onClick={onClose} type="button">
+            <LogOut aria-hidden="true" size={18} />
+          </button>
+        </header>
+        <div className="modal-body" style={{ overflowY: "auto", maxHeight: "60vh" }}>
+          {error ? <div className="toast" role="status">{error}</div> : null}
+          {loading ? (
+            <div style={{ textAlign: "center", padding: "2rem" }}>Загрузка...</div>
+          ) : (
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Имя</th>
+                  <th>Контакт</th>
+                  <th>Статус</th>
+                  <th>Ошибка</th>
+                </tr>
+              </thead>
+              <tbody>
+                {targets.map(t => (
+                  <tr key={t.id}>
+                    <td>{t.lead_name || "Без имени"}</td>
+                    <td>{t.lead_contact || "—"}</td>
+                    <td><code className="mono-badge">{t.status}</code></td>
+                    <td style={{ color: "var(--danger)" }}>{t.error || ""}</td>
+                  </tr>
+                ))}
+                {targets.length === 0 && (
+                  <tr>
+                    <td colSpan={4} style={{ textAlign: "center" }}>Нет получателей</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          )}
+        </div>
       </div>
     </div>
   );

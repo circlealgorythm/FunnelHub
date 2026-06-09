@@ -1086,10 +1086,18 @@ def human_field_label(field_key: str) -> str:
 
 
 async def delete_database_lead(session: AsyncSession, lead_id: uuid.UUID) -> None:
-    from sqlalchemy import select, delete
+    from sqlalchemy import delete, select
+
     from funnelhub.db.models import (
-        Lead, Message, Conversation, LeadContact, FunnelState, 
-        LeadUtm, LeadConsent, LeadExternalId, LeadCustomField
+        Conversation,
+        FunnelState,
+        Lead,
+        LeadConsent,
+        LeadContact,
+        LeadCustomField,
+        LeadExternalId,
+        LeadUtm,
+        Message,
     )
     
     lead_exists = await session.scalar(select(Lead.id).where(Lead.id == lead_id))

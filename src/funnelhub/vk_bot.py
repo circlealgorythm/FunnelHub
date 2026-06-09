@@ -226,7 +226,7 @@ def extract_token_from_payload(raw_payload: Any) -> str | None:
             else:
                 return None
         except json.JSONDecodeError:
-            return None
+            return normalize_token(raw_payload)
     else:
         return None
 

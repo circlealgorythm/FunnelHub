@@ -1,16 +1,19 @@
 import asyncio
 import logging
-from sqlalchemy import select, delete
+
+from sqlalchemy import select
+from typing import Sequence
+
 from funnelhub.db.models import FunnelState
-from funnelhub.db.session import async_session_factory
+from funnelhub.db.session import async_session_maker
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-async def cleanup_unknown_states():
-    async with async_session_factory() as session:
+async def cleanup_unknown_states() -> None:
+    async with async_session_maker() as session:
         # Find all unknown states
-        unknown_states = (
+        unknown_states: Sequence[FunnelState] = (
             await session.scalars(
                 select(FunnelState).where(FunnelState.channel == "unknown")
             )

@@ -6,6 +6,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from funnelhub.api.auth import router as auth_router
+from funnelhub.api.broadcasts import router as broadcasts_router
 from funnelhub.api.email import router as email_router
 from funnelhub.api.inbox import router as inbox_router
 from funnelhub.api.messenger import router as messenger_router
@@ -29,6 +30,7 @@ def create_app() -> FastAPI:
     app.include_router(auth_router)
     app.include_router(email_router)
     app.include_router(inbox_router)
+    app.include_router(broadcasts_router)
     app.include_router(messenger_router)
     app.include_router(webhooks_router)
     mount_public_assets(app)
