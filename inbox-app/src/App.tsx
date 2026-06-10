@@ -2151,7 +2151,7 @@ function BroadcastsWorkspace({
           <ViewSwitch activeView={activeView} onSwitchView={onSwitchView} />
         </div>
         <div className="panel-actions">
-          <button className="primary-button" onClick={() => setShowCreate(true)} type="button">
+          <button className="send-button" onClick={() => setShowCreate(true)} type="button">
             Создать
           </button>
           <button className="icon-button" onClick={loadBroadcasts} type="button">
@@ -2165,8 +2165,8 @@ function BroadcastsWorkspace({
 
       <div className="workspace is-list-only">
         {error ? <div className="toast" role="status">{error}</div> : null}
-        <div className="table-wrapper">
-          <table className="data-table">
+        <div className="lead-table-wrap">
+          <table className="lead-table">
             <thead>
               <tr>
                 <th>Дата</th>
@@ -2180,11 +2180,11 @@ function BroadcastsWorkspace({
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={5} style={{ textAlign: "center", padding: "2rem" }}>Загрузка...</td>
+                  <td colSpan={6} style={{ textAlign: "center", padding: "2rem" }}>Загрузка...</td>
                 </tr>
               ) : broadcasts.length === 0 ? (
                 <tr>
-                  <td colSpan={5} style={{ textAlign: "center", padding: "2rem" }}>Нет рассылок</td>
+                  <td colSpan={6} style={{ textAlign: "center", padding: "2rem" }}>Нет рассылок</td>
                 </tr>
               ) : (
                 broadcasts.map((b) => (
@@ -2305,13 +2305,14 @@ function BroadcastCreateModal({
 
           <div className="form-group">
             <label>Каналы отправки</label>
-            <div className="channel-toggles">
+            <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginTop: "4px" }}>
               {["telegram", "vk", "email"].map((ch) => (
                 <button
                   key={ch}
                   type="button"
-                  className={channels.includes(ch) ? "channel-toggle is-active" : "channel-toggle"}
+                  className={channels.includes(ch) ? "filter-chip is-active" : "filter-chip"}
                   onClick={() => toggleChannel(ch)}
+                  style={{ display: "flex", alignItems: "center", gap: "6px" }}
                 >
                   <span className={`channel-dot channel-${ch}`} />
                   {channelLabels[ch] || ch}
@@ -2332,8 +2333,8 @@ function BroadcastCreateModal({
           </div>
 
           <footer className="modal-footer">
-            <button className="secondary-button" type="button" onClick={onClose} disabled={loading}>Отмена</button>
-            <button className="primary-button" type="submit" disabled={loading}>
+            <button className="soft-button" type="button" onClick={onClose} disabled={loading}>Отмена</button>
+            <button className="send-button" type="submit" disabled={loading}>
               <Send size={16} />
               {loading ? "Запуск..." : "Запустить рассылку"}
             </button>
@@ -2387,7 +2388,7 @@ function BroadcastDetailModal({
           {loading ? (
             <div style={{ textAlign: "center", padding: "2rem" }}>Загрузка...</div>
           ) : (
-            <table className="data-table">
+            <table className="lead-table">
               <thead>
                 <tr>
                   <th>Имя</th>
