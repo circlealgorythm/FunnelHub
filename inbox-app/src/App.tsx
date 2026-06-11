@@ -1,5 +1,6 @@
 import {
   Archive,
+  CalendarClock,
   Check,
   ChevronDown,
   ChevronLeft,
@@ -69,7 +70,7 @@ type ConversationDetail = {
 
 type LoadState = "idle" | "loading" | "error";
 type AuthState = "checking" | "authenticated" | "anonymous";
-type AppView = "inbox" | "database" | "broadcasts";
+type AppView = "inbox" | "database" | "broadcasts" | "autoposts";
 
 type Broadcast = {
   id: string;
@@ -100,6 +101,38 @@ type BroadcastTargetList = {
 };
 type BroadcastList = {
   items: Broadcast[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+
+type Autopost = {
+  id: string;
+  title: string;
+  body: string;
+  channels: string[];
+  status: string;
+  source_type: string;
+  source_url: string | null;
+  scheduled_at: string;
+  published_at: string | null;
+  created_at: string;
+  updated_at: string;
+  publications: AutopostPublication[];
+};
+
+type AutopostPublication = {
+  id: string;
+  channel: string;
+  status: string;
+  external_post_id: string | null;
+  attempted_at: string | null;
+  published_at: string | null;
+  error: string | null;
+};
+
+type AutopostList = {
+  items: Autopost[];
   total: number;
   limit: number;
   offset: number;
@@ -197,6 +230,25 @@ const channelLabels: Record<string, string> = {
   telegram: "Telegram",
   vk: "VK",
   email: "Email",
+};
+
+const autopostStatusLabels: Record<string, string> = {
+  queued: "В очереди",
+  scheduled: "Запланирован",
+  publishing: "Публикуется",
+  published: "Опубликован",
+  failed: "Ошибка",
+  partial_failed: "Частично",
+  cancelled: "Отменен",
+  pending: "Ожидает",
+};
+
+const sourceTypeLabels: Record<string, string> = {
+  manual: "Ручной",
+  youtube: "YouTube",
+  telegram: "Telegram",
+  vk: "VK",
+  other: "Другое",
 };
 
 const filters: Array<{ value: ConversationStatus | "all"; label: string }> = [
@@ -722,6 +774,24 @@ export function App() {
     );
   }
 
+  if (activeView === "autoposts") {
+    return (
+      <main className="database-shell">
+        <AutopostsWorkspace
+          adminName={adminName}
+          activeView={activeView}
+          onSwitchView={switchView}
+          onLogout={() => void logout()}
+        />
+        {error ? (
+          <div className="toast" role="status">
+            {error}
+          </div>
+        ) : null}
+      </main>
+    );
+  }
+
   return (
     <main className="app-shell">
       <section className={`conversation-panel ${selectedId ? "is-hidden-mobile" : ""}`}>
@@ -998,6 +1068,14 @@ function ViewSwitch({
       >
         <Send aria-hidden="true" size={16} />
         <span>Рассылки</span>
+      </button>
+      <button
+        className={activeView === "autoposts" ? "view-tab is-active" : "view-tab"}
+        onClick={() => onSwitchView("autoposts")}
+        type="button"
+      >
+        <CalendarClock aria-hidden="true" size={16} />
+        <span>Автопостинг</span>
       </button>
     </nav>
   );
@@ -2244,7 +2322,7 @@ function BroadcastCreateModal({
     setChannels(prev => prev.includes(ch) ? prev.filter(c => c !== ch) : [...prev, ch]);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (channels.length === 0) {
       setError("Выберите хотя бы один канал");
@@ -2418,4 +2496,450 @@ function BroadcastDetailModal({
       </div>
     </div>
   );
+}
+
+
+// --- Autoposting Components ---
+
+function AutopostsWorkspace({
+  adminName,
+  activeView,
+  onSwitchView,
+  onLogout,
+}: {
+  adminName: string | null;
+  activeView: AppView;
+  onSwitchView: (view: AppView) => void;
+  onLogout: () => void;
+}) {
+  const [autoposts, setAutoposts] = useState<Autopost[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [showCreate, setShowCreate] = useState(false);
+  const [selectedAutopostId, setSelectedAutopostId] = useState<string | null>(null);
+
+  const loadAutoposts = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/inbox/autoposts`, {
+        credentials: "include",
+      });
+      if (!response.ok) {
+        throw new Error(`Load failed: ${response.status}`);
+      }
+      const data = (await response.json()) as AutopostList;
+      setAutoposts(data.items);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadAutoposts();
+  }, [loadAutoposts]);
+
+  return (
+    <>
+      <header className="panel-header">
+        <div>
+          <p className="eyebrow">FunnelHub</p>
+          <h1>Автопостинг</h1>
+          <ViewSwitch activeView={activeView} onSwitchView={onSwitchView} />
+        </div>
+        <div className="panel-actions">
+          <button className="send-button" onClick={() => setShowCreate(true)} type="button">
+            <CalendarClock aria-hidden="true" size={16} />
+            Создать
+          </button>
+          <button className="icon-button" onClick={loadAutoposts} type="button">
+            <RefreshCw aria-hidden="true" size={18} />
+          </button>
+          <button className="icon-button secondary" onClick={onLogout} type="button">
+            <LogOut aria-hidden="true" size={18} />
+            <span className="sr-only">Выйти{adminName ? `, ${adminName}` : ""}</span>
+          </button>
+        </div>
+      </header>
+
+      <div className="workspace is-list-only">
+        {error ? <div className="toast" role="status">{error}</div> : null}
+        <div className="lead-table-wrap">
+          <table className="lead-table">
+            <thead>
+              <tr>
+                <th>Публикация</th>
+                <th>Расписание</th>
+                <th>Каналы</th>
+                <th>Источник</th>
+                <th>Статус</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr>
+                  <td colSpan={5} style={{ textAlign: "center", padding: "2rem" }}>Загрузка...</td>
+                </tr>
+              ) : autoposts.length === 0 ? (
+                <tr>
+                  <td colSpan={5} style={{ textAlign: "center", padding: "2rem" }}>
+                    Нет запланированных публикаций
+                  </td>
+                </tr>
+              ) : (
+                autoposts.map((post) => (
+                  <tr
+                    key={post.id}
+                    onClick={() => setSelectedAutopostId(post.id)}
+                    style={{ cursor: "pointer" }}
+                  >
+                    <td>
+                      <strong>{post.title}</strong>
+                      <p className="field-hint" style={{ margin: "4px 0 0" }}>
+                        {trimPreview(post.body, 96)}
+                      </p>
+                    </td>
+                    <td>{formatDetailValue(post.scheduled_at)}</td>
+                    <td>{post.channels.map((c) => channelLabels[c] || c).join(", ")}</td>
+                    <td>{sourceTypeLabels[post.source_type] || post.source_type}</td>
+                    <td><GenericStatusPill status={post.status} /></td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {selectedAutopostId ? (
+        <AutopostDetailModal
+          autopostId={selectedAutopostId}
+          onClose={() => setSelectedAutopostId(null)}
+          onChanged={() => void loadAutoposts()}
+        />
+      ) : null}
+
+      {showCreate ? (
+        <AutopostCreateModal
+          onClose={() => setShowCreate(false)}
+          onSuccess={() => {
+            setShowCreate(false);
+            void loadAutoposts();
+          }}
+        />
+      ) : null}
+    </>
+  );
+}
+
+function AutopostCreateModal({
+  onClose,
+  onSuccess,
+}: {
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
+  const [title, setTitle] = useState("");
+  const [body, setBody] = useState("");
+  const [channels, setChannels] = useState<string[]>(["telegram"]);
+  const [scheduledAt, setScheduledAt] = useState("");
+  const [sourceType, setSourceType] = useState("manual");
+  const [sourceUrl, setSourceUrl] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const toggleChannel = (ch: string) => {
+    setChannels((prev) => prev.includes(ch) ? prev.filter((c) => c !== ch) : [...prev, ch]);
+  };
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!title.trim()) {
+      setError("Введите название публикации");
+      return;
+    }
+    if (!body.trim()) {
+      setError("Введите текст публикации");
+      return;
+    }
+    if (channels.length === 0) {
+      setError("Выберите хотя бы один канал");
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/inbox/autoposts`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: title.trim(),
+          body: body.trim(),
+          channels,
+          scheduled_at: scheduledAt ? new Date(scheduledAt).toISOString() : null,
+          source_type: sourceType,
+          source_url: sourceUrl.trim() || null,
+        }),
+      });
+
+      if (!res.ok) {
+        const payload = await res.json().catch(() => null);
+        throw new Error(payload?.detail || `Ошибка ${res.status}`);
+      }
+      onSuccess();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal-dialog">
+        <header className="modal-header">
+          <h2>Новая публикация</h2>
+          <button className="icon-button soft-button" onClick={onClose} type="button">
+            <LogOut aria-hidden="true" size={18} />
+          </button>
+        </header>
+        <form className="modal-body" onSubmit={handleSubmit}>
+          {error ? <div className="form-error">{error}</div> : null}
+
+          <div className="form-group">
+            <label>Название</label>
+            <input
+              type="text"
+              value={title}
+              onChange={(event) => setTitle(event.target.value)}
+              placeholder="Название для истории"
+              required
+            />
+          </div>
+
+          <div className="form-group">
+            <label>Текст поста</label>
+            <textarea
+              value={body}
+              onChange={(event) => setBody(event.target.value)}
+              placeholder="Текст публикации..."
+              rows={7}
+              required
+            />
+          </div>
+
+          <div className="form-group">
+            <label>Каналы публикации</label>
+            <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginTop: "4px" }}>
+              {["telegram", "vk"].map((ch) => (
+                <button
+                  key={ch}
+                  type="button"
+                  className={channels.includes(ch) ? "filter-chip is-active" : "filter-chip"}
+                  onClick={() => toggleChannel(ch)}
+                  style={{ display: "flex", alignItems: "center", gap: "6px" }}
+                >
+                  <span className={`channel-dot channel-${ch}`} />
+                  {channelLabels[ch] || ch}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="form-group">
+            <label>Дата и время</label>
+            <input
+              type="datetime-local"
+              value={scheduledAt}
+              onChange={(event) => setScheduledAt(event.target.value)}
+            />
+            <p className="field-hint">Пустое значение отправит пост в ближайший проход worker.</p>
+          </div>
+
+          <div className="form-group">
+            <label>Источник</label>
+            <select value={sourceType} onChange={(event) => setSourceType(event.target.value)}>
+              {Object.entries(sourceTypeLabels).map(([value, label]) => (
+                <option key={value} value={value}>{label}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="form-group">
+            <label>Ссылка на источник</label>
+            <input
+              type="text"
+              value={sourceUrl}
+              onChange={(event) => setSourceUrl(event.target.value)}
+              placeholder="YouTube, Telegram, VK или другая ссылка"
+            />
+          </div>
+
+          <footer className="modal-footer">
+            <button className="soft-button" type="button" onClick={onClose} disabled={loading}>Отмена</button>
+            <button className="send-button" type="submit" disabled={loading}>
+              <CalendarClock size={16} />
+              {loading ? "Сохраняем..." : "Поставить в очередь"}
+            </button>
+          </footer>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function AutopostDetailModal({
+  autopostId,
+  onClose,
+  onChanged,
+}: {
+  autopostId: string;
+  onClose: () => void;
+  onChanged: () => void;
+}) {
+  const [post, setPost] = useState<Autopost | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadPost = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/inbox/autoposts/${autopostId}`, {
+        credentials: "include",
+      });
+      if (!res.ok) {
+        throw new Error(`Load failed: ${res.status}`);
+      }
+      setPost((await res.json()) as Autopost);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoading(false);
+    }
+  }, [autopostId]);
+
+  useEffect(() => {
+    void loadPost();
+  }, [loadPost]);
+
+  const cancelPost = async () => {
+    setActionLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/inbox/autoposts/${autopostId}/cancel`, {
+        method: "PATCH",
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const payload = await res.json().catch(() => null);
+        throw new Error(payload?.detail || `Ошибка ${res.status}`);
+      }
+      setPost((await res.json()) as Autopost);
+      onChanged();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const canCancel = post && ["queued", "scheduled", "failed", "partial_failed"].includes(post.status);
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal-dialog" style={{ maxWidth: 900 }}>
+        <header className="modal-header">
+          <h2>{post?.title || "Публикация"}</h2>
+          <button className="icon-button soft-button" onClick={onClose} type="button">
+            <LogOut aria-hidden="true" size={18} />
+          </button>
+        </header>
+        <div className="modal-body" style={{ overflowY: "auto", maxHeight: "70vh" }}>
+          {error ? <div className="toast" role="status">{error}</div> : null}
+          {loading ? (
+            <div style={{ textAlign: "center", padding: "2rem" }}>Загрузка...</div>
+          ) : post ? (
+            <>
+              <div className="key-value-list">
+                <KeyValueLine label="Статус" value={autopostStatusLabels[post.status] || post.status} />
+                <KeyValueLine label="Расписание" value={post.scheduled_at} />
+                <KeyValueLine label="Каналы" value={post.channels.map((c) => channelLabels[c] || c).join(", ")} />
+                <KeyValueLine label="Источник" value={sourceTypeLabels[post.source_type] || post.source_type} />
+                <KeyValueLine label="Ссылка" value={post.source_url || "не указано"} />
+              </div>
+
+              <div className="form-group">
+                <label>Текст поста</label>
+                <div className="message-bubble outbound" style={{ width: "100%", maxWidth: "100%" }}>
+                  {post.body}
+                </div>
+              </div>
+
+              <table className="lead-table">
+                <thead>
+                  <tr>
+                    <th>Канал</th>
+                    <th>Статус</th>
+                    <th>Внешний ID</th>
+                    <th>Попытка</th>
+                    <th>Ошибка</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {post.publications.map((publication) => (
+                    <tr key={publication.id}>
+                      <td>{channelLabels[publication.channel] || publication.channel}</td>
+                      <td><GenericStatusPill status={publication.status} /></td>
+                      <td><code className="mono-badge">{publication.external_post_id || "—"}</code></td>
+                      <td>{publication.attempted_at ? formatDetailValue(publication.attempted_at) : "—"}</td>
+                      <td style={{ color: "var(--danger)" }}>{publication.error || ""}</td>
+                    </tr>
+                  ))}
+                  {post.publications.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} style={{ textAlign: "center" }}>История пуста</td>
+                    </tr>
+                  ) : null}
+                </tbody>
+              </table>
+
+              <footer className="modal-footer">
+                <button className="soft-button" type="button" onClick={onClose}>Закрыть</button>
+                {canCancel ? (
+                  <button
+                    className="soft-button"
+                    type="button"
+                    onClick={() => void cancelPost()}
+                    disabled={actionLoading}
+                  >
+                    Отменить публикацию
+                  </button>
+                ) : null}
+              </footer>
+            </>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function GenericStatusPill({ status }: { status: string }) {
+  return (
+    <span className={`status-pill status-${status}`}>
+      {autopostStatusLabels[status] || status}
+    </span>
+  );
+}
+
+function trimPreview(value: string, limit: number) {
+  if (value.length <= limit) {
+    return value;
+  }
+  return `${value.slice(0, limit - 1)}…`;
 }

@@ -2,40 +2,91 @@
 
 ## Current Status
 
-- User asked to audit recently implemented GetCourse CSV/XLSX import and manual broadcasts,
-  and to fix defects found.
-- Fixed GetCourse import handling for exports with blank/headerless custom columns:
-  `preview_import_file(...)` now normalizes blank columns to stable `custom_*` keys, suggests
-  those mappings, and `execute_import_file(...)` uses the same normalized keys. This prevents
-  duplicate empty headers from collapsing multiple consent columns into one value.
-- Re-enabled the previously skipped GetCourse import regression tests for both known export
-  shapes: 39-column tab CSV and 27-column short export.
-- Fixed manual broadcast target details. The API no longer accesses non-existent attributes
-  like `Lead.email`, `Lead.phone`, or `Lead.telegram`; target rows now read contact/messenger
-  display values from `lead_contacts` and subscribed `messenger_identities`.
-- Hardened broadcast creation and runner details: duplicate channels are deduplicated, blank
-  message text is rejected, target pagination is validated, unknown broadcast target lists
-  return 404, and messenger prechecks prefer subscribed identities.
-- Fixed the `skipped_leads` broadcast migration to use a temporary default of `0`, so it can
-  apply safely if rows already exist in `broadcasts`.
-- Removed tracked one-off helper scripts (`fix*.py`, `patch*.py`, SSH/test helpers) and a
-  tracked `tmp/` deployment archive. Added `tmp/` to `.gitignore`.
-- Rewrote `deploy_files.py` so it no longer stores SSH credentials in the repository; it loads
-  `SSH_HOST`, `SSH_USER`, and `SSH_PASSWORD` from `.env`/environment variables.
+- User then asked to verify the recently implemented Unisender Go delivery/open/click/bounce/
+  complaint/unsubscribe webhooks and fix defects if any.
+- Existing Unisender Go webhook implementation was present and covered the configured
+  `events_by_user` format with `event_data.status`, auth hash validation, idempotent `events`,
+  message delivery/read/failure updates, and subscription stop behavior.
+- Hardened the parser to avoid silent skips for provider naming variants:
+  - accepts `Events` as well as `events`;
+  - accepts `email_status` and `Status` as status fields;
+  - accepts event-name-only forms such as `unsubscribe` and `ok_link_visited`;
+  - maps aliases like `ok_delivered`, `ok_read`, `ok_link_visited`, `err_will_retry`.
+- Deployed the webhook hardening to production. `/health` and
+  `/webhooks/email/unisender-go` are OK, services are running, and in-container smoke confirms
+  aliases normalize to `opened`, `clicked`, and `unsubscribed`.
+
+- Previous Autoposting status remains deployed:
+  app/inbox bundle has "Автопостинг", Alembic is at `20260611_01 (head)`, and services are
+  running.
 
 ## Verification
 
-- `ruff check .` passed.
-- `mypy src` passed.
-- `pytest -x` passed: 129 passed, 5 skipped.
+- `.venv\Scripts\ruff.exe check .` passed.
+- `.venv\Scripts\mypy.exe src` passed.
+- `pytest tests\test_email_provider_webhooks.py -q` passed: 5 passed.
+- `pytest -x` passed: 133 passed, 5 skipped.
+- `docker compose -f docker-compose.prod.yml config --quiet` passed with existing local unset
+  variable warnings.
+- Production smoke:
+  - `https://bot.aisukam.ru/health` returned OK;
+  - `https://bot.aisukam.ru/webhooks/email/unisender-go` returned OK;
+  - production service state is running for app, worker, bot, postgres, redis;
+  - in-container alias smoke returned `opened`, `clicked`, `unsubscribed`.
+
+## Notes / Next Steps
+
+- The live Unisender Go configuration is documented as `event_format=json_post` with
+  `email_status=delivered/opened/clicked/unsubscribed/subscribed/soft_bounced/hard_bounced/spam`.
+  The hardening keeps that primary path intact and only broadens accepted variants.
+- Production worker logs may still show unrelated email funnel send errors for invalid or
+  unsubscribed recipients; webhook handling itself is healthy.
+
+## Previous Autoposting Handoff
+
+- User asked to implement and deploy the remaining Autoposting feature together with the
+  previous GetCourse import and manual broadcast fixes.
+- Implemented Autoposting MVP:
+  - database models and Alembic migration for `autoposts` and `autopost_publications`;
+  - admin API at `/api/inbox/autoposts` for create/list/detail/cancel;
+  - worker queue that publishes due posts, records per-channel history, retries failed rows,
+    and does not resend already published rows;
+  - Telegram publication through `send_message` to `AUTOPOST_TELEGRAM_CHAT_ID`;
+  - VK publication through `wall.post` to `AUTOPOST_VK_OWNER_ID` or fallback `-VK_GROUP_ID`;
+  - Inbox React tab "Автопостинг" with list, create modal, detail/history modal, and cancel.
+- Added duplicate protection through `Autopost.dedupe_key` and unique
+  `(autopost_id, channel)` publication rows.
+- Extended `deploy_files.py` to upload `inbox-app/dist`, build first, apply Alembic, then
+  recreate production services. It now also prints remote output safely on Windows and raises
+  on non-zero remote exit status.
+- Deployed to production. Public `/health` is OK, `/inbox` serves the new bundle containing
+  "Автопостинг", Alembic reports `20260611_01 (head)`, and `app`, `funnel-worker`,
+  `telegram-bot`, `postgres`, and `redis` are running.
+
+## Previous Autoposting Verification
+
+- `.venv\Scripts\ruff.exe check .` passed.
+- `.venv\Scripts\mypy.exe src` passed.
+- `pytest tests\test_autoposts.py -q` passed: 3 passed.
+- `pytest -x` passed: 132 passed, 5 skipped.
 - `npm run build` passed in `inbox-app/`.
-- `docker compose -f docker-compose.prod.yml config --quiet` passed with existing local env
-  interpolation warnings.
-- Tracked-file secret scan for the known SSH password/token patterns now only matches
-  `.env.example` and docs entries that contain env variable names, not real secret values.
+- `git diff --check` passed.
+- `docker compose -f docker-compose.prod.yml config --quiet` passed with existing local unset
+  variable warnings.
+- Production smoke passed:
+  - `https://bot.aisukam.ru/health` returned `{"status":"ok","service":"FunnelHub"}`;
+  - `/inbox` referenced `assets/index-CRPySZqQ.js`, and the asset contains "Автопостинг";
+  - remote `alembic current` returned `20260611_01 (head)`;
+  - production service state is running for app, worker, bot, postgres, redis.
 
-## Next Steps
+## Previous Autoposting Notes / Next Steps
 
-- Deploy these fixes before relying on the new manual broadcasts UI in production.
-- Rotate the SSH password because it had been committed in tracked helper scripts and a tracked
-  deployment archive before this cleanup.
+- For Telegram channel autoposting to actually publish, production must have
+  `AUTOPOST_TELEGRAM_CHAT_ID` set to the target channel/chat id and the bot must have
+  permission to post there.
+- VK autoposting can use existing `VK_GROUP_ID` fallback; set `AUTOPOST_VK_OWNER_ID` only if
+  a different wall owner is needed.
+- Production worker log tail still contains existing email funnel errors for invalid or
+  unsubscribed recipients, unrelated to Autoposting. No Autoposting traceback was observed.
+- Rotate the SSH password because earlier tracked helper/archive files had contained real SSH
+  credentials before this cleanup.

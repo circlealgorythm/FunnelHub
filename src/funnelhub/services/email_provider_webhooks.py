@@ -28,6 +28,26 @@ UNISENDER_STATUS_EVENT_TYPES = {
     "complaint": "email.complained",
     "complained": "email.complained",
 }
+UNISENDER_STATUS_ALIASES = {
+    "delivery": "delivered",
+    "ok_delivered": "delivered",
+    "read": "opened",
+    "open": "opened",
+    "ok_read": "opened",
+    "link_visited": "clicked",
+    "link_clicked": "clicked",
+    "click": "clicked",
+    "ok_link_visited": "clicked",
+    "bounce": "soft_bounced",
+    "bounced": "hard_bounced",
+    "hard_bounce": "hard_bounced",
+    "soft_bounce": "soft_bounced",
+    "err_will_retry": "soft_bounced",
+    "err_delivered": "hard_bounced",
+    "unsubscribe": "unsubscribed",
+    "subscribe": "subscribed",
+    "spam_block": "spam",
+}
 SUBSCRIPTION_STOP_STATUSES = {
     "hard_bounced": "bounced",
     "spam": "complained",
@@ -124,6 +144,8 @@ async def process_unisender_go_webhook(
             fallback_metadata if isinstance(fallback_metadata, dict) else {}
         )
         raw_events = user_events.get("events")
+        if raw_events is None:
+            raw_events = user_events.get("Events")
         if not isinstance(raw_events, list):
             skipped += 1
             continue
@@ -134,7 +156,11 @@ async def process_unisender_go_webhook(
                 continue
 
             event_data = raw_event.get("event_data")
-            provider_status = normalize_provider_status(event_data)
+            event_data_dict = event_data if isinstance(event_data, dict) else {}
+            provider_status = normalize_provider_status(
+                event_data_dict=event_data_dict,
+                event_name=raw_event.get("event_name") or raw_event.get("EventName"),
+            )
             if provider_status is None:
                 skipped += 1
                 continue
@@ -144,7 +170,6 @@ async def process_unisender_go_webhook(
                 skipped += 1
                 continue
 
-            event_data_dict = event_data if isinstance(event_data, dict) else {}
             job_id = normalize_optional_string(event_data_dict.get("job_id")) or fallback_job_id
             email = normalize_optional_string(event_data_dict.get("email")) or fallback_email
             metadata = event_data_dict.get("metadata")
@@ -429,14 +454,31 @@ def build_unisender_event_dedupe_key(
     return f"email.{PROVIDER_SOURCE}:{digest}"
 
 
-def normalize_provider_status(event_data: Any) -> str | None:
-    if not isinstance(event_data, dict):
-        return None
-    status = event_data.get("status")
-    if not isinstance(status, str):
+def normalize_provider_status(
+    *,
+    event_data_dict: dict[str, Any],
+    event_name: Any,
+) -> str | None:
+    status = first_string(
+        event_data_dict.get("status"),
+        event_data_dict.get("email_status"),
+        event_data_dict.get("Status"),
+        event_name,
+    )
+    if status is None:
         return None
     normalized = status.strip().lower().replace("-", "_")
+    normalized = UNISENDER_STATUS_ALIASES.get(normalized, normalized)
+    if normalized == "transactional_email_status":
+        return None
     return normalized or None
+
+
+def first_string(*values: Any) -> str | None:
+    for value in values:
+        if isinstance(value, str) and value.strip():
+            return value
+    return None
 
 
 def parse_unisender_event_time(value: Any) -> datetime:

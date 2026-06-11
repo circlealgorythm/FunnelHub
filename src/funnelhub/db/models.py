@@ -291,3 +291,36 @@ class BroadcastTarget(Base, TimestampMixin):
     lead_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("leads.id", ondelete="CASCADE"))
     status: Mapped[str] = mapped_column(String(64), default="pending", nullable=False)
     error: Mapped[str | None] = mapped_column(Text)
+
+
+class Autopost(Base, TimestampMixin):
+    __tablename__ = "autoposts"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    title: Mapped[str] = mapped_column(String(512), nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    channels: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
+    status: Mapped[str] = mapped_column(String(64), default="queued", nullable=False)
+    source_type: Mapped[str] = mapped_column(String(64), default="manual", nullable=False)
+    source_url: Mapped[str | None] = mapped_column(Text)
+    dedupe_key: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+    scheduled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    metadata_: Mapped[dict[str, Any]] = mapped_column(
+        "metadata", JSONB, default=dict, nullable=False
+    )
+
+
+class AutopostPublication(Base, TimestampMixin):
+    __tablename__ = "autopost_publications"
+    __table_args__ = (UniqueConstraint("autopost_id", "channel"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    autopost_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("autoposts.id", ondelete="CASCADE"))
+    channel: Mapped[str] = mapped_column(String(32), nullable=False)
+    status: Mapped[str] = mapped_column(String(64), default="pending", nullable=False)
+    external_post_id: Mapped[str | None] = mapped_column(String(255))
+    attempted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    error: Mapped[str | None] = mapped_column(Text)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)

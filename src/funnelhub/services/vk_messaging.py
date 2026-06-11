@@ -66,6 +66,32 @@ class HttpVkMessageClient:
             raise RuntimeError(error_message)
         return payload
 
+    async def publish_wall_post(
+        self,
+        *,
+        owner_id: int,
+        message: str,
+    ) -> dict[str, Any]:
+        data: dict[str, Any] = {
+            "access_token": self._access_token,
+            "v": self._api_version,
+            "owner_id": str(owner_id),
+            "message": message,
+            "from_group": "1",
+        }
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            response = await client.post(f"{self._base_url}/wall.post", data=data)
+            response.raise_for_status()
+            payload = cast(dict[str, Any], response.json())
+
+        if "error" in payload:
+            error = payload["error"]
+            error_message = (
+                error.get("error_msg", "VK API error") if isinstance(error, dict) else str(error)
+            )
+            raise RuntimeError(error_message)
+        return payload
+
 
 @dataclass(frozen=True)
 class VkUrlButton:

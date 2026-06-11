@@ -331,6 +331,88 @@ async def test_unisender_webhook_records_bounce_complaint_and_provider_unsubscri
         }
 
 
+async def test_unisender_webhook_accepts_status_aliases_and_event_names() -> None:
+    lead_id, message_id = await create_email_message(job_id=f"{TEST_JOB_ID}-aliases")
+    payload = {
+        "events_by_user": [
+            {
+                "Events": [
+                    {
+                        "EventName": "transactional_email_status",
+                        "event_data": {
+                            "email_status": "ok_read",
+                            "job_id": f"{TEST_JOB_ID}-aliases",
+                            "email": TEST_EMAIL,
+                            "event_time": "2026-06-05T12:01:00+00:00",
+                            "metadata": {
+                                "lead_id": str(lead_id),
+                                "message_id": str(message_id),
+                            },
+                        },
+                    },
+                    {
+                        "event_name": "ok_link_visited",
+                        "event_data": {
+                            "job_id": f"{TEST_JOB_ID}-aliases",
+                            "email": TEST_EMAIL,
+                            "event_time": "2026-06-05T12:02:00+00:00",
+                            "url": "https://aisukam.ru/alias-click",
+                            "metadata": {
+                                "lead_id": str(lead_id),
+                                "message_id": str(message_id),
+                            },
+                        },
+                    },
+                    {
+                        "event_name": "unsubscribe",
+                        "event_data": {
+                            "job_id": f"{TEST_JOB_ID}-aliases",
+                            "email": TEST_EMAIL,
+                            "event_time": "2026-06-05T12:03:00+00:00",
+                            "metadata": {
+                                "lead_id": str(lead_id),
+                                "message_id": str(message_id),
+                            },
+                        },
+                    },
+                ],
+            }
+        ],
+    }
+
+    response = await post_unisender_webhook(payload)
+
+    assert response.status_code == 200
+    assert response.json()["processed"] == 3
+    assert response.json()["matched_messages"] == 3
+    assert response.json()["updated_subscriptions"] == 1
+
+    async with async_session_maker() as session:
+        message = await session.get(Message, message_id)
+        assert message is not None
+        assert message.status == "failed"
+        assert message.read_at is not None
+        assert message.metadata_["open_count"] == 1
+        assert message.metadata_["click_count"] == 1
+        assert message.metadata_["last_clicked_url"] == "https://aisukam.ru/alias-click"
+
+        subscription = await session.scalar(
+            select(EmailSubscription).where(EmailSubscription.lead_id == lead_id)
+        )
+        assert subscription is not None
+        assert subscription.status == "unsubscribed"
+
+        event_types = set(
+            await session.scalars(
+                select(Event.event_type).where(
+                    Event.lead_id == lead_id,
+                    Event.source == "unisender_go",
+                )
+            )
+        )
+        assert event_types == {"email.opened", "email.clicked", "email.unsubscribed"}
+
+
 async def test_unisender_webhook_rejects_invalid_auth() -> None:
     lead_id, message_id = await create_email_message(job_id=f"{TEST_JOB_ID}-auth")
     payload = webhook_payload(

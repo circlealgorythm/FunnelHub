@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 
 import paramiko
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 REMOTE_ROOT = "/opt/funnelhub"
-UPLOAD_DIRS = ("src", "migrations", "tests")
+UPLOAD_DIRS = ("src", "migrations", "tests", "inbox-app/dist")
 SKIP_DIRS = {"__pycache__", ".venv", ".pytest_cache", "node_modules"}
 SKIP_FILES = {".DS_Store"}
 
@@ -61,6 +62,10 @@ def upload_dir(sftp: paramiko.SFTPClient, local_dir: Path, remote_dir: str) -> N
 
 
 def main() -> None:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(errors="replace")
+        sys.stderr.reconfigure(errors="replace")
+
     load_local_env()
     ssh_host = required_env("SSH_HOST")
     ssh_user = required_env("SSH_USER")
@@ -80,15 +85,18 @@ def main() -> None:
 
         command = (
             f"cd {REMOTE_ROOT} && "
-            "docker compose -f docker-compose.prod.yml up -d --build "
-            "app funnel-worker telegram-bot && "
-            "docker compose -f docker-compose.prod.yml exec app alembic upgrade head"
+            "docker compose -f docker-compose.prod.yml build app funnel-worker telegram-bot && "
+            "docker compose -f docker-compose.prod.yml run --rm app alembic upgrade head && "
+            "docker compose -f docker-compose.prod.yml up -d app funnel-worker telegram-bot"
         )
         _, stdout, stderr = ssh.exec_command(command)
         out = stdout.read().decode("utf-8", errors="replace")
         err = stderr.read().decode("utf-8", errors="replace")
+        exit_status = stdout.channel.recv_exit_status()
         print("STDOUT:", out)
         print("STDERR:", err)
+        if exit_status != 0:
+            raise RuntimeError(f"Remote deploy command failed with exit status {exit_status}.")
     finally:
         ssh.close()
 

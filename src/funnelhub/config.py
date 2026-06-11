@@ -121,6 +121,10 @@ class Settings(BaseSettings):
     lead_notification_cooldown_seconds: int = Field(
         default=300, validation_alias="LEAD_NOTIFICATION_COOLDOWN_SECONDS"
     )
+    autopost_telegram_chat_id: str | None = Field(
+        default=None, validation_alias="AUTOPOST_TELEGRAM_CHAT_ID"
+    )
+    autopost_vk_owner_id: int | None = Field(default=None, validation_alias="AUTOPOST_VK_OWNER_ID")
 
 
 @lru_cache

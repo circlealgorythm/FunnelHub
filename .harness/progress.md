@@ -2,6 +2,37 @@
 
 ## Current State
 
+- 2026-06-11 audited Unisender Go provider webhooks after the user's follow-up. The existing
+  implementation already validates Unisender `auth`, processes delivery/open/click/bounce/spam/
+  unsubscribe/subscribed statuses, updates `messages` and `email_subscriptions`, and has
+  idempotency coverage. Hardened parsing so it also accepts `Events` with uppercase, provider
+  status aliases such as `ok_read` and `ok_link_visited`, `email_status`/`Status` keys, and
+  unsubscribe/click/open statuses supplied through `event_name` when `event_data.status` is
+  absent.
+- 2026-06-11 Unisender webhook verification passed after hardening:
+  `.venv\Scripts\ruff.exe check .`, `.venv\Scripts\mypy.exe src`,
+  `pytest tests\test_email_provider_webhooks.py -q` (5 passed), `pytest -x`
+  (133 passed, 5 skipped), and `docker compose -f docker-compose.prod.yml config --quiet`
+  with existing local unset-variable warnings. Production deploy completed; `/health` and
+  `/webhooks/email/unisender-go` returned OK, services are running, and in-container smoke
+  confirmed aliases normalize to `opened`, `clicked`, and `unsubscribed`.
+- 2026-06-11 Autoposting MVP implemented and deployed. Added `autoposts` and
+  `autopost_publications` tables, admin API `/api/inbox/autoposts`, Inbox tab
+  "Автопостинг", Telegram channel posting, VK wall posting, scheduling, queue/history
+  statuses, and duplicate protection through `dedupe_key` plus unique publication rows.
+  Funnel worker now processes due autoposts after funnel and manual broadcast passes.
+- 2026-06-11 Autoposting verification passed locally: `.venv\Scripts\ruff.exe check .`,
+  `.venv\Scripts\mypy.exe src`, `pytest -x` (132 passed, 5 skipped), `npm run build`
+  in `inbox-app/`, `git diff --check`, and
+  `docker compose -f docker-compose.prod.yml config --quiet` with existing local unset
+  variable warnings.
+- 2026-06-11 production deploy completed for Autoposting plus the previous import/broadcast
+  fixes. `deploy_files.py` now uploads `inbox-app/dist` and applies Alembic before
+  recreating services. Production smoke: public `/health` returned OK, `/inbox` served the
+  new bundle containing "Автопостинг", Alembic is at `20260611_01 (head)`, and `app`,
+  `funnel-worker`, `telegram-bot`, `postgres`, and `redis` are running. Worker log tail
+  still shows pre-existing email delivery/subscription errors for invalid or unsubscribed
+  leads; no Autoposting traceback was observed.
 - 2026-06-11 audited GetCourse CSV/XLSX import and manual broadcasts after user-side
   implementation. Fixed GetCourse import preview/execution so headerless export columns are
   normalized to stable `custom_*` keys instead of being collapsed by duplicate empty headers.
@@ -51,6 +82,16 @@
   direct columns on `leads`.
 - Deployment/SSH helper scripts must never contain real credentials in tracked files. Local
   deployment helpers may read `.env`, but archives and one-off patch scripts belong outside git.
+- Autoposting is modeled as durable queued posts plus per-channel publication rows. `dedupe_key`
+  prevents duplicate source/manual posts, `(autopost_id, channel)` prevents duplicate channel
+  publication records, and the worker only publishes pending/failed rows so already published
+  channels are not sent twice.
+- Telegram Autoposting requires `AUTOPOST_TELEGRAM_CHAT_ID`; VK Autoposting uses
+  `AUTOPOST_VK_OWNER_ID` when set, otherwise falls back to negative `VK_GROUP_ID` for community
+  wall posting through `wall.post`.
+- Autoposting content pulling from YouTube/Telegram/VK is represented in MVP by
+  `source_type`/`source_url` and duplicate protection. Active external polling/crawling remains
+  a follow-up because it needs provider-specific API tokens, quotas, and moderation rules.
 - GetCourse webhook test confirmed that GetCourse can call an external URL with GET query parameters, including profile fields, UTM fields, and `custom_<field_id>` parameters.
 - GetCourse webhook MVP accepts the captured `GET` query-string payload at `/webhooks/getcourse`, while also allowing `POST` JSON/form payloads for compatibility.
 - GetCourse webhook ingestion deduplicates by GetCourse user ID first, then normalized email, then normalized phone.
@@ -141,6 +182,10 @@
 - Email funnel buttons can use internal `funnelhub://bot/telegram` and `funnelhub://bot/vk` URLs. The runner resolves them at send time through the lead's active bot-link token with the same Telegram/VK builders used by the thank-you page; VK uses the plain `vk.me` deep link.
 - Unisender Go provider webhooks are accepted at `/webhooks/email/unisender-go` using the provider `auth` MD5 check against the configured API key. `GET` returns a lightweight OK response for Unisender URL validation; `POST` processes the provider `events_by_user` JSON where event fields live under `event_data`. The handler uses existing `messages`, `events`, and `email_subscriptions` tables without a migration: exact provider statuses are stored as `events` and message metadata; constrained `messages.status` stays in the existing allowed set (`delivered`, `read`, `failed`).
 - Hard bounce, provider unsubscribe, and spam/complaint webhook statuses stop future email sends by moving the email subscription out of `subscribed`; soft bounce is recorded as an event/message provider status but does not unsubscribe the lead.
+- Unisender webhook parsing should remain tolerant to provider naming variants. Current handler
+  accepts configured Unisender Go statuses (`delivered/opened/clicked/...`), common event-name
+  forms, and legacy Unisender-style aliases (`ok_delivered`, `ok_read`, `ok_link_visited`,
+  `err_will_retry`) to avoid silently skipping valid provider callbacks.
 - Aisu Kam email signatures can render a round portrait from `EMAIL_SIGNATURE_IMAGE_URL`; production currently uses `https://bot.aisukam.ru/assets/email/aisu-kam-signature.png`.
 - The production Aisu messenger and email funnels now treat the original DOCX as source for days 2-18; CTA buttons stop at day 18 so future autoposting does not inherit stale course buttons.
 - The non-blocking questionnaire no longer repeats questions by a standalone timer. The first content/video step waits 5 minutes after the first question if the questionnaire is incomplete; unanswered questions are repeated after each subsequent messenger funnel message until answered.
