@@ -429,8 +429,8 @@ async def import_database_leads(
         
     try:
         mapping_dict = json.loads(mapping)
-    except json.JSONDecodeError:
-        raise HTTPException(status_code=422, detail="Invalid mapping JSON.")
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=422, detail="Invalid mapping JSON.") from exc
 
     try:
         result = await execute_import_file(
@@ -447,7 +447,10 @@ async def import_database_leads(
     return database_import_response(result)
 
 
-@router.get("/database/leads/import/batches", response_model=list[DatabaseImportBatchSummaryResponse])
+@router.get(
+    "/database/leads/import/batches",
+    response_model=list[DatabaseImportBatchSummaryResponse],
+)
 async def get_import_batches(
     session: SessionDep,
 ) -> list[DatabaseImportBatchSummaryResponse]:
@@ -455,7 +458,10 @@ async def get_import_batches(
     return [database_import_batch_summary_response(b) for b in batches]
 
 
-@router.get("/database/leads/import/batches/{batch_id}", response_model=DatabaseImportBatchDetailResponse)
+@router.get(
+    "/database/leads/import/batches/{batch_id}",
+    response_model=DatabaseImportBatchDetailResponse,
+)
 async def get_import_batch(
     batch_id: uuid.UUID,
     session: SessionDep,
@@ -686,7 +692,9 @@ def database_import_response(result: DatabaseImportResult) -> DatabaseImportResp
     )
 
 
-def database_import_batch_summary_response(summary: DatabaseImportBatchSummary) -> DatabaseImportBatchSummaryResponse:
+def database_import_batch_summary_response(
+    summary: DatabaseImportBatchSummary,
+) -> DatabaseImportBatchSummaryResponse:
     return DatabaseImportBatchSummaryResponse(
         id=summary.id,
         file_name=summary.file_name,

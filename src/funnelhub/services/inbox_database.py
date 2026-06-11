@@ -542,7 +542,10 @@ async def export_database_leads_xlsx(session: AsyncSession, *, query: str | None
     return buffer.getvalue()
 
 
-def read_import_file_rows(file_name: str, content: bytes) -> tuple[list[str], list[list[str]], str | None]:
+def read_import_file_rows(
+    file_name: str,
+    content: bytes,
+) -> tuple[list[str], list[list[str]], str | None]:
     if file_name.lower().endswith(".xlsx"):
         wb = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
         sheet = wb.active
@@ -554,11 +557,18 @@ def read_import_file_rows(file_name: str, content: bytes) -> tuple[list[str], li
         if not raw_headers:
             raise ValueError("XLSX file must contain a header row.")
             
-        headers = [str(cell) if cell is not None else "" for cell in raw_headers]
+        headers = normalize_import_headers(
+            [str(cell) if cell is not None else "" for cell in raw_headers]
+        )
         
         rows: list[list[str]] = []
         for row in rows_iter:
-            rows.append([str(cell) if cell is not None else "" for cell in row])
+            rows.append(
+                normalize_import_row_values(
+                    [str(cell) if cell is not None else "" for cell in row],
+                    len(headers),
+                )
+            )
         return headers, rows, None
     else:
         text = decode_csv_content(content)
@@ -571,7 +581,8 @@ def read_import_file_rows(file_name: str, content: bytes) -> tuple[list[str], li
         if not headers:
             raise ValueError("CSV file must contain a header row.")
             
-        rows = [row for row in csv_reader]
+        headers = normalize_import_headers(headers)
+        rows = [normalize_import_row_values(row, len(headers)) for row in csv_reader]
         return headers, rows, delimiter
 
 
@@ -580,6 +591,9 @@ def suggest_import_mapping(headers: list[str]) -> dict[str, str]:
     for header in headers:
         cleaned = header.strip()
         if not cleaned:
+            continue
+        if cleaned.startswith("custom_"):
+            mapping[header] = cleaned
             continue
         matched_key = None
         for key, aliases in IMPORT_FIELD_ALIASES.items():
@@ -635,8 +649,10 @@ async def execute_import_file(
     for row_number, values in enumerate(all_rows, start=2):
         total_rows += 1
         
-        # Zip safely, some rows might be shorter than headers
-        row_dict = dict(zip(headers, values))
+        row_dict = {
+            header: values[index] if index < len(values) else ""
+            for index, header in enumerate(headers)
+        }
         
         payload: dict[str, Any] = {}
         for header, target_key in mapping.items():
@@ -691,7 +707,10 @@ async def execute_import_file(
     )
 
 
-async def list_import_batches(session: AsyncSession, limit: int = 20) -> list[DatabaseImportBatchSummary]:
+async def list_import_batches(
+    session: AsyncSession,
+    limit: int = 20,
+) -> list[DatabaseImportBatchSummary]:
     rows = (
         await session.execute(
             select(ImportBatch)
@@ -715,7 +734,10 @@ async def list_import_batches(session: AsyncSession, limit: int = 20) -> list[Da
     ]
 
 
-async def get_import_batch_detail(session: AsyncSession, batch_id: uuid.UUID) -> DatabaseImportBatchDetail | None:
+async def get_import_batch_detail(
+    session: AsyncSession,
+    batch_id: uuid.UUID,
+) -> DatabaseImportBatchDetail | None:
     batch = await session.get(ImportBatch, batch_id)
     if batch is None:
         return None
@@ -958,14 +980,39 @@ def detect_csv_delimiter(text: str) -> str:
 
 def import_values_to_row(fieldnames: list[str], values: list[str]) -> dict[str, str | None]:
     row: dict[str, str | None] = {}
+    normalized_fieldnames = normalize_import_headers(fieldnames)
+    normalized_values = normalize_import_row_values(values, len(normalized_fieldnames))
+    for index, value in enumerate(normalized_values):
+        key = (
+            normalized_fieldnames[index]
+            if index < len(normalized_fieldnames)
+            else f"column_{index + 1}"
+        )
+        row[key] = value
+    return row
+
+
+def normalize_import_headers(headers: list[str]) -> list[str]:
+    normalized: list[str] = []
     headerless_custom_index = 0
-    for index, value in enumerate(values):
-        header = fieldnames[index] if index < len(fieldnames) else ""
+    seen: dict[str, int] = {}
+    for index, header in enumerate(headers):
         key = import_column_key(header, index, headerless_custom_index)
         if not header.strip():
             headerless_custom_index += 1
-        row[key] = value
-    return row
+
+        duplicate_count = seen.get(key, 0)
+        seen[key] = duplicate_count + 1
+        if duplicate_count:
+            key = f"{key}__column_{index + 1}"
+        normalized.append(key)
+    return normalized
+
+
+def normalize_import_row_values(values: list[str], header_count: int) -> list[str]:
+    if len(values) >= header_count:
+        return values[:header_count]
+    return [*values, *([""] * (header_count - len(values)))]
 
 
 def import_column_key(header: str, index: int, headerless_custom_index: int) -> str:
@@ -1105,14 +1152,48 @@ async def delete_database_lead(session: AsyncSession, lead_id: uuid.UUID) -> Non
         raise ValueError("Lead not found.")
 
     # Manually delete all dependent records to bypass ORM or DB cascade misconfigurations
-    await session.execute(delete(Message).where(Message.lead_id == lead_id).execution_options(synchronize_session=False))
-    await session.execute(delete(Conversation).where(Conversation.lead_id == lead_id).execution_options(synchronize_session=False))
-    await session.execute(delete(LeadContact).where(LeadContact.lead_id == lead_id).execution_options(synchronize_session=False))
-    await session.execute(delete(FunnelState).where(FunnelState.lead_id == lead_id).execution_options(synchronize_session=False))
-    await session.execute(delete(LeadUtm).where(LeadUtm.lead_id == lead_id).execution_options(synchronize_session=False))
-    await session.execute(delete(LeadConsent).where(LeadConsent.lead_id == lead_id).execution_options(synchronize_session=False))
-    await session.execute(delete(LeadExternalId).where(LeadExternalId.lead_id == lead_id).execution_options(synchronize_session=False))
-    await session.execute(delete(LeadCustomField).where(LeadCustomField.lead_id == lead_id).execution_options(synchronize_session=False))
+    await session.execute(
+        delete(Message)
+        .where(Message.lead_id == lead_id)
+        .execution_options(synchronize_session=False)
+    )
+    await session.execute(
+        delete(Conversation)
+        .where(Conversation.lead_id == lead_id)
+        .execution_options(synchronize_session=False)
+    )
+    await session.execute(
+        delete(LeadContact)
+        .where(LeadContact.lead_id == lead_id)
+        .execution_options(synchronize_session=False)
+    )
+    await session.execute(
+        delete(FunnelState)
+        .where(FunnelState.lead_id == lead_id)
+        .execution_options(synchronize_session=False)
+    )
+    await session.execute(
+        delete(LeadUtm)
+        .where(LeadUtm.lead_id == lead_id)
+        .execution_options(synchronize_session=False)
+    )
+    await session.execute(
+        delete(LeadConsent)
+        .where(LeadConsent.lead_id == lead_id)
+        .execution_options(synchronize_session=False)
+    )
+    await session.execute(
+        delete(LeadExternalId)
+        .where(LeadExternalId.lead_id == lead_id)
+        .execution_options(synchronize_session=False)
+    )
+    await session.execute(
+        delete(LeadCustomField)
+        .where(LeadCustomField.lead_id == lead_id)
+        .execution_options(synchronize_session=False)
+    )
     
     # Finally delete the lead
-    await session.execute(delete(Lead).where(Lead.id == lead_id).execution_options(synchronize_session=False))
+    await session.execute(
+        delete(Lead).where(Lead.id == lead_id).execution_options(synchronize_session=False)
+    )

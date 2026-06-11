@@ -457,7 +457,13 @@ async def test_run_due_funnel_once_uses_preferred_messenger_channel(
     vk_client = FakeVkClient()
 
     async with async_session_maker() as session:
-        state = await start_funnel_for_lead(session, lead_id, definition, channel="telegram", now=now)
+        state = await start_funnel_for_lead(
+            session,
+            lead_id,
+            definition,
+            channel="telegram",
+            now=now,
+        )
         state.metadata_ = {**state.metadata_, "messenger_channel": "telegram"}
         await session.commit()
 

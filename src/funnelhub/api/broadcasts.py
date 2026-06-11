@@ -8,7 +8,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from funnelhub.db.session import get_session
 from funnelhub.services.auth import require_admin_session
-from funnelhub.services.broadcasts import create_broadcast, get_broadcast_detail, list_broadcasts
+from funnelhub.services.broadcasts import (
+    create_broadcast,
+    get_broadcast_detail,
+    list_broadcast_targets,
+    list_broadcasts,
+)
 
 router = APIRouter(
     prefix="/api/inbox/broadcasts",
@@ -48,15 +53,19 @@ async def create_new_broadcast(
     session: SessionDep,
 ) -> BroadcastResponse:
     valid_channels = {"telegram", "vk", "email"}
-    for ch in request.channels:
+    channels = list(dict.fromkeys(request.channels))
+    for ch in channels:
         if ch not in valid_channels:
             raise HTTPException(status_code=422, detail=f"Invalid channel: {ch}")
+    message_text = request.message_text.strip()
+    if not message_text:
+        raise HTTPException(status_code=422, detail="Message text is required")
             
     broadcast = await create_broadcast(
         session=session,
         segment_query=request.segment_query,
-        channels=request.channels,
-        message_text=request.message_text,
+        channels=channels,
+        message_text=message_text,
     )
     return BroadcastResponse(
         id=broadcast.id,
@@ -79,6 +88,8 @@ async def get_broadcast_list(
 ) -> BroadcastListResponse:
     if limit < 1 or limit > 100:
         raise HTTPException(status_code=422, detail="Limit must be between 1 and 100")
+    if offset < 0:
+        raise HTTPException(status_code=422, detail="Offset must be non-negative")
         
     broadcasts, total = await list_broadcasts(session, limit=limit, offset=offset)
     return BroadcastListResponse(
@@ -142,25 +153,32 @@ async def get_broadcast_targets(
     limit: int = 100,
     offset: int = 0,
 ) -> BroadcastTargetListResponse:
-    from sqlalchemy import func, select
+    if limit < 1 or limit > 200:
+        raise HTTPException(status_code=422, detail="Limit must be between 1 and 200")
+    if offset < 0:
+        raise HTTPException(status_code=422, detail="Offset must be non-negative")
 
-    from funnelhub.db.models import BroadcastTarget, Lead
+    result = await list_broadcast_targets(
+        session,
+        broadcast_id,
+        limit=limit,
+        offset=offset,
+    )
+    if result is None:
+        raise HTTPException(status_code=404, detail="Broadcast not found")
+    targets, total = result
 
-    count_stmt = select(func.count()).select_from(BroadcastTarget).where(BroadcastTarget.broadcast_id == broadcast_id)
-    total = int(await session.scalar(count_stmt) or 0)
-
-    stmt = select(BroadcastTarget, Lead).join(Lead).where(BroadcastTarget.broadcast_id == broadcast_id).order_by(BroadcastTarget.created_at.asc()).limit(limit).offset(offset)
-    rows = (await session.execute(stmt)).all()
-
-    items = []
-    for target, lead in rows:
-        items.append(BroadcastTargetResponse(
-            id=target.id,
-            lead_id=target.lead_id,
-            lead_name=lead.name or lead.first_name,
-            lead_contact=lead.email or lead.phone or lead.telegram,
-            status=target.status,
-            error=target.error,
-        ))
-
-    return BroadcastTargetListResponse(items=items, total=total)
+    return BroadcastTargetListResponse(
+        items=[
+            BroadcastTargetResponse(
+                id=target.id,
+                lead_id=target.lead_id,
+                lead_name=target.lead_name,
+                lead_contact=target.lead_contact,
+                status=target.status,
+                error=target.error,
+            )
+            for target in targets
+        ],
+        total=total,
+    )

@@ -33,9 +33,15 @@ from funnelhub.services.inbox_database import (
 
 
 async def import_database_leads_csv(session, file_name: str, content: bytes):
-    from funnelhub.services.inbox_database import preview_import_file, execute_import_file
+    from funnelhub.services.inbox_database import execute_import_file, preview_import_file
+
     preview = preview_import_file(file_name, content)
-    return await execute_import_file(session, file_name=file_name, content=content, mapping=preview.suggested_mapping)
+    return await execute_import_file(
+        session,
+        file_name=file_name,
+        content=content,
+        mapping=preview.suggested_mapping,
+    )
 
 TEST_GC_ID = 987656000
 TEST_EMAIL = "database@example.com"
@@ -78,7 +84,16 @@ async def cleanup_test_data() -> None:
         if lead_ids:
             await session.execute(delete(Lead).where(Lead.id.in_(lead_ids)))
         await session.execute(
-            delete(ImportBatch).where(ImportBatch.file_name.in_({"leads.csv", "broken.csv"}))
+            delete(ImportBatch).where(
+                ImportBatch.file_name.in_(
+                    {
+                        "leads.csv",
+                        "broken.csv",
+                        "getcourse-export.csv",
+                        "short-getcourse-export.csv",
+                    }
+                )
+            )
         )
         await session.commit()
 
@@ -188,7 +203,6 @@ async def test_export_database_leads_xlsx_uses_human_readable_columns() -> None:
     assert "Database Test Lead" in values
 
 
-@pytest.mark.skip(reason="Legacy format or API changed")
 async def test_imported_getcourse_fields_are_available_in_database_detail() -> None:
     content = (
         "id,Email,VK-ID,gc_system_user_utm_source,utm_source,utm_medium,utm_campaign,"
@@ -228,7 +242,6 @@ async def test_imported_getcourse_fields_are_available_in_database_detail() -> N
     )
 
 
-@pytest.mark.skip(reason="Legacy format or API changed")
 async def test_getcourse_tab_export_import_preserves_headerless_consent_columns() -> None:
     headers = [
         "id",
@@ -350,7 +363,6 @@ async def test_getcourse_tab_export_import_preserves_headerless_consent_columns(
     )
 
 
-@pytest.mark.skip(reason="Legacy format or API changed")
 async def test_getcourse_short_export_import_preserves_headerless_consent_columns() -> None:
     headers = [
         "Email",

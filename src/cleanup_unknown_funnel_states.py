@@ -1,14 +1,15 @@
 import asyncio
 import logging
+from collections.abc import Sequence
 
 from sqlalchemy import select
-from typing import Sequence
 
 from funnelhub.db.models import FunnelState
 from funnelhub.db.session import async_session_maker
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
 
 async def cleanup_unknown_states() -> None:
     async with async_session_maker() as session:
@@ -29,23 +30,32 @@ async def cleanup_unknown_states() -> None:
                     select(FunnelState).where(
                         FunnelState.lead_id == state.lead_id,
                         FunnelState.funnel_key == state.funnel_key,
-                        FunnelState.channel != "unknown"
+                        FunnelState.channel != "unknown",
                     )
                 )
             ).all()
-            
+
             if valid_states:
-                logger.info(f"Deleting unknown state {state.id} for lead {state.lead_id} (found valid alternative)")
+                logger.info(
+                    "Deleting unknown state %s for lead %s (found valid alternative)",
+                    state.id,
+                    state.lead_id,
+                )
                 await session.delete(state)
                 count += 1
             else:
-                logger.info(f"Keeping unknown state {state.id} for lead {state.lead_id} (no valid alternative)")
-                
+                logger.info(
+                    "Keeping unknown state %s for lead %s (no valid alternative)",
+                    state.id,
+                    state.lead_id,
+                )
+
         if count > 0:
             await session.commit()
             logger.info(f"Deleted {count} stale unknown states.")
         else:
             logger.info("Nothing to delete.")
+
 
 if __name__ == "__main__":
     asyncio.run(cleanup_unknown_states())

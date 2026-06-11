@@ -2,6 +2,22 @@
 
 ## Current State
 
+- 2026-06-11 audited GetCourse CSV/XLSX import and manual broadcasts after user-side
+  implementation. Fixed GetCourse import preview/execution so headerless export columns are
+  normalized to stable `custom_*` keys instead of being collapsed by duplicate empty headers.
+  Re-enabled regression tests for the 39-column and 27-column GetCourse export shapes.
+- 2026-06-11 fixed manual broadcast target details. `/api/inbox/broadcasts/{id}/targets` now
+  reads lead display/contact data through `lead_contacts` and subscribed `messenger_identities`
+  instead of non-existent `Lead.email`/`Lead.phone`/`Lead.telegram` attributes, validates
+  pagination, and returns 404 for unknown broadcasts. Broadcast creation now trims messages,
+  deduplicates channel selections, and rejects blank message text.
+- 2026-06-11 removed tracked one-off patch/fix/ssh helper scripts and a tracked `tmp/` deploy
+  archive. `deploy_files.py` no longer contains SSH credentials and loads SSH settings from
+  `.env`/environment variables. Added `tmp/` to `.gitignore`.
+- 2026-06-11 verification passed after the audit fixes: `ruff check .`, `mypy src`,
+  `pytest -x` (129 passed, 5 skipped), `npm run build` in `inbox-app/`, and
+  `docker compose -f docker-compose.prod.yml config --quiet` (with existing local env
+  interpolation warnings).
 - 2026-06-07 CSV and XLSX import fully implemented and deployed. Added file preview, column mapping, and import history table to Inbox.
 - 2026-06-07 Fixed deploy_files.py to handle Windows-created ZIP files correctly on Linux by using Python zip module, and changed Docker restart command to up -d --build to correctly apply code and frontend asset changes.
 - 2026-06-07 Added avicon.ico to the Inbox React app and deployed to production.
@@ -27,6 +43,14 @@
 
 - GetCourse remains responsible for courses, payments, installments, access, login/password issuance, and the student cabinet.
 - FunnelHub server is the source of truth for lead communication, bot/email subscriptions, funnel state, inbox, imports, broadcasts, and analytics.
+- GetCourse CSV/XLSX import preview must expose headerless export columns as stable internal
+  keys (`custom_<field_id>`) before user mapping; using raw empty headers collapses multiple
+  consent columns into one value and loses agreement data.
+- Manual broadcast target display must read contacts and messenger identifiers from the
+  operational tables (`lead_contacts`, `messenger_identities`) rather than treating them as
+  direct columns on `leads`.
+- Deployment/SSH helper scripts must never contain real credentials in tracked files. Local
+  deployment helpers may read `.env`, but archives and one-off patch scripts belong outside git.
 - GetCourse webhook test confirmed that GetCourse can call an external URL with GET query parameters, including profile fields, UTM fields, and `custom_<field_id>` parameters.
 - GetCourse webhook MVP accepts the captured `GET` query-string payload at `/webhooks/getcourse`, while also allowing `POST` JSON/form payloads for compatibility.
 - GetCourse webhook ingestion deduplicates by GetCourse user ID first, then normalized email, then normalized phone.

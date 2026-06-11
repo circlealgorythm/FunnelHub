@@ -1,46 +1,97 @@
-﻿import os
+from __future__ import annotations
+
+import os
+from pathlib import Path
+
 import paramiko
 
-ssh = paramiko.SSHClient()
-ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-ssh.connect('31.129.110.56', username='root', password='QNgJj2pc&9j%')
+PROJECT_ROOT = Path(__file__).resolve().parent
+REMOTE_ROOT = "/opt/funnelhub"
+UPLOAD_DIRS = ("src", "migrations", "tests")
+SKIP_DIRS = {"__pycache__", ".venv", ".pytest_cache", "node_modules"}
+SKIP_FILES = {".DS_Store"}
 
-sftp = ssh.open_sftp()
 
-def upload_dir(local_dir, remote_dir):
+def load_local_env(path: Path = PROJECT_ROOT / ".env") -> None:
+    if not path.exists():
+        return
+
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+
+def required_env(name: str) -> str:
+    value = os.getenv(name)
+    if not value:
+        raise RuntimeError(f"{name} is required.")
+    return value
+
+
+def remote_path_for(local_dir: Path, local_path: Path, remote_dir: str) -> str:
+    relative_path = local_path.relative_to(local_dir).as_posix()
+    return f"{remote_dir}/{relative_path}"
+
+
+def ensure_remote_dir(sftp: paramiko.SFTPClient, remote_dir: str) -> None:
     try:
         sftp.stat(remote_dir)
     except FileNotFoundError:
         sftp.mkdir(remote_dir)
+
+
+def upload_dir(sftp: paramiko.SFTPClient, local_dir: Path, remote_dir: str) -> None:
+    ensure_remote_dir(sftp, remote_dir)
     for root, dirs, files in os.walk(local_dir):
-        if '__pycache__' in root or '.venv' in root or '.pytest_cache' in root:
-            continue
-        for d in dirs:
-            if d == '__pycache__' or d == '.pytest_cache': continue
-            remote_path = os.path.join(remote_dir, os.path.relpath(os.path.join(root, d), local_dir)).replace('\\\\', '/').replace('\\', '/')
-            try:
-                sftp.stat(remote_path)
-            except FileNotFoundError:
-                sftp.mkdir(remote_path)
-        for f in files:
-            if f.endswith('.pyc') or f == '.DS_Store': continue
-            local_path = os.path.join(root, f)
-            remote_path = os.path.join(remote_dir, os.path.relpath(local_path, local_dir)).replace('\\\\', '/').replace('\\', '/')
+        dirs[:] = [directory for directory in dirs if directory not in SKIP_DIRS]
+        root_path = Path(root)
+        remote_root = remote_path_for(local_dir, root_path, remote_dir)
+        ensure_remote_dir(sftp, remote_root)
+
+        for file_name in files:
+            if file_name in SKIP_FILES or file_name.endswith(".pyc"):
+                continue
+            local_path = root_path / file_name
+            remote_path = remote_path_for(local_dir, local_path, remote_dir)
             print(f"Uploading {local_path} to {remote_path}...")
-            sftp.put(local_path, remote_path)
+            sftp.put(str(local_path), remote_path)
 
-upload_dir('src', '/opt/funnelhub/src')
-upload_dir('migrations', '/opt/funnelhub/migrations')
-upload_dir('tests', '/opt/funnelhub/tests')
 
-cmd = 'cd /opt/funnelhub && docker compose -f docker-compose.prod.yml up -d --build app funnel-worker telegram-bot ; docker compose -f docker-compose.prod.yml exec app alembic upgrade head'
-stdin, stdout, stderr = ssh.exec_command(cmd)
+def main() -> None:
+    load_local_env()
+    ssh_host = required_env("SSH_HOST")
+    ssh_user = required_env("SSH_USER")
+    ssh_password = required_env("SSH_PASSWORD")
 
-out = stdout.read().decode('utf-8', errors='replace')
-err = stderr.read().decode('utf-8', errors='replace')
+    ssh = paramiko.SSHClient()
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    ssh.connect(ssh_host, username=ssh_user, password=ssh_password)
 
-print('STDOUT:', out)
-print('STDERR:', err)
+    try:
+        sftp = ssh.open_sftp()
+        try:
+            for directory in UPLOAD_DIRS:
+                upload_dir(sftp, PROJECT_ROOT / directory, f"{REMOTE_ROOT}/{directory}")
+        finally:
+            sftp.close()
 
-sftp.close()
-ssh.close()
+        command = (
+            f"cd {REMOTE_ROOT} && "
+            "docker compose -f docker-compose.prod.yml up -d --build "
+            "app funnel-worker telegram-bot && "
+            "docker compose -f docker-compose.prod.yml exec app alembic upgrade head"
+        )
+        _, stdout, stderr = ssh.exec_command(command)
+        out = stdout.read().decode("utf-8", errors="replace")
+        err = stderr.read().decode("utf-8", errors="replace")
+        print("STDOUT:", out)
+        print("STDERR:", err)
+    finally:
+        ssh.close()
+
+
+if __name__ == "__main__":
+    main()
