@@ -10,6 +10,9 @@ Run this before starting work.
 - `.harness/session-handoff.md`
 - `.harness/feature-list.json`
 - relevant files in `.harness/docs/`
+- for production behavior changes, also read `.harness/docs/quality.md`
+- for auth, secrets, webhooks, public endpoints, uploads, or user data, also read `.harness/docs/security.md`
+- for workers, queues, provider callbacks, imports, broadcasts, or autoposting, also read `.harness/docs/reliability.md`
 
 ## 2. Confirm Scope
 
@@ -28,3 +31,4 @@ Use Planner -> Implementer -> Verifier.
 ## 5. Closeout
 
 Update `.harness/progress.md` and `.harness/session-handoff.md`. Record architectural decisions in Decisions.
+Use `.harness/clean-state-checklist.md` before closing non-trivial sessions.

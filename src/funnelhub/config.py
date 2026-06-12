@@ -125,6 +125,12 @@ class Settings(BaseSettings):
         default=None, validation_alias="AUTOPOST_TELEGRAM_CHAT_ID"
     )
     autopost_vk_owner_id: int | None = Field(default=None, validation_alias="AUTOPOST_VK_OWNER_ID")
+    autopost_followup_marker: str | None = Field(
+        default="#followup", validation_alias="AUTOPOST_FOLLOWUP_MARKER"
+    )
+    autopost_followup_strip_marker: bool = Field(
+        default=True, validation_alias="AUTOPOST_FOLLOWUP_STRIP_MARKER"
+    )
 
 
 @lru_cache

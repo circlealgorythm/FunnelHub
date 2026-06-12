@@ -324,3 +324,51 @@ class AutopostPublication(Base, TimestampMixin):
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     error: Mapped[str | None] = mapped_column(Text)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+
+
+class FunnelFollowupPost(Base, TimestampMixin):
+    __tablename__ = "followup_posts"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    title: Mapped[str] = mapped_column(String(512), nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    channels: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
+    status: Mapped[str] = mapped_column(String(64), default="queued", nullable=False)
+    source_type: Mapped[str] = mapped_column(String(64), default="manual", nullable=False)
+    source_autopost_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("autoposts.id", ondelete="SET NULL")
+    )
+    dedupe_key: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+    scheduled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    total_deliveries: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    sent_deliveries: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    failed_deliveries: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    skipped_deliveries: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    metadata_: Mapped[dict[str, Any]] = mapped_column(
+        "metadata", JSONB, default=dict, nullable=False
+    )
+
+
+class FunnelFollowupDelivery(Base, TimestampMixin):
+    __tablename__ = "followup_deliveries"
+    __table_args__ = (UniqueConstraint("followup_post_id", "lead_id", "channel"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    followup_post_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("followup_posts.id", ondelete="CASCADE")
+    )
+    lead_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("leads.id", ondelete="CASCADE"))
+    channel: Mapped[str] = mapped_column(String(32), nullable=False)
+    messenger_identity_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("messenger_identities.id", ondelete="SET NULL")
+    )
+    status: Mapped[str] = mapped_column(String(64), default="pending", nullable=False)
+    attempted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    message_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("messages.id", ondelete="SET NULL")
+    )
+    external_message_id: Mapped[str | None] = mapped_column(String(255))
+    error: Mapped[str | None] = mapped_column(Text)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)

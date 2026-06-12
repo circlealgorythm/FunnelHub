@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import uuid
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -42,6 +42,12 @@ BOT_BUTTON_URLS = {
     "funnelhub://bot/telegram": "telegram",
     "funnelhub://bot/vk": "vk",
 }
+PERMANENT_DELIVERY_ERROR_MARKERS = (
+    "Lead has no subscribed email subscription.",
+    "Lead has no subscribed VK identity.",
+    "Can't send messages for users without permission",
+    "No valid recipients",
+)
 
 
 @dataclass(frozen=True)
@@ -303,9 +309,42 @@ async def run_due_funnel_once(
                         now=now,
                     )
             await session.commit()
-        except Exception:
-            failed += 1
+        except Exception as exc:
             await session.rollback()
+            if is_permanent_delivery_error(exc):
+                try:
+                    paused = await pause_funnel_state_after_permanent_delivery_error(
+                        session=session,
+                        state_id=state_id,
+                        error=exc,
+                        now=now,
+                    )
+                    await session.commit()
+                except Exception:
+                    failed += 1
+                    await session.rollback()
+                    logger.exception(
+                        "Failed to pause funnel state after permanent delivery error",
+                        extra={
+                            "funnel_key": definition.key,
+                            "funnel_state_id": str(state_id),
+                        },
+                    )
+                    continue
+
+                if paused:
+                    skipped += 1
+                    logger.warning(
+                        "Paused funnel state after permanent delivery error",
+                        extra={
+                            "funnel_key": definition.key,
+                            "funnel_state_id": str(state_id),
+                            "error": str(exc),
+                        },
+                    )
+                    continue
+
+            failed += 1
             logger.exception(
                 "Failed to run funnel step",
                 extra={"funnel_key": definition.key, "funnel_state_id": str(state_id)},
@@ -339,6 +378,61 @@ def build_vk_buttons(buttons: list[FunnelButton]) -> list[VkUrlButton | VkTextBu
         else:
             result.append(VkUrlButton(text=button.text, url=button.url))
     return result
+
+
+def is_permanent_delivery_error(error: Exception) -> bool:
+    message = str(error)
+    return any(marker in message for marker in PERMANENT_DELIVERY_ERROR_MARKERS)
+
+
+async def pause_funnel_state_after_permanent_delivery_error(
+    *,
+    session: AsyncSession,
+    state_id: uuid.UUID,
+    error: Exception,
+    now: datetime | None,
+) -> bool:
+    state = await session.get(FunnelState, state_id)
+    if state is None or state.status != "active":
+        return False
+
+    paused_at = now or datetime.now(UTC)
+    state.status = "paused"
+    state.paused_at = paused_at
+    state.next_run_at = None
+    state.metadata_ = {
+        **(state.metadata_ or {}),
+        "paused_reason": "permanent_delivery_error",
+        "paused_error": str(error)[:1000],
+        "paused_at": paused_at.isoformat(),
+    }
+    if "Can't send messages for users without permission" in str(error):
+        await unsubscribe_latest_vk_identity_for_lead(session, state.lead_id, paused_at)
+
+    await session.flush()
+    return True
+
+
+async def unsubscribe_latest_vk_identity_for_lead(
+    session: AsyncSession,
+    lead_id: uuid.UUID,
+    unsubscribed_at: datetime,
+) -> None:
+    identity = await session.scalar(
+        select(MessengerIdentity)
+        .where(
+            MessengerIdentity.lead_id == lead_id,
+            MessengerIdentity.channel == "vk",
+            MessengerIdentity.is_subscribed.is_(True),
+        )
+        .order_by(MessengerIdentity.created_at.desc())
+    )
+    if identity is None:
+        return
+
+    identity.is_subscribed = False
+    identity.unsubscribed_at = unsubscribed_at
+    await session.flush()
 
 
 def build_email_body(text: str, buttons: list[FunnelButton]) -> str:

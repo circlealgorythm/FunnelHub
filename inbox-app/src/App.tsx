@@ -70,7 +70,7 @@ type ConversationDetail = {
 
 type LoadState = "idle" | "loading" | "error";
 type AuthState = "checking" | "authenticated" | "anonymous";
-type AppView = "inbox" | "database" | "broadcasts" | "autoposts";
+type AppView = "inbox" | "database" | "broadcasts" | "autoposts" | "followups";
 
 type Broadcast = {
   id: string;
@@ -136,6 +136,49 @@ type AutopostList = {
   total: number;
   limit: number;
   offset: number;
+};
+
+type FollowupPost = {
+  id: string;
+  title: string;
+  body: string;
+  channels: string[];
+  status: string;
+  source_type: string;
+  source_autopost_id: string | null;
+  scheduled_at: string;
+  completed_at: string | null;
+  total_deliveries: number;
+  sent_deliveries: number;
+  failed_deliveries: number;
+  skipped_deliveries: number;
+  created_at: string;
+  updated_at: string;
+  deliveries: FollowupDelivery[];
+};
+
+type FollowupDelivery = {
+  id: string;
+  lead_id: string;
+  lead_name: string | null;
+  channel: string;
+  status: string;
+  external_message_id: string | null;
+  attempted_at: string | null;
+  sent_at: string | null;
+  error: string | null;
+};
+
+type FollowupPostList = {
+  items: FollowupPost[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+
+type FollowupRecipientPreview = {
+  total: number;
+  by_channel: Record<string, number>;
 };
 
 type DatabaseLead = {
@@ -241,6 +284,10 @@ const autopostStatusLabels: Record<string, string> = {
   partial_failed: "Частично",
   cancelled: "Отменен",
   pending: "Ожидает",
+  sending: "Отправляется",
+  completed: "Завершен",
+  sent: "Отправлено",
+  skipped_unsubscribed: "Пропущен",
 };
 
 const sourceTypeLabels: Record<string, string> = {
@@ -792,6 +839,24 @@ export function App() {
     );
   }
 
+  if (activeView === "followups") {
+    return (
+      <main className="database-shell">
+        <FollowupPostsWorkspace
+          adminName={adminName}
+          activeView={activeView}
+          onSwitchView={switchView}
+          onLogout={() => void logout()}
+        />
+        {error ? (
+          <div className="toast" role="status">
+            {error}
+          </div>
+        ) : null}
+      </main>
+    );
+  }
+
   return (
     <main className="app-shell">
       <section className={`conversation-panel ${selectedId ? "is-hidden-mobile" : ""}`}>
@@ -1076,6 +1141,14 @@ function ViewSwitch({
       >
         <CalendarClock aria-hidden="true" size={16} />
         <span>Автопостинг</span>
+      </button>
+      <button
+        className={activeView === "followups" ? "view-tab is-active" : "view-tab"}
+        onClick={() => onSwitchView("followups")}
+        type="button"
+      >
+        <Send aria-hidden="true" size={16} />
+        <span>Фоллоу-ап</span>
       </button>
     </nav>
   );
@@ -2918,6 +2991,449 @@ function AutopostDetailModal({
                     disabled={actionLoading}
                   >
                     Отменить публикацию
+                  </button>
+                ) : null}
+              </footer>
+            </>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// --- Follow-up Components ---
+
+function FollowupPostsWorkspace({
+  adminName,
+  activeView,
+  onSwitchView,
+  onLogout,
+}: {
+  adminName: string | null;
+  activeView: AppView;
+  onSwitchView: (view: AppView) => void;
+  onLogout: () => void;
+}) {
+  const [posts, setPosts] = useState<FollowupPost[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [showCreate, setShowCreate] = useState(false);
+  const [selectedPostId, setSelectedPostId] = useState<string | null>(null);
+
+  const loadPosts = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/inbox/followup-posts`, {
+        credentials: "include",
+      });
+      if (!response.ok) {
+        throw new Error(`Load failed: ${response.status}`);
+      }
+      const data = (await response.json()) as FollowupPostList;
+      setPosts(data.items);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadPosts();
+  }, [loadPosts]);
+
+  return (
+    <>
+      <header className="panel-header">
+        <div>
+          <p className="eyebrow">FunnelHub</p>
+          <h1>Фоллоу-ап</h1>
+          <ViewSwitch activeView={activeView} onSwitchView={onSwitchView} />
+        </div>
+        <div className="panel-actions">
+          <button className="send-button" onClick={() => setShowCreate(true)} type="button">
+            <Send aria-hidden="true" size={16} />
+            Создать
+          </button>
+          <button className="icon-button" onClick={loadPosts} type="button">
+            <RefreshCw aria-hidden="true" size={18} />
+          </button>
+          <button className="icon-button secondary" onClick={onLogout} type="button">
+            <LogOut aria-hidden="true" size={18} />
+            <span className="sr-only">Выйти{adminName ? `, ${adminName}` : ""}</span>
+          </button>
+        </div>
+      </header>
+
+      <div className="workspace is-list-only">
+        {error ? <div className="toast" role="status">{error}</div> : null}
+        <div className="lead-table-wrap">
+          <table className="lead-table">
+            <thead>
+              <tr>
+                <th>Пост</th>
+                <th>Расписание</th>
+                <th>Каналы</th>
+                <th>Доставки</th>
+                <th>Статус</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr>
+                  <td colSpan={5} style={{ textAlign: "center", padding: "2rem" }}>Загрузка...</td>
+                </tr>
+              ) : posts.length === 0 ? (
+                <tr>
+                  <td colSpan={5} style={{ textAlign: "center", padding: "2rem" }}>
+                    Нет follow-up постов
+                  </td>
+                </tr>
+              ) : (
+                posts.map((post) => (
+                  <tr
+                    key={post.id}
+                    onClick={() => setSelectedPostId(post.id)}
+                    style={{ cursor: "pointer" }}
+                  >
+                    <td>
+                      <strong>{post.title}</strong>
+                      <p className="field-hint" style={{ margin: "4px 0 0" }}>
+                        {trimPreview(post.body, 96)}
+                      </p>
+                    </td>
+                    <td>{formatDetailValue(post.scheduled_at)}</td>
+                    <td>{post.channels.map((c) => channelLabels[c] || c).join(", ")}</td>
+                    <td>
+                      {post.sent_deliveries}/{post.total_deliveries}
+                      {post.failed_deliveries ? `, ошибок: ${post.failed_deliveries}` : ""}
+                      {post.skipped_deliveries ? `, пропущено: ${post.skipped_deliveries}` : ""}
+                    </td>
+                    <td><GenericStatusPill status={post.status} /></td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {selectedPostId ? (
+        <FollowupDetailModal
+          postId={selectedPostId}
+          onClose={() => setSelectedPostId(null)}
+          onChanged={() => void loadPosts()}
+        />
+      ) : null}
+
+      {showCreate ? (
+        <FollowupCreateModal
+          onClose={() => setShowCreate(false)}
+          onSuccess={() => {
+            setShowCreate(false);
+            void loadPosts();
+          }}
+        />
+      ) : null}
+    </>
+  );
+}
+
+function FollowupCreateModal({
+  onClose,
+  onSuccess,
+}: {
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
+  const [title, setTitle] = useState("");
+  const [body, setBody] = useState("");
+  const [channels, setChannels] = useState<string[]>(["telegram", "vk"]);
+  const [scheduledAt, setScheduledAt] = useState("");
+  const [preview, setPreview] = useState<FollowupRecipientPreview | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const toggleChannel = (ch: string) => {
+    setChannels((prev) => prev.includes(ch) ? prev.filter((c) => c !== ch) : [...prev, ch]);
+  };
+
+  useEffect(() => {
+    async function loadPreview() {
+      if (channels.length === 0) {
+        setPreview(null);
+        return;
+      }
+      const params = new URLSearchParams();
+      channels.forEach((channel) => params.append("channels", channel));
+      const response = await fetch(
+        `${API_BASE_URL}/api/inbox/followup-posts/recipient-preview?${params}`,
+        { credentials: "include" }
+      );
+      if (!response.ok) {
+        setPreview(null);
+        return;
+      }
+      setPreview((await response.json()) as FollowupRecipientPreview);
+    }
+    void loadPreview();
+  }, [channels]);
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!title.trim()) {
+      setError("Введите название follow-up поста");
+      return;
+    }
+    if (!body.trim()) {
+      setError("Введите текст сообщения");
+      return;
+    }
+    if (channels.length === 0) {
+      setError("Выберите хотя бы один канал");
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/inbox/followup-posts`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: title.trim(),
+          body: body.trim(),
+          channels,
+          scheduled_at: scheduledAt ? new Date(scheduledAt).toISOString() : null,
+        }),
+      });
+
+      if (!res.ok) {
+        const payload = await res.json().catch(() => null);
+        throw new Error(payload?.detail || `Ошибка ${res.status}`);
+      }
+      onSuccess();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal-dialog">
+        <header className="modal-header">
+          <h2>Новый follow-up пост</h2>
+          <button className="icon-button soft-button" onClick={onClose} type="button">
+            <LogOut aria-hidden="true" size={18} />
+          </button>
+        </header>
+        <form className="modal-body" onSubmit={handleSubmit}>
+          {error ? <div className="form-error">{error}</div> : null}
+
+          <div className="form-group">
+            <label>Название</label>
+            <input
+              type="text"
+              value={title}
+              onChange={(event) => setTitle(event.target.value)}
+              placeholder="Название для истории"
+              required
+            />
+          </div>
+
+          <div className="form-group">
+            <label>Текст сообщения</label>
+            <textarea
+              value={body}
+              onChange={(event) => setBody(event.target.value)}
+              placeholder="Сообщение после завершения основной воронки..."
+              rows={7}
+              required
+            />
+          </div>
+
+          <div className="form-group">
+            <label>Каналы доставки</label>
+            <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginTop: "4px" }}>
+              {["telegram", "vk"].map((ch) => (
+                <button
+                  key={ch}
+                  type="button"
+                  className={channels.includes(ch) ? "filter-chip is-active" : "filter-chip"}
+                  onClick={() => toggleChannel(ch)}
+                  style={{ display: "flex", alignItems: "center", gap: "6px" }}
+                >
+                  <span className={`channel-dot channel-${ch}`} />
+                  {channelLabels[ch] || ch}
+                </button>
+              ))}
+            </div>
+            <p className="field-hint">
+              Получателей сейчас: {preview ? preview.total : "—"}
+              {preview
+                ? ` · Telegram: ${preview.by_channel.telegram || 0}, VK: ${preview.by_channel.vk || 0}`
+                : ""}
+            </p>
+          </div>
+
+          <div className="form-group">
+            <label>Дата и время</label>
+            <input
+              type="datetime-local"
+              value={scheduledAt}
+              onChange={(event) => setScheduledAt(event.target.value)}
+            />
+            <p className="field-hint">Пустое значение отправит пост в ближайший проход worker.</p>
+          </div>
+
+          <footer className="modal-footer">
+            <button className="soft-button" type="button" onClick={onClose} disabled={loading}>Отмена</button>
+            <button className="send-button" type="submit" disabled={loading}>
+              <Send size={16} />
+              {loading ? "Сохраняем..." : "Поставить в очередь"}
+            </button>
+          </footer>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function FollowupDetailModal({
+  postId,
+  onClose,
+  onChanged,
+}: {
+  postId: string;
+  onClose: () => void;
+  onChanged: () => void;
+}) {
+  const [post, setPost] = useState<FollowupPost | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadPost = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/inbox/followup-posts/${postId}`, {
+        credentials: "include",
+      });
+      if (!res.ok) {
+        throw new Error(`Load failed: ${res.status}`);
+      }
+      setPost((await res.json()) as FollowupPost);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoading(false);
+    }
+  }, [postId]);
+
+  useEffect(() => {
+    void loadPost();
+  }, [loadPost]);
+
+  const cancelPost = async () => {
+    setActionLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/inbox/followup-posts/${postId}/cancel`, {
+        method: "PATCH",
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const payload = await res.json().catch(() => null);
+        throw new Error(payload?.detail || `Ошибка ${res.status}`);
+      }
+      setPost((await res.json()) as FollowupPost);
+      onChanged();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const canCancel = post && ["queued", "scheduled", "failed", "partial_failed"].includes(post.status);
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal-dialog" style={{ maxWidth: 900 }}>
+        <header className="modal-header">
+          <h2>{post?.title || "Follow-up пост"}</h2>
+          <button className="icon-button soft-button" onClick={onClose} type="button">
+            <LogOut aria-hidden="true" size={18} />
+          </button>
+        </header>
+        <div className="modal-body" style={{ overflowY: "auto", maxHeight: "70vh" }}>
+          {error ? <div className="toast" role="status">{error}</div> : null}
+          {loading ? (
+            <div style={{ textAlign: "center", padding: "2rem" }}>Загрузка...</div>
+          ) : post ? (
+            <>
+              <div className="key-value-list">
+                <KeyValueLine label="Статус" value={autopostStatusLabels[post.status] || post.status} />
+                <KeyValueLine label="Расписание" value={post.scheduled_at} />
+                <KeyValueLine label="Каналы" value={post.channels.map((c) => channelLabels[c] || c).join(", ")} />
+                <KeyValueLine label="Всего доставок" value={post.total_deliveries} />
+                <KeyValueLine label="Отправлено" value={post.sent_deliveries} />
+                <KeyValueLine label="Ошибки" value={post.failed_deliveries} />
+                <KeyValueLine label="Пропущено" value={post.skipped_deliveries} />
+              </div>
+
+              <div className="form-group">
+                <label>Текст сообщения</label>
+                <div className="message-bubble outbound" style={{ width: "100%", maxWidth: "100%" }}>
+                  {post.body}
+                </div>
+              </div>
+
+              <table className="lead-table">
+                <thead>
+                  <tr>
+                    <th>Лид</th>
+                    <th>Канал</th>
+                    <th>Статус</th>
+                    <th>Внешний ID</th>
+                    <th>Попытка</th>
+                    <th>Ошибка</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {post.deliveries.map((delivery) => (
+                    <tr key={delivery.id}>
+                      <td>{delivery.lead_name || "Без имени"}</td>
+                      <td>{channelLabels[delivery.channel] || delivery.channel}</td>
+                      <td><GenericStatusPill status={delivery.status} /></td>
+                      <td><code className="mono-badge">{delivery.external_message_id || "—"}</code></td>
+                      <td>{delivery.attempted_at ? formatDetailValue(delivery.attempted_at) : "—"}</td>
+                      <td style={{ color: "var(--danger)" }}>{delivery.error || ""}</td>
+                    </tr>
+                  ))}
+                  {post.deliveries.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} style={{ textAlign: "center" }}>Получателей нет</td>
+                    </tr>
+                  ) : null}
+                </tbody>
+              </table>
+
+              <footer className="modal-footer">
+                <button className="soft-button" type="button" onClick={onClose}>Закрыть</button>
+                {canCancel ? (
+                  <button
+                    className="soft-button"
+                    type="button"
+                    onClick={() => void cancelPost()}
+                    disabled={actionLoading}
+                  >
+                    Отменить follow-up
                   </button>
                 ) : null}
               </footer>

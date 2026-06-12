@@ -11,6 +11,7 @@ from funnelhub.db.session import async_session_maker
 from funnelhub.services.autopost_runner import AutopostClients, run_due_autoposts_once
 from funnelhub.services.broadcast_runner import run_due_broadcasts_once
 from funnelhub.services.email_messaging import build_email_provider_client
+from funnelhub.services.followup_runner import run_due_followup_posts_once
 from funnelhub.services.funnel_engine import load_funnel_definition
 from funnelhub.services.funnel_runner import run_due_funnel_once
 from funnelhub.services.vk_messaging import HttpVkMessageClient
@@ -104,6 +105,23 @@ async def main() -> None:
                             "published": autopost_stats.published,
                             "partial_failed": autopost_stats.partial_failed,
                             "failed": autopost_stats.failed,
+                        },
+                    )
+
+            async with async_session_maker() as session:
+                followup_stats = await run_due_followup_posts_once(
+                    session=session,
+                    clients=clients,
+                    limit=settings.funnel_runner_batch_size,
+                )
+                if followup_stats.due:
+                    logger.info(
+                        "Follow-up post runner pass completed",
+                        extra={
+                            "due": followup_stats.due,
+                            "completed": followup_stats.completed,
+                            "partial_failed": followup_stats.partial_failed,
+                            "failed": followup_stats.failed,
                         },
                     )
             await asyncio.sleep(settings.funnel_runner_interval_seconds)

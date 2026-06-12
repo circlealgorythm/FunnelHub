@@ -2,6 +2,76 @@
 
 ## Current State
 
+- 2026-06-12 investigated and fixed production `funnel_runner` delivery errors without
+  advancing funnel logic. Root causes in logs were VK keyboard labels over the provider
+  40-character limit, VK users who no longer allow messages, subscribed email records rejected by
+  Unisender Go as "No valid recipients", and due email states with no subscribed email
+  subscription. VK keyboard labels are now truncated only in the VK provider payload; permanent
+  delivery errors pause the `FunnelState` at the same `current_step_key`, clear `next_run_at`,
+  and record `paused_reason=permanent_delivery_error` instead of retrying forever. VK permission
+  revocation also marks the latest VK identity unsubscribed. Normal transient provider failures
+  remain retryable.
+- 2026-06-12 `funnel_runner` fix verification passed: focused
+  `.venv\Scripts\pytest.exe tests\test_vk_messaging.py tests\test_funnel_runner.py -q`
+  (18 passed), full `.venv\Scripts\pytest.exe -x` (141 passed, 5 skipped),
+  `.venv\Scripts\ruff.exe check .`, `.venv\Scripts\mypy.exe src`, and `git diff --check`.
+  Production deploy through `deploy_files.py` rebuilt/recreated `app`, `funnel-worker`, and
+  `telegram-bot`; `/health` returned OK; worker initially paused accumulated permanent-error
+  states, then a fresh 45-second log window showed only clean `Funnel runner pass completed`
+  entries with no `Failed to run funnel step`.
+- 2026-06-12 completed local implementation of `autoposting-followup`. Added durable
+  `followup_posts` and `followup_deliveries` tables, API `/api/inbox/followup-posts`,
+  recipient preview, cancel/detail/list endpoints, worker processing, and Inbox tab
+  "Фоллоу-ап". Follow-up recipients are materialized from completed `aisu_consultation`
+  funnel states plus currently subscribed Telegram/VK identities; delivery is tracked per
+  `followup_post_id + lead_id + channel` and sent rows are not retried.
+- 2026-06-12 `autoposting-followup` verification passed: focused
+  `pytest tests/test_followup_posts.py -q` (3 passed), full `pytest -x`
+  (136 passed, 5 skipped), `.venv\Scripts\ruff.exe check .`,
+  `.venv\Scripts\mypy.exe src`, `npm run build` in `inbox-app/`, `git diff --check`,
+  and `docker compose -f docker-compose.prod.yml config --quiet` with existing local
+  unset-variable warnings.
+- 2026-06-12 tightened `autoposting-followup` regression coverage after user clarification:
+  subscribed leads whose `aisu_consultation` funnel state is still active/incomplete are excluded
+  from recipient preview and delivery materialization. Focused
+  `.venv\Scripts\pytest.exe tests/test_followup_posts.py -q` passed with 3 tests, and focused
+  ruff passed for the test file.
+- 2026-06-12 deployed `autoposting-followup` to production. Alembic upgraded to
+  `20260612_01 (head)`, `app`, `funnel-worker`, and `telegram-bot` were rebuilt/recreated, public
+  `/health` returned OK, `/inbox` bundle contains "Фоллоу-ап" and
+  `/api/inbox/followup-posts`, all services are running, and an in-container smoke created a
+  scheduled follow-up post with one pending delivery from a temporary completed lead, then cleaned
+  up the smoke data.
+- 2026-06-12 completed and deployed `autoposting-followup-hashtag-routing`. Public autopost
+  creation now reads `AUTOPOST_FOLLOWUP_MARKER` (default `#followup`) and
+  `AUTOPOST_FOLLOWUP_STRIP_MARKER` (default `true`); a marked public autopost creates/reuses a
+  separate `FunnelFollowupPost` linked by `source_autopost_id`, strips the marker from the private
+  body by default, and relies on follow-up dedupe to avoid duplicate private posts. Local
+  verification passed: full `pytest -x` (137 passed, 5 skipped), `.venv\Scripts\ruff.exe check .`,
+  `.venv\Scripts\mypy.exe src`, focused
+  `pytest tests/test_autoposts.py tests/test_followup_posts.py -q` (7 passed), `npm run build`,
+  `git diff --check`, and prod compose config check with existing local unset-variable warnings.
+  Production smoke confirmed `#followup` creates exactly one follow-up with Telegram/VK deliveries,
+  strips the marker from private body, and cleans up temporary data.
+- 2026-06-12 synchronized Autoposting and email-provider status with production reality.
+  `email-provider` and the public Autoposting MVP are completed/deployed, WIP is currently
+  empty, and future Autoposting work is split into separate feature-list items:
+  `autoposting-followup`, `autoposting-followup-hashtag-routing`, and
+  `autoposting-public-platforms`.
+- 2026-06-12 documented the follow-up hashtag bridge in `.harness/docs/autoposting.md`.
+  Public Autoposting and Funnel follow-up posts remain separate runtime entities, but a public
+  post containing the configured follow-up marker should create/reuse a separate follow-up post
+  with independent delivery state and dedupe protection.
+- 2026-06-11 extended Harness project guidance after reviewing the Harness templates resource.
+  Added focused files for the project's current scale: `.harness/docs/quality.md`,
+  `.harness/docs/security.md`, `.harness/docs/reliability.md`, and
+  `.harness/clean-state-checklist.md`. Updated `.harness/init.md` so future sessions read these
+  only when relevant, instead of expanding every session with unnecessary process.
+- 2026-06-11 documented the next Autoposting architecture in
+  `.harness/docs/autoposting.md`. The plan separates public platform publishing from internal
+  post-day-18 bot follow-up posts, keeps VK Video out of scope, keeps YouTube only for community
+  posts if API/account support is feasible, and marks Odnoklassniki/Zen API posting as separate
+  feasibility checks before implementation.
 - 2026-06-11 audited Unisender Go provider webhooks after the user's follow-up. The existing
   implementation already validates Unisender `auth`, processes delivery/open/click/bounce/spam/
   unsubscribe/subscribed statuses, updates `messages` and `email_subscriptions`, and has
@@ -54,8 +124,9 @@
 - 2026-06-07 Added avicon.ico to the Inbox React app and deployed to production.
 - Project: FunnelHub.
 - Methodology: Harness-engineering.
-- Current feature: `email-provider`.
-- WIP: Manual broadcasts feature is partially complete. Added Broadcast database models, background runner service, API endpoints, and Inbox frontend views (creation modal, list view, and detail view for targets).
+- Current feature: <none>.
+- WIP: empty. Work should proceed one Autoposting feature at a time with focused tests and
+  Harness closeout after each feature.
 - 2026-06-04 technical audit completed before further development. Highest-priority finding `/inbox/{path:path}` encoded path traversal is now fixed locally and covered by regression tests.
 - 2026-06-05 audit item 2, GetCourse webhook authentication/rate limiting, is completed and deployed in safe compatibility mode with `GETCOURSE_WEBHOOK_SECRET_REQUIRED=false`.
 - 2026-06-05 production test-lead cleanup completed before further live checks: 2 test leads and their lead-owned contacts, bot/email subscriptions, funnel states, messages, conversations, consents, custom fields, tokens, and messenger identities were deleted after a pg_dump backup.
@@ -72,6 +143,26 @@
 
 ## Decisions
 
+- Harness should stay lean but include separate quality, security, reliability, and clean-state
+  checklists because FunnelHub now has production deploys, external webhooks, messaging workers,
+  imports, broadcasts, and autoposting. Do not copy the full advanced template set unless a new
+  recurring need appears.
+- Autoposting must be split into two product flows with separate entities: public publishing
+  to external platforms and internal bot follow-up posts sent to leads after the 18-day
+  messenger funnel is completed.
+- Public Autoposting should cover Telegram channel, VK group wall, Odnoklassniki, Zen, and
+  YouTube community posts only if the provider API/account setup supports them. VK Video and
+  YouTube video uploads are out of scope for this text/post publishing flow.
+- Internal follow-up posts should target leads with completed `aisu_consultation` funnel states
+  and active subscribed Telegram/VK identities, with per-lead/per-channel delivery history and
+  duplicate protection on `followup_post_id + lead_id + channel`.
+- A public autopost containing the configured follow-up hashtag/marker should create or reuse a
+  separate `FunnelFollowupPost`. It must not share publication/delivery rows with the public
+  autopost; statuses, retries, histories, and duplicate keys stay independent.
+- `funnel_runner` must retry transient send failures, but permanent delivery failures should not
+  repeatedly execute the same due step. The state should pause at the current step with
+  `next_run_at=None` and diagnostic metadata, so the scenario is not advanced or completed
+  without a successful send.
 - GetCourse remains responsible for courses, payments, installments, access, login/password issuance, and the student cabinet.
 - FunnelHub server is the source of truth for lead communication, bot/email subscriptions, funnel state, inbox, imports, broadcasts, and analytics.
 - GetCourse CSV/XLSX import preview must expose headerless export columns as stable internal

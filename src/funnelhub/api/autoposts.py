@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from funnelhub.config import get_settings
 from funnelhub.db.session import get_session
 from funnelhub.services.auth import require_admin_session
 from funnelhub.services.autoposts import (
@@ -75,6 +76,7 @@ async def create_new_autopost(
     request: AutopostCreateRequest,
     session: SessionDep,
 ) -> AutopostResponse:
+    settings = get_settings()
     try:
         autopost = await create_autopost(
             session=session,
@@ -86,6 +88,8 @@ async def create_new_autopost(
             source_url=request.source_url,
             dedupe_key=request.dedupe_key,
             metadata=request.metadata,
+            followup_marker=settings.autopost_followup_marker,
+            strip_marker_for_followup=settings.autopost_followup_strip_marker,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc

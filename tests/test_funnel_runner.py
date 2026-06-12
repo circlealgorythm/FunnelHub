@@ -67,6 +67,17 @@ class FakeVkClient:
         return {"response": 889}
 
 
+class PermissionRevokedVkClient(FakeVkClient):
+    async def send_message(
+        self,
+        peer_id: int | str,
+        message: str,
+        *,
+        keyboard: dict[str, object] | None = None,
+    ) -> dict[str, int]:
+        raise RuntimeError("Can't send messages for users without permission")
+
+
 class FakeEmailClient:
     def __init__(self) -> None:
         self.to_email: str | None = None
@@ -111,6 +122,21 @@ class FailingEmailClient(FakeEmailClient):
         metadata: dict[str, Any] | None = None,
     ) -> EmailProviderSendResult:
         raise RuntimeError("email provider failed")
+
+
+class InvalidRecipientEmailClient(FakeEmailClient):
+    async def send_email(
+        self,
+        *,
+        to_email: str,
+        subject: str,
+        text: str,
+        html: str | None = None,
+        from_email: str | None = None,
+        from_name: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> EmailProviderSendResult:
+        raise RuntimeError("Unisender Go email send failed: HTTP 400 No valid recipients")
 
 
 @pytest.fixture
@@ -761,3 +787,125 @@ async def test_run_due_funnel_once_retries_failed_email_step(
         assert state.status == "active"
         assert state.current_step_key == "email_welcome"
         assert state.next_run_at == now
+
+
+async def test_run_due_funnel_once_pauses_email_step_without_subscription(
+    prepare_database: None,
+) -> None:
+    lead_id = await create_lead_without_identity()
+    definition = build_email_definition()
+    now = datetime(2026, 5, 28, 12, 0, tzinfo=UTC)
+
+    async with async_session_maker() as session:
+        await start_funnel_for_lead(session, lead_id, definition, channel="telegram", now=now)
+        await session.commit()
+
+    async with async_session_maker() as session:
+        stats = await run_due_funnel_once(
+            session=session,
+            definition=definition,
+            email_client=FakeEmailClient(),
+            public_base_url="https://bot.aisukam.ru",
+            now=now,
+        )
+
+    assert stats.due == 1
+    assert stats.sent == 0
+    assert stats.skipped == 1
+    assert stats.failed == 0
+
+    async with async_session_maker() as session:
+        state = await session.scalar(
+            select(FunnelState).where(
+                FunnelState.lead_id == lead_id,
+                FunnelState.funnel_key == definition.key,
+            )
+        )
+        assert state is not None
+        assert state.status == "paused"
+        assert state.current_step_key == "email_welcome"
+        assert state.next_run_at is None
+        assert state.metadata_["paused_reason"] == "permanent_delivery_error"
+
+
+async def test_run_due_funnel_once_pauses_email_step_for_invalid_recipient(
+    prepare_database: None,
+) -> None:
+    lead_id = await create_lead_with_email_subscription()
+    definition = build_email_definition()
+    now = datetime(2026, 5, 28, 12, 0, tzinfo=UTC)
+
+    async with async_session_maker() as session:
+        await start_funnel_for_lead(session, lead_id, definition, channel="telegram", now=now)
+        await session.commit()
+
+    async with async_session_maker() as session:
+        stats = await run_due_funnel_once(
+            session=session,
+            definition=definition,
+            email_client=InvalidRecipientEmailClient(),
+            public_base_url="https://bot.aisukam.ru",
+            now=now,
+        )
+
+    assert stats.due == 1
+    assert stats.sent == 0
+    assert stats.skipped == 1
+    assert stats.failed == 0
+
+    async with async_session_maker() as session:
+        state = await session.scalar(
+            select(FunnelState).where(
+                FunnelState.lead_id == lead_id,
+                FunnelState.funnel_key == definition.key,
+            )
+        )
+        assert state is not None
+        assert state.status == "paused"
+        assert state.current_step_key == "email_welcome"
+        assert state.next_run_at is None
+        assert state.metadata_["paused_reason"] == "permanent_delivery_error"
+
+
+async def test_run_due_funnel_once_pauses_vk_state_when_permission_revoked(
+    prepare_database: None,
+) -> None:
+    lead_id = await create_lead_with_vk_identity()
+    definition = build_messenger_definition()
+    now = datetime(2026, 5, 28, 12, 0, tzinfo=UTC)
+
+    async with async_session_maker() as session:
+        await start_funnel_for_lead(session, lead_id, definition, channel="vk", now=now)
+        await session.commit()
+
+    async with async_session_maker() as session:
+        stats = await run_due_funnel_once(
+            session=session,
+            definition=definition,
+            vk_client=PermissionRevokedVkClient(),
+            now=now,
+        )
+
+    assert stats.due == 1
+    assert stats.sent == 0
+    assert stats.skipped == 1
+    assert stats.failed == 0
+
+    async with async_session_maker() as session:
+        state = await session.scalar(
+            select(FunnelState).where(
+                FunnelState.lead_id == lead_id,
+                FunnelState.funnel_key == definition.key,
+            )
+        )
+        assert state is not None
+        assert state.status == "paused"
+        assert state.current_step_key == "welcome"
+        assert state.next_run_at is None
+
+        identity = await session.scalar(
+            select(MessengerIdentity).where(MessengerIdentity.lead_id == lead_id)
+        )
+        assert identity is not None
+        assert identity.is_subscribed is False
+        assert identity.unsubscribed_at == now

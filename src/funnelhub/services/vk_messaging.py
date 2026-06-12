@@ -14,6 +14,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from funnelhub.db.models import Conversation, Message, MessengerIdentity
 
+VK_BUTTON_LABEL_MAX_LENGTH = 40
+
 
 class VkMessageClient(Protocol):
     async def send_message(
@@ -249,13 +251,17 @@ def build_button_action(button: VkButton) -> dict[str, str]:
     if isinstance(button, VkUrlButton):
         return {
             "type": "open_link",
-            "label": button.text,
+            "label": normalize_vk_button_label(button.text),
             "link": button.url,
         }
     return {
         "type": "text",
-        "label": button.text,
+        "label": normalize_vk_button_label(button.text),
     }
+
+
+def normalize_vk_button_label(text: str) -> str:
+    return text[:VK_BUTTON_LABEL_MAX_LENGTH]
 
 
 def build_button_style(button: VkButton) -> dict[str, str]:

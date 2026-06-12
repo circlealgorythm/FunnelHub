@@ -12,6 +12,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 
 from funnelhub.db.models import Autopost, AutopostPublication
+from funnelhub.services.followup_posts import (
+    SUPPORTED_FOLLOWUP_CHANNELS,
+    create_followup_post,
+    strip_followup_marker,
+)
 
 SUPPORTED_AUTOPOST_CHANNELS = ("telegram", "vk")
 SUPPORTED_SOURCE_TYPES = ("manual", "youtube", "telegram", "vk", "other")
@@ -45,6 +50,8 @@ async def create_autopost(
     source_url: str | None = None,
     dedupe_key: str | None = None,
     metadata: dict[str, Any] | None = None,
+    followup_marker: str | None = None,
+    strip_marker_for_followup: bool = True,
 ) -> Autopost:
     clean_title = title.strip()
     clean_body = body.strip()
@@ -70,6 +77,12 @@ async def create_autopost(
     )
     existing = await session.scalar(select(Autopost).where(Autopost.dedupe_key == key))
     if existing is not None:
+        await create_followup_from_marked_autopost(
+            session,
+            existing,
+            marker=followup_marker,
+            strip_marker=strip_marker_for_followup,
+        )
         return existing
 
     autopost = Autopost(
@@ -98,6 +111,12 @@ async def create_autopost(
             )
         )
     await session.flush()
+    await create_followup_from_marked_autopost(
+        session,
+        autopost,
+        marker=followup_marker,
+        strip_marker=strip_marker_for_followup,
+    )
     await session.refresh(autopost)
     return autopost
 
@@ -208,6 +227,49 @@ def build_dedupe_key(
         basis = f"manual:{body}:{channel_part}:{scheduled_minute}"
     digest = hashlib.sha256(basis.encode("utf-8")).hexdigest()
     return f"autopost:{digest}"
+
+
+async def create_followup_from_marked_autopost(
+    session: AsyncSession,
+    autopost: Autopost,
+    *,
+    marker: str | None,
+    strip_marker: bool,
+) -> None:
+    clean_marker = marker.strip() if marker and marker.strip() else None
+    if clean_marker is None:
+        return
+    if clean_marker.casefold() not in autopost.body.casefold():
+        return
+
+    body = (
+        strip_followup_marker(autopost.body, clean_marker)
+        if strip_marker
+        else autopost.body.strip()
+    )
+    if not body:
+        body = autopost.body.strip()
+    followup_channels = [
+        channel for channel in autopost.channels if channel in SUPPORTED_FOLLOWUP_CHANNELS
+    ]
+    if not followup_channels:
+        followup_channels = list(SUPPORTED_FOLLOWUP_CHANNELS)
+
+    await create_followup_post(
+        session,
+        title=autopost.title,
+        body=body,
+        channels=followup_channels,
+        scheduled_at=autopost.scheduled_at,
+        source_type="autopost",
+        source_autopost_id=autopost.id,
+        metadata={
+            "source": "public_autopost_marker",
+            "source_autopost_id": str(autopost.id),
+            "marker": clean_marker,
+            "marker_stripped": strip_marker,
+        },
+    )
 
 
 def mark_metadata(autopost: Autopost, key: str, value: Any) -> None:

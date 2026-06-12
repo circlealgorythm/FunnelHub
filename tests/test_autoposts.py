@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import uuid
 from collections.abc import AsyncGenerator
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -10,7 +11,15 @@ from sqlalchemy import delete, select
 
 from funnelhub.config import Settings, get_settings
 from funnelhub.db.base import Base
-from funnelhub.db.models import Autopost, AutopostPublication
+from funnelhub.db.models import (
+    Autopost,
+    AutopostPublication,
+    FunnelFollowupDelivery,
+    FunnelFollowupPost,
+    FunnelState,
+    Lead,
+    MessengerIdentity,
+)
 from funnelhub.db.session import async_session_maker, engine
 from funnelhub.main import app
 from funnelhub.services.auth import hash_password
@@ -21,6 +30,7 @@ from funnelhub.services.autopost_runner import (
 from funnelhub.services.autoposts import create_autopost
 
 TEST_TITLE_PREFIX = "Autopost pytest"
+TEST_FOLLOWUP_GC_ID = 987658000
 
 
 class FakeTelegramMessage:
@@ -69,6 +79,23 @@ async def prepare_database() -> AsyncGenerator[None]:
 
 async def cleanup_test_data() -> None:
     async with async_session_maker() as session:
+        followup_post_ids = set(
+            await session.scalars(
+                select(FunnelFollowupPost.id).where(
+                    FunnelFollowupPost.title.startswith(TEST_TITLE_PREFIX)
+                )
+            )
+        )
+        if followup_post_ids:
+            await session.execute(
+                delete(FunnelFollowupDelivery).where(
+                    FunnelFollowupDelivery.followup_post_id.in_(followup_post_ids)
+                )
+            )
+            await session.execute(
+                delete(FunnelFollowupPost).where(FunnelFollowupPost.id.in_(followup_post_ids))
+            )
+
         post_ids = set(
             await session.scalars(
                 select(Autopost.id).where(Autopost.title.startswith(TEST_TITLE_PREFIX))
@@ -79,6 +106,13 @@ async def cleanup_test_data() -> None:
                 delete(AutopostPublication).where(AutopostPublication.autopost_id.in_(post_ids))
             )
             await session.execute(delete(Autopost).where(Autopost.id.in_(post_ids)))
+        lead_ids = set(
+            await session.scalars(
+                select(Lead.id).where(Lead.getcourse_user_id == TEST_FOLLOWUP_GC_ID)
+            )
+        )
+        if lead_ids:
+            await session.execute(delete(Lead).where(Lead.id.in_(lead_ids)))
         await session.commit()
 
 
@@ -89,7 +123,45 @@ def configure_auth(monkeypatch: pytest.MonkeyPatch) -> None:
         hash_password("secret", salt=b"1234567890123456"),
     )
     monkeypatch.setenv("INBOX_SESSION_SECRET", "test-session-secret")
+    monkeypatch.setenv("AUTOPOST_FOLLOWUP_MARKER", "#followup")
+    monkeypatch.setenv("AUTOPOST_FOLLOWUP_STRIP_MARKER", "true")
     get_settings.cache_clear()
+
+
+async def create_completed_followup_lead() -> None:
+    async with async_session_maker() as session:
+        lead = Lead(
+            id=uuid.uuid4(),
+            getcourse_user_id=TEST_FOLLOWUP_GC_ID,
+            full_name="Autopost Followup Lead",
+            raw_getcourse_data={},
+        )
+        session.add(lead)
+        await session.flush()
+        session.add(
+            FunnelState(
+                id=uuid.uuid4(),
+                lead_id=lead.id,
+                funnel_key="aisu_consultation",
+                channel="telegram",
+                status="completed",
+                current_step_key="day_18",
+                completed_at=datetime.now(UTC) - timedelta(days=1),
+                metadata_={},
+            )
+        )
+        for channel in ("telegram", "vk"):
+            session.add(
+                MessengerIdentity(
+                    id=uuid.uuid4(),
+                    lead_id=lead.id,
+                    channel=channel,
+                    external_user_id=f"autopost-followup-{channel}",
+                    is_subscribed=True,
+                    raw_profile={},
+                )
+            )
+        await session.commit()
 
 
 async def test_autopost_api_creates_lists_dedupes_and_cancels(
@@ -158,6 +230,69 @@ async def test_autopost_api_creates_lists_dedupes_and_cancels(
     cancelled = cancel_response.json()
     assert cancelled["status"] == "cancelled"
     assert {item["status"] for item in cancelled["publications"]} == {"cancelled"}
+
+
+async def test_marked_autopost_creates_one_followup_post(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    configure_auth(monkeypatch)
+    await create_completed_followup_lead()
+    schedule = datetime.now(UTC) + timedelta(hours=2)
+
+    try:
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://127.0.0.1:8000",
+        ) as client:
+            await client.post(
+                "/api/auth/login",
+                json={"username": "aisu", "password": "secret"},
+            )
+            payload = {
+                "title": f"{TEST_TITLE_PREFIX} marked followup",
+                "body": "Текст для публичного поста\n#followup",
+                "channels": ["telegram", "vk"],
+                "scheduled_at": schedule.isoformat(),
+            }
+            first_response = await client.post("/api/inbox/autoposts", json=payload)
+            second_response = await client.post("/api/inbox/autoposts", json=payload)
+    finally:
+        get_settings.cache_clear()
+
+    assert first_response.status_code == 200
+    assert second_response.status_code == 200
+    autopost_id = first_response.json()["id"]
+    assert second_response.json()["id"] == autopost_id
+
+    async with async_session_maker() as session:
+        followups = list(
+            (
+                await session.scalars(
+                    select(FunnelFollowupPost).where(
+                        FunnelFollowupPost.source_autopost_id == uuid.UUID(autopost_id)
+                    )
+                )
+            ).all()
+        )
+        assert len(followups) == 1
+        followup = followups[0]
+        deliveries = list(
+            (
+                await session.scalars(
+                    select(FunnelFollowupDelivery).where(
+                        FunnelFollowupDelivery.followup_post_id == followup.id
+                    )
+                )
+            ).all()
+        )
+
+    assert followup.title == f"{TEST_TITLE_PREFIX} marked followup"
+    assert followup.body == "Текст для публичного поста"
+    assert followup.channels == ["telegram", "vk"]
+    assert followup.status == "scheduled"
+    assert followup.source_type == "autopost"
+    assert len(deliveries) == 2
+    assert {delivery.channel for delivery in deliveries} == {"telegram", "vk"}
 
 
 async def test_autopost_runner_publishes_to_telegram_and_vk_once() -> None:

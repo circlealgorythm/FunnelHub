@@ -9,6 +9,7 @@ from funnelhub.api.auth import router as auth_router
 from funnelhub.api.autoposts import router as autoposts_router
 from funnelhub.api.broadcasts import router as broadcasts_router
 from funnelhub.api.email import router as email_router
+from funnelhub.api.followup_posts import router as followup_posts_router
 from funnelhub.api.inbox import router as inbox_router
 from funnelhub.api.messenger import router as messenger_router
 from funnelhub.api.webhooks import router as webhooks_router
@@ -32,6 +33,7 @@ def create_app() -> FastAPI:
     app.include_router(email_router)
     app.include_router(inbox_router)
     app.include_router(autoposts_router)
+    app.include_router(followup_posts_router)
     app.include_router(broadcasts_router)
     app.include_router(messenger_router)
     app.include_router(webhooks_router)

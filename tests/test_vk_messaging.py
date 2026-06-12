@@ -10,6 +10,7 @@ from funnelhub.db.base import Base
 from funnelhub.db.models import Lead, Message, MessengerIdentity
 from funnelhub.db.session import async_session_maker, engine
 from funnelhub.services.vk_messaging import (
+    VK_BUTTON_LABEL_MAX_LENGTH,
     VkTextButton,
     VkUrlButton,
     build_message_metadata,
@@ -103,6 +104,19 @@ def test_build_text_keyboard_uses_primary_color() -> None:
     assert keyboard["buttons"][0][0]["action"]["type"] == "text"
     assert keyboard["buttons"][0][0]["action"]["label"] == "Деньги"
     assert keyboard["buttons"][0][0]["color"] == "primary"
+
+
+def test_build_url_keyboard_truncates_labels_to_vk_limit() -> None:
+    long_label = "Очень длинная подпись кнопки для ВКонтакте больше лимита"
+    buttons = [VkUrlButton(text=long_label, url="https://example.com")]
+
+    keyboard = build_url_keyboard(buttons)
+
+    assert keyboard is not None
+    label = keyboard["buttons"][0][0]["action"]["label"]
+    assert len(label) == VK_BUTTON_LABEL_MAX_LENGTH
+    assert label == long_label[:VK_BUTTON_LABEL_MAX_LENGTH]
+    assert build_message_metadata(buttons)["buttons"][0]["text"] == long_label
 
 
 async def test_send_vk_text_message_records_outbound_message() -> None:
