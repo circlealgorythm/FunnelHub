@@ -26,13 +26,17 @@ The MVP already has public autoposting infrastructure:
 - Duplicate protection exists through `autoposts.dedupe_key` and unique
   `(autopost_id, channel)` publication rows.
 
-The current MVP does not implement:
+The current production scope implements:
 
-- Odnoklassniki publishing.
-- Zen publishing.
-- YouTube community post publishing.
+- Telegram channel publishing.
+- VK wall publishing.
+- VK personal wall publishing for the configured account.
+- VK image attachments for public VK posts, using temporary local storage until publish/cancel.
 - Internal follow-up delivery to leads after day 18.
 - Automatic routing from a marked public autopost into an internal follow-up post.
+
+The current production scope does not implement:
+
 - External source pulling from VK/Telegram/YouTube into FunnelHub.
 
 ## Decision: Two Separate Entities
@@ -43,18 +47,31 @@ Use separate entities for the two flows:
 
 Purpose: publish one prepared post to public external platforms.
 
-Initial public channels:
+Public channels:
 
 - Telegram channel.
 - VK group wall.
-- Odnoklassniki.
-- Zen.
-- YouTube community posts, only if the API/account setup allows text/image community posts.
+- VK personal wall.
+
+Media behavior:
+
+- Public Autoposting may attach one JPEG/PNG/WebP image.
+- Images are used only for VK publications.
+- Telegram remains text-only because the product decision is to avoid separate Telegram
+  photo/text messages when long post text cannot fit as a photo caption.
+- Uploaded image files are temporary: keep them in the shared app/worker upload volume while the
+  post is pending or retryable, then delete after all selected publication rows publish or after
+  cancellation.
 
 Excluded for now:
 
+- Odnoklassniki, because the API/app approval flow adds too much operational overhead for the
+  current scope.
+- Zen, because the manual Telegram-Zen bot transfer is handled outside FunnelHub.
+- YouTube, because community-post publishing is not available through the standard public API for
+  this use case.
 - VK Video, because it is video publishing, not text/content post publishing.
-- YouTube video upload. Only YouTube community posts are in scope if feasible.
+- YouTube video upload, because it is a separate video-publishing feature.
 
 Public publishing history should be tracked per platform:
 
@@ -74,13 +91,8 @@ Duplicate protection:
 
 Provider notes:
 
-- Telegram and VK are already started.
-- Odnoklassniki API feasibility must be checked separately: token type, group/page posting
-  permissions, media upload flow, and moderation limits.
-- Zen API feasibility must be checked separately: whether there is a public posting API for the
-  target account, token access, media support, and moderation rules.
-- YouTube must be checked specifically for community post API availability for the account. If
-  public API support is not sufficient, YouTube should stay out of the MVP.
+- Telegram and VK are implemented.
+- Odnoklassniki, Zen, and YouTube are intentionally out of scope.
 
 ### 2. FunnelFollowupPost
 
@@ -131,7 +143,7 @@ Duplicate protection:
 Hashtag/marker behavior:
 
 - public autopost creation/publishing detects the configured follow-up marker in the post body;
-- the default marker is `#followup` through `AUTOPOST_FOLLOWUP_MARKER`;
+- the default marker is `#aisukam` through `AUTOPOST_FOLLOWUP_MARKER`;
 - when the marker is present, create or reuse the matching `FunnelFollowupPost`;
 - the default behavior is to strip the marker from the private follow-up message through
   `AUTOPOST_FOLLOWUP_STRIP_MARKER=true`;
@@ -183,8 +195,7 @@ The worker should process these independently:
    follow-up model, worker, and UI exist.
 7. Add tests for completed-funnel recipient selection, no duplicate sends, and no duplicate
    follow-up creation from a marked public post.
-8. Extend public autoposting channels after API feasibility checks:
-   Telegram, VK, Odnoklassniki, Zen, then YouTube community posts if possible.
+8. Configure production Telegram/VK publishing values.
 
 ## Open Questions
 
@@ -194,4 +205,3 @@ The worker should process these independently:
   new follow-up post after completion?
 - Should follow-up posts include buttons/links, and should those buttons support per-lead
   tracking links?
-- Which public platform tokens/accounts are available for Odnoklassniki, Zen, and YouTube?

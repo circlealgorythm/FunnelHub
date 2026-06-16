@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any, Protocol, cast
 
 from sqlalchemy import select
@@ -10,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from funnelhub.config import Settings
 from funnelhub.db.models import Autopost, AutopostPublication
+from funnelhub.services.autopost_media import delete_autopost_image, get_autopost_image_path
 from funnelhub.services.telegram_messaging import TelegramMessageClient, extract_external_message_id
 
 logger = logging.getLogger(__name__)
@@ -19,15 +21,25 @@ class AutopostVkClient(Protocol):
     async def publish_wall_post(
         self,
         *,
-        owner_id: int,
+        owner_id: int | None,
         message: str,
+        attachments: list[str] | None = None,
+        from_group: bool = True,
     ) -> Any: ...
+
+    async def upload_wall_photo(
+        self,
+        *,
+        owner_id: int | None,
+        image_path: Path,
+    ) -> str: ...
 
 
 @dataclass(frozen=True)
 class AutopostClients:
     telegram_bot: TelegramMessageClient | None
     vk_client: AutopostVkClient | None
+    vk_personal_client: AutopostVkClient | None = None
 
 
 @dataclass(frozen=True)
@@ -107,8 +119,10 @@ async def run_due_autoposts_once(
 
         if all_publications and len(published) == len(all_publications):
             post.status = "published"
-            post.published_at = max(row.published_at for row in published if row.published_at)
             published_count += 1
+            published_times = [row.published_at for row in published if row.published_at]
+            post.published_at = max(published_times) if published_times else None
+            delete_autopost_image(post, settings)
         elif published and failed:
             post.status = "partial_failed"
             partial_count += 1
@@ -151,6 +165,17 @@ async def publish_one_channel(
                 client=clients.vk_client,
                 owner_id=resolve_vk_owner_id(settings),
                 text=post.body,
+                image_path=get_autopost_image_path(post),
+                from_group=True,
+            )
+        elif publication.channel == "vk_personal":
+            external_id, payload = await publish_vk_post(
+                client=clients.vk_personal_client,
+                owner_id=None,
+                text=post.body,
+                image_path=get_autopost_image_path(post),
+                from_group=False,
+                require_owner_id=False,
             )
         else:
             raise ValueError(f"Unsupported autopost channel: {publication.channel}.")
@@ -183,8 +208,9 @@ async def publish_telegram_post(
     if not chat_id:
         raise ValueError("AUTOPOST_TELEGRAM_CHAT_ID is not configured.")
 
-    sent_message = await bot.send_message(chat_id=chat_id, text=text)
-    return extract_external_message_id(sent_message), {"chat_id": chat_id}
+    normalized_chat_id = normalize_telegram_channel_chat_id(chat_id)
+    sent_message = await bot.send_message(chat_id=normalized_chat_id, text=text)
+    return extract_external_message_id(sent_message), {"chat_id": normalized_chat_id}
 
 
 async def publish_vk_post(
@@ -192,13 +218,28 @@ async def publish_vk_post(
     client: AutopostVkClient | None,
     owner_id: int | None,
     text: str,
+    image_path: Path | None = None,
+    from_group: bool = True,
+    require_owner_id: bool = True,
 ) -> tuple[str | None, dict[str, Any]]:
     if client is None:
         raise ValueError("VK client is not configured.")
-    if owner_id is None:
+    if owner_id is None and require_owner_id:
         raise ValueError("AUTOPOST_VK_OWNER_ID or VK_GROUP_ID is not configured.")
 
-    payload = cast(dict[str, Any], await client.publish_wall_post(owner_id=owner_id, message=text))
+    attachments: list[str] = []
+    if image_path is not None:
+        attachments.append(await client.upload_wall_photo(owner_id=owner_id, image_path=image_path))
+
+    payload = cast(
+        dict[str, Any],
+        await client.publish_wall_post(
+            owner_id=owner_id,
+            message=text,
+            attachments=attachments or None,
+            from_group=from_group,
+        ),
+    )
     return extract_vk_post_id(payload), payload
 
 
@@ -208,6 +249,13 @@ def resolve_vk_owner_id(settings: Settings) -> int | None:
     if settings.vk_group_id is not None:
         return -abs(settings.vk_group_id)
     return None
+
+
+def normalize_telegram_channel_chat_id(chat_id: str) -> str:
+    clean_chat_id = chat_id.strip()
+    if clean_chat_id.isdigit() and clean_chat_id.startswith("100"):
+        return f"-{clean_chat_id}"
+    return clean_chat_id
 
 
 def extract_vk_post_id(payload: dict[str, Any]) -> str | None:

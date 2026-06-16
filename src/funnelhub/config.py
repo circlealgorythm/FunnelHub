@@ -1,6 +1,7 @@
 from functools import lru_cache
+from typing import Any
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -121,16 +122,46 @@ class Settings(BaseSettings):
     lead_notification_cooldown_seconds: int = Field(
         default=300, validation_alias="LEAD_NOTIFICATION_COOLDOWN_SECONDS"
     )
+    autopost_upload_dir: str = Field(
+        default="/app/uploads/autoposts", validation_alias="AUTOPOST_UPLOAD_DIR"
+    )
+    autopost_max_image_bytes: int = Field(
+        default=10 * 1024 * 1024, validation_alias="AUTOPOST_MAX_IMAGE_BYTES"
+    )
     autopost_telegram_chat_id: str | None = Field(
         default=None, validation_alias="AUTOPOST_TELEGRAM_CHAT_ID"
     )
     autopost_vk_owner_id: int | None = Field(default=None, validation_alias="AUTOPOST_VK_OWNER_ID")
+    autopost_vk_personal_owner_id: int | None = Field(
+        default=None, validation_alias="AUTOPOST_VK_PERSONAL_OWNER_ID"
+    )
+    autopost_vk_personal_access_token: str | None = Field(
+        default=None, validation_alias="AUTOPOST_VK_PERSONAL_ACCESS_TOKEN"
+    )
     autopost_followup_marker: str | None = Field(
-        default="#followup", validation_alias="AUTOPOST_FOLLOWUP_MARKER"
+        default="#aisukam", validation_alias="AUTOPOST_FOLLOWUP_MARKER"
     )
     autopost_followup_strip_marker: bool = Field(
         default=True, validation_alias="AUTOPOST_FOLLOWUP_STRIP_MARKER"
     )
+
+    @field_validator("autopost_vk_owner_id", "autopost_vk_personal_owner_id", mode="before")
+    @classmethod
+    def normalize_optional_int(cls, value: Any) -> Any:
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
+    @field_validator("vk_group_id", mode="before")
+    @classmethod
+    def normalize_vk_group_id(cls, value: Any) -> Any:
+        if isinstance(value, str):
+            clean_value = value.strip()
+            if not clean_value:
+                return None
+            if clean_value.startswith(("public", "club")):
+                return clean_value.removeprefix("public").removeprefix("club")
+        return value
 
 
 @lru_cache

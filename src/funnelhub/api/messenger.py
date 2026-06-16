@@ -27,7 +27,6 @@ from funnelhub.services.funnel_autostart import (
 )
 from funnelhub.services.funnel_engine import load_funnel_definition, run_due_funnel_step
 from funnelhub.services.funnel_runner import MessengerFunnelStepSender
-from funnelhub.services.getcourse_api import enrich_lead_from_getcourse_api
 from funnelhub.services.getcourse_webhook import (
     CONSENT_CUSTOM_FIELD_MAPPING,
     ingest_getcourse_webhook,
@@ -36,7 +35,7 @@ from funnelhub.services.ingestion_guard import (
     enforce_getcourse_ingestion_guard,
     strip_getcourse_webhook_secret_fields,
 )
-from funnelhub.services.lead_notifications import send_lead_application_notification
+from funnelhub.services.lead_post_submit_tasks import enqueue_lead_post_submit_tasks
 from funnelhub.services.vk_messaging import HttpVkMessageClient
 from funnelhub.services.vk_oauth import (
     exchange_vk_oauth_code,
@@ -102,28 +101,23 @@ async def getcourse_redirect_join_page(
 
     try:
         result = await ingest_getcourse_webhook(session, payload)
-        await enrich_lead_from_getcourse_api(
-            session=session,
-            settings=settings,
-            lead_id=result.lead_id,
-        )
         await start_default_email_funnel_for_lead(
             session=session,
             settings=settings,
             lead_id=result.lead_id,
         )
+        await enqueue_lead_post_submit_tasks(
+            session=session,
+            settings=settings,
+            lead_id=result.lead_id,
+            created=result.created,
+            source="join/getcourse",
+            notify_admin=True,
+        )
     except ValueError:
         await session.rollback()
         return render_getcourse_join_error()
 
-    await session.commit()
-    await send_lead_application_notification(
-        session=session,
-        settings=settings,
-        lead_id=result.lead_id,
-        created=result.created,
-        source="join/getcourse",
-    )
     await session.commit()
     return render_join_page(settings=settings, token=result.bot_link_token)
 

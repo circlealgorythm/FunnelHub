@@ -252,6 +252,10 @@ h2 {
   background: var(--plum);
 }
 
+.channel-vk_personal {
+  background: var(--rose);
+}
+
 .conversation-main {
   min-width: 0;
 }
@@ -1556,6 +1560,9 @@ h2 {
   box-shadow: 0 20px 40px rgba(0,0,0,0.1), 0 0 0 1px rgba(0,0,0,0.05);
   width: 100%;
   max-width: 540px;
+  max-height: calc(100dvh - 32px);
+  min-height: 0;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   gap: 24px;
@@ -1569,6 +1576,11 @@ h2 {
   font-weight: 600;
   color: var(--ink);
   letter-spacing: -0.02em;
+}
+.modal-body {
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
 }
 .form-group label {
   font-family: var(--font-sans, system-ui, sans-serif);
@@ -1611,6 +1623,10 @@ h2 {
 
 /* Modal Buttons */
 .modal-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  background: #ffffff;
   margin-top: 16px;
   padding-top: 24px;
   border-top: 1px solid var(--line, #e2e8f0);
@@ -1649,4 +1665,110 @@ h2 {
 .lead-table td {
   padding: 16px 24px;
   border-bottom: 1px solid var(--line);
+}
+
+.file-drop {
+  align-items: center;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  gap: 10px;
+  min-height: 44px;
+  padding: 10px 14px;
+}
+
+.file-drop input {
+  display: none;
+}
+
+.file-drop span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.segmented-control {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.attachment-pill,
+.attachment-preview {
+  align-items: center;
+  display: inline-flex;
+  gap: 7px;
+}
+
+.attachment-pill {
+  background: var(--surface-strong);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1;
+  margin-top: 8px;
+  padding: 6px 9px;
+}
+
+.attachment-preview {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  justify-content: space-between;
+  margin-top: 8px;
+  max-width: 100%;
+  padding: 8px 10px;
+  width: 100%;
+}
+
+.attachment-preview span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.icon-button.compact {
+  height: 30px;
+  min-width: 30px;
+  width: 30px;
+}
+
+@media (max-height: 820px) {
+  .modal-dialog {
+    gap: 16px;
+    padding: 28px 40px;
+  }
+
+  .modal-header {
+    margin-bottom: 0;
+  }
+
+  .modal-body {
+    gap: 16px;
+  }
+
+  .form-group textarea {
+    min-height: 96px;
+  }
+}
+
+@media (max-width: 760px) {
+  .modal-overlay {
+    align-items: stretch;
+    padding: 12px;
+  }
+
+  .modal-dialog {
+    max-height: calc(100dvh - 24px);
+    padding: 22px;
+  }
+
+  .modal-footer {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
 }

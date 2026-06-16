@@ -18,6 +18,7 @@ import {
   Send,
   Upload,
   UserRound,
+  X,
 } from "lucide-react";
 import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
@@ -118,6 +119,8 @@ type Autopost = {
   published_at: string | null;
   created_at: string;
   updated_at: string;
+  has_image: boolean;
+  image_file_name: string | null;
   publications: AutopostPublication[];
 };
 
@@ -126,6 +129,7 @@ type AutopostPublication = {
   channel: string;
   status: string;
   external_post_id: string | null;
+  external_post_url: string | null;
   attempted_at: string | null;
   published_at: string | null;
   error: string | null;
@@ -137,6 +141,8 @@ type AutopostList = {
   limit: number;
   offset: number;
 };
+
+type AutopostScheduleMode = "now" | "scheduled";
 
 type FollowupPost = {
   id: string;
@@ -275,6 +281,12 @@ const channelLabels: Record<string, string> = {
   email: "Email",
 };
 
+const publicAutopostChannelLabels: Record<string, string> = {
+  telegram: "Telegram",
+  vk: "VK группа",
+  vk_personal: "VK личная",
+};
+
 const autopostStatusLabels: Record<string, string> = {
   queued: "В очереди",
   scheduled: "Запланирован",
@@ -297,6 +309,8 @@ const sourceTypeLabels: Record<string, string> = {
   vk: "VK",
   other: "Другое",
 };
+
+const publicAutopostSourceTypes = ["manual", "telegram", "vk", "other"];
 
 const filters: Array<{ value: ConversationStatus | "all"; label: string }> = [
   { value: "needs_reply", label: "Ждут" },
@@ -2673,9 +2687,15 @@ function AutopostsWorkspace({
                       <p className="field-hint" style={{ margin: "4px 0 0" }}>
                         {trimPreview(post.body, 96)}
                       </p>
+                      {post.has_image ? (
+                        <span className="attachment-pill">
+                          <Upload aria-hidden="true" size={13} />
+                          VK изображение
+                        </span>
+                      ) : null}
                     </td>
                     <td>{formatDetailValue(post.scheduled_at)}</td>
-                    <td>{post.channels.map((c) => channelLabels[c] || c).join(", ")}</td>
+                    <td>{post.channels.map((c) => publicAutopostChannelLabels[c] || c).join(", ")}</td>
                     <td>{sourceTypeLabels[post.source_type] || post.source_type}</td>
                     <td><GenericStatusPill status={post.status} /></td>
                   </tr>
@@ -2717,9 +2737,11 @@ function AutopostCreateModal({
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [channels, setChannels] = useState<string[]>(["telegram"]);
+  const [scheduleMode, setScheduleMode] = useState<AutopostScheduleMode>("now");
   const [scheduledAt, setScheduledAt] = useState("");
   const [sourceType, setSourceType] = useState("manual");
   const [sourceUrl, setSourceUrl] = useState("");
+  const [imageFile, setImageFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -2741,23 +2763,51 @@ function AutopostCreateModal({
       setError("Выберите хотя бы один канал");
       return;
     }
+    if (scheduleMode === "scheduled" && !scheduledAt) {
+      setError("Выберите дату и время публикации");
+      return;
+    }
 
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${API_BASE_URL}/api/inbox/autoposts`, {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: title.trim(),
-          body: body.trim(),
-          channels,
-          scheduled_at: scheduledAt ? new Date(scheduledAt).toISOString() : null,
-          source_type: sourceType,
-          source_url: sourceUrl.trim() || null,
-        }),
-      });
+      let res: Response;
+      if (imageFile) {
+        const formData = new FormData();
+        formData.append("title", title.trim());
+        formData.append("body", body.trim());
+        channels.forEach((channel) => formData.append("channels", channel));
+        if (scheduleMode === "scheduled" && scheduledAt) {
+          formData.append("scheduled_at", new Date(scheduledAt).toISOString());
+        }
+        formData.append("source_type", sourceType);
+        if (sourceUrl.trim()) {
+          formData.append("source_url", sourceUrl.trim());
+        }
+        formData.append("image", imageFile);
+        res = await fetch(`${API_BASE_URL}/api/inbox/autoposts/with-media`, {
+          method: "POST",
+          credentials: "include",
+          body: formData,
+        });
+      } else {
+        res = await fetch(`${API_BASE_URL}/api/inbox/autoposts`, {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: title.trim(),
+            body: body.trim(),
+            channels,
+            scheduled_at:
+              scheduleMode === "scheduled" && scheduledAt
+                ? new Date(scheduledAt).toISOString()
+                : null,
+            source_type: sourceType,
+            source_url: sourceUrl.trim() || null,
+          }),
+        });
+      }
 
       if (!res.ok) {
         const payload = await res.json().catch(() => null);
@@ -2807,7 +2857,7 @@ function AutopostCreateModal({
           <div className="form-group">
             <label>Каналы публикации</label>
             <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginTop: "4px" }}>
-              {["telegram", "vk"].map((ch) => (
+              {["telegram", "vk", "vk_personal"].map((ch) => (
                 <button
                   key={ch}
                   type="button"
@@ -2816,27 +2866,78 @@ function AutopostCreateModal({
                   style={{ display: "flex", alignItems: "center", gap: "6px" }}
                 >
                   <span className={`channel-dot channel-${ch}`} />
-                  {channelLabels[ch] || ch}
+                  {publicAutopostChannelLabels[ch] || ch}
                 </button>
               ))}
             </div>
           </div>
 
           <div className="form-group">
-            <label>Дата и время</label>
-            <input
-              type="datetime-local"
-              value={scheduledAt}
-              onChange={(event) => setScheduledAt(event.target.value)}
-            />
-            <p className="field-hint">Пустое значение отправит пост в ближайший проход worker.</p>
+            <label>Время публикации</label>
+            <div className="segmented-control" role="group" aria-label="Время публикации">
+              <button
+                className={scheduleMode === "now" ? "filter-chip is-active" : "filter-chip"}
+                onClick={() => setScheduleMode("now")}
+                type="button"
+              >
+                Сразу
+              </button>
+              <button
+                className={scheduleMode === "scheduled" ? "filter-chip is-active" : "filter-chip"}
+                onClick={() => setScheduleMode("scheduled")}
+                type="button"
+              >
+                По времени
+              </button>
+            </div>
+            {scheduleMode === "scheduled" ? (
+              <input
+                type="datetime-local"
+                value={scheduledAt}
+                onChange={(event) => setScheduledAt(event.target.value)}
+                required
+              />
+            ) : (
+              <p className="field-hint">Пост уйдет в ближайший проход worker, обычно в течение минуты.</p>
+            )}
+          </div>
+
+          <div className="form-group">
+            <label>Изображение для VK</label>
+            <label className="file-drop">
+              <Upload aria-hidden="true" size={18} />
+              <span>{imageFile ? imageFile.name : "Выбрать JPEG, PNG или WebP"}</span>
+              <input
+                accept="image/jpeg,image/png,image/webp"
+                type="file"
+                onChange={(event) => setImageFile(event.target.files?.[0] || null)}
+              />
+            </label>
+            {imageFile ? (
+              <div className="attachment-preview">
+                <span>
+                  <strong>Прикреплено:</strong> {imageFile.name}
+                </span>
+                <button
+                  aria-label="Убрать изображение"
+                  className="icon-button soft-button compact"
+                  onClick={() => setImageFile(null)}
+                  type="button"
+                >
+                  <X aria-hidden="true" size={15} />
+                </button>
+              </div>
+            ) : null}
+            <p className="field-hint">
+              Картинка прикрепится только к VK-публикациям. Telegram отправит текст без изображения.
+            </p>
           </div>
 
           <div className="form-group">
             <label>Источник</label>
             <select value={sourceType} onChange={(event) => setSourceType(event.target.value)}>
-              {Object.entries(sourceTypeLabels).map(([value, label]) => (
-                <option key={value} value={value}>{label}</option>
+              {publicAutopostSourceTypes.map((value) => (
+                <option key={value} value={value}>{sourceTypeLabels[value] || value}</option>
               ))}
             </select>
           </div>
@@ -2847,7 +2948,7 @@ function AutopostCreateModal({
               type="text"
               value={sourceUrl}
               onChange={(event) => setSourceUrl(event.target.value)}
-              placeholder="YouTube, Telegram, VK или другая ссылка"
+              placeholder="Telegram, VK или другая ссылка"
             />
           </div>
 
@@ -2855,7 +2956,11 @@ function AutopostCreateModal({
             <button className="soft-button" type="button" onClick={onClose} disabled={loading}>Отмена</button>
             <button className="send-button" type="submit" disabled={loading}>
               <CalendarClock size={16} />
-              {loading ? "Сохраняем..." : "Поставить в очередь"}
+              {loading
+                ? "Сохраняем..."
+                : scheduleMode === "now"
+                  ? "Отправить сразу"
+                  : "Поставить в очередь"}
             </button>
           </footer>
         </form>
@@ -2941,9 +3046,10 @@ function AutopostDetailModal({
               <div className="key-value-list">
                 <KeyValueLine label="Статус" value={autopostStatusLabels[post.status] || post.status} />
                 <KeyValueLine label="Расписание" value={post.scheduled_at} />
-                <KeyValueLine label="Каналы" value={post.channels.map((c) => channelLabels[c] || c).join(", ")} />
+                <KeyValueLine label="Каналы" value={post.channels.map((c) => publicAutopostChannelLabels[c] || c).join(", ")} />
                 <KeyValueLine label="Источник" value={sourceTypeLabels[post.source_type] || post.source_type} />
                 <KeyValueLine label="Ссылка" value={post.source_url || "не указано"} />
+                <KeyValueLine label="Изображение" value={post.has_image ? post.image_file_name || "прикреплено" : "нет"} />
               </div>
 
               <div className="form-group">
@@ -2968,7 +3074,20 @@ function AutopostDetailModal({
                     <tr key={publication.id}>
                       <td>{channelLabels[publication.channel] || publication.channel}</td>
                       <td><GenericStatusPill status={publication.status} /></td>
-                      <td><code className="mono-badge">{publication.external_post_id || "—"}</code></td>
+                      <td>
+                        {publication.external_post_url ? (
+                          <a
+                            className="mono-badge"
+                            href={publication.external_post_url}
+                            rel="noreferrer"
+                            target="_blank"
+                          >
+                            {publication.external_post_id}
+                          </a>
+                        ) : (
+                          <code className="mono-badge">{publication.external_post_id || "—"}</code>
+                        )}
+                      </td>
                       <td>{publication.attempted_at ? formatDetailValue(publication.attempted_at) : "—"}</td>
                       <td style={{ color: "var(--danger)" }}>{publication.error || ""}</td>
                     </tr>

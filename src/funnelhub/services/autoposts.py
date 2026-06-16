@@ -11,14 +11,16 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 
+from funnelhub.config import get_settings
 from funnelhub.db.models import Autopost, AutopostPublication
+from funnelhub.services.autopost_media import delete_autopost_image
 from funnelhub.services.followup_posts import (
     SUPPORTED_FOLLOWUP_CHANNELS,
     create_followup_post,
     strip_followup_marker,
 )
 
-SUPPORTED_AUTOPOST_CHANNELS = ("telegram", "vk")
+SUPPORTED_AUTOPOST_CHANNELS = ("telegram", "vk", "vk_personal")
 SUPPORTED_SOURCE_TYPES = ("manual", "youtube", "telegram", "vk", "other")
 
 
@@ -184,6 +186,7 @@ async def cancel_autopost(session: AsyncSession, autopost_id: uuid.UUID) -> Auto
     for publication in publications:
         if publication.status == "pending":
             publication.status = "cancelled"
+    delete_autopost_image(autopost, get_settings())
     await session.flush()
     return autopost
 

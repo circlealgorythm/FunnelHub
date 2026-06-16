@@ -14,6 +14,7 @@ from funnelhub.services.email_messaging import build_email_provider_client
 from funnelhub.services.followup_runner import run_due_followup_posts_once
 from funnelhub.services.funnel_engine import load_funnel_definition
 from funnelhub.services.funnel_runner import run_due_funnel_once
+from funnelhub.services.lead_post_submit_tasks import run_due_lead_post_submit_tasks_once
 from funnelhub.services.vk_messaging import HttpVkMessageClient
 
 logger = logging.getLogger(__name__)
@@ -41,6 +42,14 @@ async def main() -> None:
             api_version=settings.vk_api_version,
         )
         if settings.vk_group_access_token
+        else None
+    )
+    vk_personal_client = (
+        HttpVkMessageClient(
+            access_token=settings.autopost_vk_personal_access_token,
+            api_version=settings.vk_api_version,
+        )
+        if settings.autopost_vk_personal_access_token
         else None
     )
 
@@ -93,7 +102,11 @@ async def main() -> None:
             async with async_session_maker() as session:
                 autopost_stats = await run_due_autoposts_once(
                     session=session,
-                    clients=AutopostClients(telegram_bot=bot, vk_client=vk_client),
+                    clients=AutopostClients(
+                        telegram_bot=bot,
+                        vk_client=vk_client,
+                        vk_personal_client=vk_personal_client,
+                    ),
                     settings=settings,
                     limit=settings.funnel_runner_batch_size,
                 )
@@ -122,6 +135,23 @@ async def main() -> None:
                             "completed": followup_stats.completed,
                             "partial_failed": followup_stats.partial_failed,
                             "failed": followup_stats.failed,
+                        },
+                    )
+
+            async with async_session_maker() as session:
+                post_submit_stats = await run_due_lead_post_submit_tasks_once(
+                    session=session,
+                    settings=settings,
+                    email_client=email_client,
+                    limit=settings.funnel_runner_batch_size,
+                )
+                if post_submit_stats.due:
+                    logger.info(
+                        "Lead post-submit task runner pass completed",
+                        extra={
+                            "due": post_submit_stats.due,
+                            "completed": post_submit_stats.completed,
+                            "failed": post_submit_stats.failed,
                         },
                     )
             await asyncio.sleep(settings.funnel_runner_interval_seconds)

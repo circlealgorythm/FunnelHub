@@ -4,13 +4,15 @@ import uuid
 from datetime import datetime
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from funnelhub.config import get_settings
 from funnelhub.db.session import get_session
 from funnelhub.services.auth import require_admin_session
+from funnelhub.services.autopost_media import get_autopost_image_metadata, save_autopost_image
+from funnelhub.services.autopost_runner import resolve_vk_owner_id
 from funnelhub.services.autoposts import (
     AutopostDetail,
     cancel_autopost,
@@ -44,6 +46,7 @@ class AutopostPublicationResponse(BaseModel):
     channel: str
     status: str
     external_post_id: str | None
+    external_post_url: str | None = None
     attempted_at: datetime | None
     published_at: datetime | None
     error: str | None
@@ -61,6 +64,8 @@ class AutopostResponse(BaseModel):
     published_at: datetime | None
     created_at: datetime
     updated_at: datetime
+    has_image: bool = False
+    image_file_name: str | None = None
     publications: list[AutopostPublicationResponse] = []
 
 
@@ -88,6 +93,48 @@ async def create_new_autopost(
             source_url=request.source_url,
             dedupe_key=request.dedupe_key,
             metadata=request.metadata,
+            followup_marker=settings.autopost_followup_marker,
+            strip_marker_for_followup=settings.autopost_followup_strip_marker,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    await session.commit()
+    detail = await get_autopost_detail(session, autopost.id)
+    if detail is None:
+        raise HTTPException(status_code=404, detail="Autopost not found")
+    return serialize_autopost_detail(detail)
+
+
+@router.post("/with-media", response_model=AutopostResponse)
+async def create_new_autopost_with_media(
+    session: SessionDep,
+    title: Annotated[str, Form()],
+    body: Annotated[str, Form()],
+    channels: Annotated[list[str], Form()],
+    scheduled_at: Annotated[str | None, Form()] = None,
+    source_type: Annotated[str, Form()] = "manual",
+    source_url: Annotated[str | None, Form()] = None,
+    image: Annotated[UploadFile | None, File()] = None,
+) -> AutopostResponse:
+    settings = get_settings()
+    metadata: dict[str, Any] = {}
+    if image is not None and image.filename:
+        try:
+            metadata = await save_autopost_image(image, settings)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    try:
+        autopost = await create_autopost(
+            session=session,
+            title=title,
+            body=body,
+            channels=channels,
+            scheduled_at=parse_optional_datetime(scheduled_at),
+            source_type=source_type,
+            source_url=source_url,
+            metadata=metadata,
             followup_marker=settings.autopost_followup_marker,
             strip_marker_for_followup=settings.autopost_followup_strip_marker,
         )
@@ -160,6 +207,7 @@ async def cancel_existing_autopost(
 
 
 def serialize_autopost_summary(autopost: Any) -> AutopostResponse:
+    image = get_autopost_image_metadata(autopost)
     return AutopostResponse(
         id=autopost.id,
         title=autopost.title,
@@ -172,6 +220,12 @@ def serialize_autopost_summary(autopost: Any) -> AutopostResponse:
         published_at=autopost.published_at,
         created_at=autopost.created_at,
         updated_at=autopost.updated_at,
+        has_image=image is not None,
+        image_file_name=(
+            str(image["original_file_name"])
+            if image and isinstance(image.get("original_file_name"), str)
+            else None
+        ),
         publications=[],
     )
 
@@ -179,12 +233,19 @@ def serialize_autopost_summary(autopost: Any) -> AutopostResponse:
 def serialize_autopost_detail(detail: AutopostDetail) -> AutopostResponse:
     autopost = detail.autopost
     response = serialize_autopost_summary(autopost)
+    settings = get_settings()
     response.publications = [
         AutopostPublicationResponse(
             id=publication.id,
             channel=publication.channel,
             status=publication.status,
             external_post_id=publication.external_post_id,
+            external_post_url=build_external_post_url(
+                channel=publication.channel,
+                external_post_id=publication.external_post_id,
+                vk_owner_id=resolve_vk_owner_id(settings),
+                vk_personal_owner_id=settings.autopost_vk_personal_owner_id,
+            ),
             attempted_at=publication.attempted_at,
             published_at=publication.published_at,
             error=publication.error,
@@ -192,3 +253,28 @@ def serialize_autopost_detail(detail: AutopostDetail) -> AutopostResponse:
         for publication in detail.publications
     ]
     return response
+
+
+def build_external_post_url(
+    *,
+    channel: str,
+    external_post_id: str | None,
+    vk_owner_id: int | None,
+    vk_personal_owner_id: int | None,
+) -> str | None:
+    if not external_post_id:
+        return None
+    if channel == "vk" and vk_owner_id is not None:
+        return f"https://vk.com/wall{vk_owner_id}_{external_post_id}"
+    if channel == "vk_personal" and vk_personal_owner_id is not None:
+        return (
+            f"https://vk.com/id{vk_personal_owner_id}"
+            f"?w=wall{vk_personal_owner_id}_{external_post_id}"
+        )
+    return None
+
+
+def parse_optional_datetime(value: str | None) -> datetime | None:
+    if value is None or not value.strip():
+        return None
+    return datetime.fromisoformat(value.replace("Z", "+00:00"))

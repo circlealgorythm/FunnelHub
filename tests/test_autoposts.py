@@ -25,6 +25,8 @@ from funnelhub.main import app
 from funnelhub.services.auth import hash_password
 from funnelhub.services.autopost_runner import (
     AutopostClients,
+    normalize_telegram_channel_chat_id,
+    resolve_vk_owner_id,
     run_due_autoposts_once,
 )
 from funnelhub.services.autoposts import create_autopost
@@ -54,16 +56,32 @@ class FakeTelegramBot:
 
 class FakeVkWallClient:
     def __init__(self) -> None:
-        self.calls: list[tuple[int, str]] = []
+        self.calls: list[tuple[int | None, str]] = []
+        self.photo_uploads: list[tuple[int | None, str]] = []
 
     async def publish_wall_post(
         self,
         *,
-        owner_id: int,
+        owner_id: int | None,
         message: str,
+        attachments: list[str] | None = None,
+        from_group: bool = True,
     ) -> dict[str, Any]:
         self.calls.append((owner_id, message))
-        return {"response": {"post_id": 777}}
+        return {
+            "response": {"post_id": 777},
+            "attachments": attachments or [],
+            "from_group": from_group,
+        }
+
+    async def upload_wall_photo(
+        self,
+        *,
+        owner_id: int | None,
+        image_path: Any,
+    ) -> str:
+        self.photo_uploads.append((owner_id, str(image_path)))
+        return f"photo{owner_id}_1"
 
 
 @pytest.fixture(autouse=True)
@@ -123,7 +141,8 @@ def configure_auth(monkeypatch: pytest.MonkeyPatch) -> None:
         hash_password("secret", salt=b"1234567890123456"),
     )
     monkeypatch.setenv("INBOX_SESSION_SECRET", "test-session-secret")
-    monkeypatch.setenv("AUTOPOST_FOLLOWUP_MARKER", "#followup")
+    monkeypatch.setenv("PUBLIC_BASE_URL", "http://127.0.0.1:8000")
+    monkeypatch.setenv("AUTOPOST_FOLLOWUP_MARKER", "#aisukam")
     monkeypatch.setenv("AUTOPOST_FOLLOWUP_STRIP_MARKER", "true")
     get_settings.cache_clear()
 
@@ -173,7 +192,7 @@ async def test_autopost_api_creates_lists_dedupes_and_cancels(
     try:
         async with AsyncClient(
             transport=ASGITransport(app=app),
-            base_url="http://127.0.0.1:8000",
+            base_url="https://127.0.0.1:8000",
         ) as client:
             await client.post(
                 "/api/auth/login",
@@ -212,7 +231,7 @@ async def test_autopost_api_creates_lists_dedupes_and_cancels(
     try:
         async with AsyncClient(
             transport=ASGITransport(app=app),
-            base_url="http://127.0.0.1:8000",
+            base_url="https://127.0.0.1:8000",
         ) as client:
             await client.post(
                 "/api/auth/login",
@@ -242,7 +261,7 @@ async def test_marked_autopost_creates_one_followup_post(
     try:
         async with AsyncClient(
             transport=ASGITransport(app=app),
-            base_url="http://127.0.0.1:8000",
+            base_url="https://127.0.0.1:8000",
         ) as client:
             await client.post(
                 "/api/auth/login",
@@ -250,7 +269,7 @@ async def test_marked_autopost_creates_one_followup_post(
             )
             payload = {
                 "title": f"{TEST_TITLE_PREFIX} marked followup",
-                "body": "Текст для публичного поста\n#followup",
+                "body": "Текст для публичного поста\n#aisukam",
                 "channels": ["telegram", "vk"],
                 "scheduled_at": schedule.isoformat(),
             }
@@ -347,6 +366,139 @@ async def test_autopost_runner_publishes_to_telegram_and_vk_once() -> None:
     assert stored.status == "published"
     assert {item.status for item in publications} == {"published"}
     assert {item.external_post_id for item in publications} == {"501", "777"}
+
+
+async def test_autopost_runner_publishes_to_personal_vk_wall() -> None:
+    personal_client = FakeVkWallClient()
+
+    async with async_session_maker() as session:
+        post = await create_autopost(
+            session,
+            title=f"{TEST_TITLE_PREFIX} personal vk",
+            body="Текст для личной стены",
+            channels=["vk_personal"],
+        )
+        await session.commit()
+        post_id = post.id
+
+    settings = Settings(
+        AUTOPOST_VK_PERSONAL_OWNER_ID=258149228,
+        AUTOPOST_VK_PERSONAL_ACCESS_TOKEN="token",
+    )
+    async with async_session_maker() as session:
+        stats = await run_due_autoposts_once(
+            session,
+            clients=AutopostClients(
+                telegram_bot=None,
+                vk_client=None,
+                vk_personal_client=personal_client,
+            ),
+            settings=settings,
+        )
+
+    assert stats.due == 1
+    assert stats.published == 1
+    assert personal_client.calls == [(None, "Текст для личной стены")]
+
+    async with async_session_maker() as session:
+        stored = await session.get(Autopost, post_id)
+        publication = await session.scalar(
+            select(AutopostPublication).where(AutopostPublication.autopost_id == post_id)
+        )
+
+    assert stored is not None
+    assert stored.status == "published"
+    assert publication is not None
+    assert publication.status == "published"
+    assert publication.external_post_id == "777"
+
+
+async def test_autopost_runner_attaches_image_to_vk_only_and_deletes_file(tmp_path: Any) -> None:
+    bot = FakeTelegramBot()
+    vk_client = FakeVkWallClient()
+    image_path = tmp_path / "post.png"
+    image_path.write_bytes(b"fake image")
+
+    async with async_session_maker() as session:
+        await create_autopost(
+            session,
+            title=f"{TEST_TITLE_PREFIX} image",
+            body="Текст с изображением",
+            channels=["telegram", "vk"],
+            metadata={
+                "image": {
+                    "path": str(image_path),
+                    "file_name": image_path.name,
+                    "original_file_name": "post.png",
+                    "content_type": "image/png",
+                    "size": image_path.stat().st_size,
+                }
+            },
+        )
+        await session.commit()
+
+    settings = Settings(
+        AUTOPOST_TELEGRAM_CHAT_ID="@channel",
+        VK_GROUP_ID=12345,
+        AUTOPOST_UPLOAD_DIR=str(tmp_path),
+    )
+    async with async_session_maker() as session:
+        stats = await run_due_autoposts_once(
+            session,
+            clients=AutopostClients(telegram_bot=bot, vk_client=vk_client),
+            settings=settings,
+        )
+
+    assert stats.published == 1
+    assert bot.calls == [("@channel", "Текст с изображением")]
+    assert vk_client.photo_uploads == [(-12345, str(image_path))]
+    assert vk_client.calls == [(-12345, "Текст с изображением")]
+    assert not image_path.exists()
+
+
+async def test_autopost_rejects_unsupported_zen_channel() -> None:
+    async with async_session_maker() as session:
+        with pytest.raises(ValueError, match="Unsupported autopost channel: zen"):
+            await create_autopost(
+                session,
+                title=f"{TEST_TITLE_PREFIX} zen rejected",
+                body="Текст без Дзен",
+                channels=["telegram", "zen"],
+            )
+        await session.rollback()
+
+
+def test_default_followup_marker_is_aisukam() -> None:
+    settings = Settings(
+        _env_file=None,
+        DATABASE_URL="postgresql+asyncpg://funnelhub:funnelhub@localhost:5432/funnelhub",
+        REDIS_URL="redis://localhost:6379/0",
+        PUBLIC_BASE_URL="http://localhost:8000",
+        DEFAULT_FUNNEL_PATH="content/funnels/aisu_consultation.yml",
+        INBOX_APP_URL="http://127.0.0.1:5173",
+        EMAIL_PROVIDER="disabled",
+        EMAIL_FROM_NAME="FunnelHub",
+        EMAIL_DEFAULT_SUBJECT="Сообщение от Aisu Kam",
+        EMAIL_UNISENDER_GO_API_URL=(
+            "https://goapi.unisender.ru/ru/transactional/api/v1/email/send.json"
+        )
+    )
+
+    assert settings.autopost_followup_marker == "#aisukam"
+
+
+def test_autopost_settings_accept_production_channel_values() -> None:
+    settings = Settings(
+        AUTOPOST_TELEGRAM_CHAT_ID="1001649567909",
+        VK_GROUP_ID="public211582267",
+        AUTOPOST_VK_OWNER_ID="",
+    )
+
+    assert normalize_telegram_channel_chat_id(settings.autopost_telegram_chat_id or "") == (
+        "-1001649567909"
+    )
+    assert settings.vk_group_id == 211582267
+    assert resolve_vk_owner_id(settings) == -211582267
 
 
 async def test_autopost_runner_marks_missing_channel_config_failed() -> None:

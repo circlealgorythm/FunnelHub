@@ -14,6 +14,8 @@ services:
       PUBLIC_BASE_URL: https://bot.aisukam.ru
     ports:
       - "127.0.0.1:8000:8000"
+    volumes:
+      - autopost_uploads:/app/uploads/autoposts
     depends_on:
       - postgres
       - redis
@@ -30,6 +32,8 @@ services:
       DATABASE_URL: postgresql+asyncpg://funnelhub:funnelhub@postgres:5432/funnelhub
       REDIS_URL: redis://redis:6379/0
       PUBLIC_BASE_URL: https://bot.aisukam.ru
+    volumes:
+      - autopost_uploads:/app/uploads/autoposts
     depends_on:
       - postgres
       - redis
@@ -67,3 +71,4 @@ services:
 
 volumes:
   postgres_data:
+  autopost_uploads:

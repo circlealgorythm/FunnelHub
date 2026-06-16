@@ -8,5 +8,7 @@ tmp/
 .env
 .env.*
 !.env.example
+.secrets/
+uploads/
 inbox-app/node_modules/
 inbox-app/dist/

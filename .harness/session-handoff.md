@@ -2,6 +2,64 @@
 
 ## Current Status
 
+- Durable post-submit tasks for GetCourse lead ingestion are implemented locally but not deployed.
+- `/join/getcourse` and `/webhooks/getcourse` now save/update the lead, create/reuse the bot-link
+  token, start the email funnel state, enqueue post-submit tasks, commit, and return without
+  waiting for GetCourse Export API or Unisender Go admin notification sends.
+- New DB model/table: `lead_post_submit_tasks`, migration
+  `20260616_01_add_lead_post_submit_tasks.py`.
+- New worker service: `src/funnelhub/services/lead_post_submit_tasks.py`.
+  `funnel-worker` now runs `run_due_lead_post_submit_tasks_once(...)` each loop.
+- Queued task behavior:
+  - `getcourse_profile_enrichment` is queued only when GetCourse API settings are configured,
+    deduped by lead id, and retried on `api_failed` / `profile_not_found`.
+  - `lead_application_notification` is queued only when `LEAD_NOTIFICATION_EMAIL_TO` is set; the
+    existing notification cooldown/event guard still prevents duplicate admin emails.
+- UI close-button prevention for the public form was implemented in sibling repo
+  `C:\Users\circlealgorythm\Documents\VibeCoding\AisuKam_site`:
+  - `src/main.tsx` now computes `isSubmitting = submitted && !submissionComplete`;
+  - close via X, backdrop click, and Escape is ignored while `isSubmitting`;
+  - the close button is disabled and gets a submission-specific accessible label while blocked;
+  - closing works again after success or failure.
+- Verification for this local slice after Docker/PostgreSQL was started:
+  - focused new GetCourse tests passed: 3 passed;
+  - full `tests/test_getcourse_webhook.py` passed: 35 passed;
+  - full `.venv\Scripts\pytest.exe -x` passed: 149 passed, 5 skipped;
+  - `ruff check .`, focused ruff for changed files, `mypy src`, Python compile for changed
+    modules, `alembic heads`, and `git diff --check` passed;
+  - clean temporary-DB Alembic upgrade from empty DB to `20260616_01 (head)` passed;
+  - direct `alembic upgrade head` against the existing local DB was not meaningful because that
+    DB already had later tables created by tests while `alembic_version` was behind;
+  - public site `npm run build` passed with only the existing Vite large-chunk warning.
+- Autoposting VK personal wall and VK image attachments are implemented and deployed.
+- Public Autoposting UI now offers `Telegram`, `VK группа`, and `VK личная`.
+- `VK личная` publishes to owner id `258149228` using the production-only
+  `AUTOPOST_VK_PERSONAL_ACCESS_TOKEN`; the token came from local `.secrets/vk-personal.env`, was
+  written to `/opt/funnelhub/.env`, and must not be printed or committed.
+- Autoposting image upload accepts one JPEG/PNG/WebP file. The file is stored temporarily in the
+  shared `autopost_uploads` Docker volume at `/app/uploads/autoposts`, used for VK wall photo
+  upload, then deleted after all selected publication rows are published or when the post is
+  cancelled.
+- Product decision: Telegram does not receive the image, because the user does not want separate
+  photo/text messages. Telegram remains text-only; VK group and VK personal receive text+image.
+- `deploy_files.py` now uploads root deployment files (`Dockerfile`, `docker-compose.prod.yml`,
+  `pyproject.toml`, `alembic.ini`) in addition to source/tests/dist, because compose changes such
+  as shared volumes must reach production.
+- Latest production verification for this slice: public `/health` OK; services running;
+  config smoke showed personal VK owner configured and token present; container
+  `pytest tests/test_autoposts.py -q` passed with 9 tests; bundle smoke found `VK личная` and the
+  VK-only image hint; worker logs show normal passes. No real publication smoke was sent.
+- `autoposting-public-platforms` is now completed/deployed under the narrowed scope:
+  FunnelHub directly publishes public posts only to Telegram and VK. Odnoklassniki, YouTube, and
+  Zen are excluded.
+- Production `.env` was backed up and updated from the user-provided file. Do not print or commit
+  the VK token. Config smoke in the container confirms Telegram chat id normalizes to
+  `-1001649567909`, VK group id is `211582267`, VK owner id resolves to `-211582267`, the VK token
+  is present, and `AUTOPOST_FOLLOWUP_MARKER` should be `#aisukam`.
+- Inbox Autoposting UI shows only `Telegram` and `VK` public targets. The backend rejects `zen`
+  as an unsupported autopost channel.
+- Autoposting create modal has a scrollable body and sticky footer so buttons remain reachable on
+  small screens.
 - Production `funnel_runner` permanent delivery errors were diagnosed, fixed, deployed, and
   verified. Old noisy causes were VK button labels over 40 chars, VK users without message
   permission, Unisender Go "No valid recipients", and due email states without a subscribed email
@@ -25,7 +83,7 @@
   - scheduled follow-up post created with pending delivery;
   - smoke data cleaned up successfully.
 - Marker-routing production smoke:
-  - `AUTOPOST_FOLLOWUP_MARKER` default is `#followup`;
+  - `AUTOPOST_FOLLOWUP_MARKER` default is now `#aisukam`;
   - `AUTOPOST_FOLLOWUP_STRIP_MARKER` default is `true`;
   - marked public autopost created exactly one `FunnelFollowupPost`;
   - private follow-up body had the marker stripped;
@@ -39,12 +97,21 @@
 
 ## Latest Verification
 
+- `.venv\Scripts\pytest.exe tests\test_autoposts.py -q` passed: 7 passed.
+- `npm run build` passed in `inbox-app/`.
 - `.venv\Scripts\pytest.exe tests\test_vk_messaging.py tests\test_funnel_runner.py -q` passed:
   18 passed.
-- `.venv\Scripts\pytest.exe -x` passed: 141 passed, 5 skipped.
+- `.venv\Scripts\pytest.exe -x` passed: 144 passed, 5 skipped.
 - `.venv\Scripts\ruff.exe check .` passed.
 - `.venv\Scripts\mypy.exe src` passed.
 - `git diff --check` passed.
+- Production config/UI/backend smoke passed after `autoposting-public-platforms` deploy:
+  marker is `#aisukam`, supported public channels are `telegram,vk`, no `ZEN_*` env keys are
+  present, the frontend image has one current JS asset with no `Дзен`/`Telegram + Дзен` strings,
+  backend rejects `zen`, a rollback-only TG/VK `#aisukam` autopost creates as `scheduled`, and no
+  real public test post was sent.
+- `deploy_files.py` now clears remote `inbox-app/dist` before uploading a fresh frontend build, so
+  old JS chunks do not remain in production images.
 - Production health/log smoke passed after `funnel_runner` deploy.
 - Previous Autoposting verification remains below:
 - `.venv\Scripts\pytest.exe -x` passed: 137 passed, 5 skipped.
@@ -96,7 +163,7 @@
 
 ## Notes / Next Steps
 
-- Follow-up marker routing is deployed. The marker is `#followup` by default and is configurable
+- Follow-up marker routing is deployed. The marker is `#aisukam` by default and is configurable
   through `AUTOPOST_FOLLOWUP_MARKER`.
 - Current follow-up recipient materialization happens at creation time. Leads who complete the
   18-day funnel after a follow-up post is created will not be backfilled into that existing post;
@@ -107,6 +174,78 @@
   - `current_feature` is now `null`;
   - `email-provider` is `completed`;
   - existing `autoposting` is treated as completed public Autoposting MVP;
+## Current Autoposting Handoff
+
+- Implemented and deployed the requested public Autoposting additions:
+  - `vk_personal` publication target using `AUTOPOST_VK_PERSONAL_ACCESS_TOKEN` and
+    `AUTOPOST_VK_PERSONAL_OWNER_ID=258149228`;
+  - VK-only image upload support for Autoposting posts, stored in the shared
+    `/app/uploads/autoposts` volume and removed after all publication rows finish or the post is
+    cancelled;
+  - visible UI state for attached images in the create modal, Autoposting list, and detail modal;
+  - explicit "Сразу" / "По времени" schedule mode; "Сразу" submits without `scheduled_at` and is
+    picked up by the next worker pass.
+- Telegram images were intentionally not added: user decided Telegram should remain text-only if
+  the image cannot be posted together with the text in the desired format.
+- Production deploy completed through `deploy_files.py`; `app`, `funnel-worker`, and
+  `telegram-bot` were rebuilt/recreated and are running.
+- Diagnosed the current live `vk_personal` error:
+  - the first token value included redirect fragment data such as `&expires_in=...`; it was
+    locally and remotely normalized to the raw access token without printing the secret;
+  - after normalization, VK `users.get` from the production worker returns
+    `User authorization failed: access_token was given to another ip address`;
+  - this means the token was bound to the browser/client IP used during OAuth and cannot be used
+    from the VPS. A replacement VK user token usable from the production server IP is required.
+- Latest checked failed post: `6f0f299e-d7b2-4d41-89c1-46cce326f8a3`, title `21 июня будет
+  Летнее Солнцестояние`, channel `vk_personal`, later became `published` after VK returned
+  `{"post_id": 777}` from `wall.post`.
+- Follow-up investigation for that row:
+  - production DB has `status=published`, `external_post_id=777`, and no publication error;
+  - the full VK URL is `https://vk.com/wall258149228_777`;
+  - the same personal token currently cannot perform server-side `users.get`, `wall.getById`, or
+    `wall.get` because VK returns `access_token was given to another ip address`;
+  - public unauthenticated `wall.getById` requires a token for this wall, and the group token
+    cannot call wall read methods for a personal wall;
+  - therefore FunnelHub can prove VK accepted `wall.post`, but cannot currently prove whether the
+    item is visible/deleted/hidden on VK without a valid server-usable user token.
+- Important implementation decision after inspecting VK privacy settings: `vk_personal` publishing
+  now calls `wall.post` without `owner_id`, so VK uses the current user from the access token. This
+  avoids making the API request look like an explicit post "to a profile wall" and should not
+  require opening "Кто может публиковать посты в моём профиле" to anyone else. Keep
+  `AUTOPOST_VK_PERSONAL_OWNER_ID=258149228` only for link construction.
+- Deployed an admin/API visibility improvement: `AutopostPublicationResponse` now includes
+  `external_post_url`, and the Autoposting detail modal renders VK external IDs as clickable links.
+  Existing rows derive the link from configured owner ids. For `vk_personal`, the link now uses
+  VK's profile-modal format, so the current row shows
+  `https://vk.com/id258149228?w=wall258149228_777` instead of direct `wall258149228_777`.
+
+## Current Verification
+
+- `.venv\Scripts\ruff.exe check deploy_files.py src/funnelhub/services/autopost_runner.py
+  src/funnelhub/services/autopost_media.py src/funnelhub/services/vk_messaging.py
+  src/funnelhub/api/autoposts.py src/funnelhub/funnel_worker.py tests/test_autoposts.py` passed.
+- `.venv\Scripts\mypy.exe src` passed.
+- `npm run build` passed in `inbox-app/`.
+- `git diff --check` passed, with only existing LF/CRLF working-copy warnings.
+- Production smoke passed:
+  - `app`, `funnel-worker`, and `telegram-bot` are running;
+  - in-container `/health` returned `200 {"status":"ok","service":"FunnelHub"}`;
+  - deployed Inbox JS contains "Отправить сразу", "Прикреплено:", and "VK изображение";
+  - current `vk_personal` publication serializes
+    `external_post_url=https://vk.com/id258149228?w=wall258149228_777`;
+  - code smoke confirms personal publishing uses `owner_id=None` and `require_owner_id=False`;
+  - in-container `pytest tests/test_autopost_external_urls.py tests/test_autoposts.py -q`
+    passed: 10 passed.
+
+## Current Notes / Next Steps
+
+- Do not print or commit `.secrets/vk-personal.env`; `.secrets/` is ignored.
+- To fix `vk_personal`, generate a VK user token that VK accepts from the VPS IP, then update
+  `AUTOPOST_VK_PERSONAL_ACCESS_TOKEN` in `/opt/funnelhub/.env` and restart `funnel-worker`.
+- No real publication smoke was sent during this slice.
+
+## Previous Context
+
   - new pending Autoposting feature slices were added for follow-up posts, hashtag routing, and
     additional public platforms.
 - User confirmed the product rule for Autoposting:
@@ -131,13 +270,11 @@
 - User clarified the next Autoposting target model. Created
   `.harness/docs/autoposting.md` as the source-of-truth roadmap.
 - The documented plan splits Autoposting into two separate entities/flows:
-  - public platform publishing: Telegram channel, VK group wall, Odnoklassniki, Zen, and
-    YouTube community posts if feasible;
+  - public platform publishing: Telegram channel and VK group wall;
   - internal follow-up posts: private Telegram/VK bot messages sent only to leads who completed
     the 18-day `aisu_consultation` messenger funnel.
 - VK Video and YouTube video upload are out of scope for the public text/post publishing flow.
-  Odnoklassniki, Zen, and YouTube community posts require separate API feasibility checks before
-  implementation.
+  Odnoklassniki, Zen, and YouTube community posts are out of the current scope.
 - Internal follow-up posts should use completed `funnel_states` plus subscribed
   `messenger_identities`, with per-lead/per-channel delivery history and duplicate protection.
 

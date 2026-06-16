@@ -19,6 +19,7 @@ from funnelhub.db.models import (
     LeadContact,
     LeadCustomField,
     LeadExternalId,
+    LeadPostSubmitTask,
     LeadUtm,
     Message,
     MessengerIdentity,
@@ -26,7 +27,13 @@ from funnelhub.db.models import (
 from funnelhub.db.session import async_session_maker, engine
 from funnelhub.main import app
 from funnelhub.services.bot_linking import link_messenger_identity
+from funnelhub.services.getcourse_api import GetCourseExportClient
 from funnelhub.services.ingestion_guard import getcourse_rate_limiter
+from funnelhub.services.lead_post_submit_tasks import (
+    TASK_GETCOURSE_PROFILE_ENRICHMENT,
+    TASK_LEAD_APPLICATION_NOTIFICATION,
+    run_due_lead_post_submit_tasks_once,
+)
 
 TEST_EMAIL = "webhook-test@example.com"
 TEST_PHONE = "79990000000"
@@ -282,7 +289,7 @@ async def test_getcourse_webhook_normalizes_vk_id_from_profile_url() -> None:
         assert custom_field.value == "88996633"
 
 
-async def test_getcourse_webhook_sends_one_admin_notification_for_duplicate_ingest(
+async def test_getcourse_webhook_queues_and_sends_one_admin_notification_for_duplicate_ingest(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("EMAIL_PROVIDER", "debug")
@@ -316,6 +323,26 @@ async def test_getcourse_webhook_sends_one_admin_notification_for_duplicate_inge
     lead_id = uuid.UUID(first_response.json()["lead_id"])
 
     async with async_session_maker() as session:
+        notification_tasks = (
+            await session.scalars(
+                select(LeadPostSubmitTask).where(
+                    LeadPostSubmitTask.lead_id == lead_id,
+                    LeadPostSubmitTask.task_type == TASK_LEAD_APPLICATION_NOTIFICATION,
+                )
+            )
+        ).all()
+        assert len(notification_tasks) == 1
+        assert notification_tasks[0].status == "pending"
+
+        stats = await run_due_lead_post_submit_tasks_once(
+            session=session,
+            settings=get_settings(),
+            email_client=None,
+        )
+        assert stats.due == 1
+        assert stats.completed == 1
+        assert stats.failed == 0
+
         messages = (
             await session.scalars(
                 select(Message).where(
@@ -344,6 +371,10 @@ async def test_getcourse_webhook_sends_one_admin_notification_for_duplicate_inge
             )
         ).all()
         assert len(sent_events) == 1
+
+        task = await session.get(LeadPostSubmitTask, notification_tasks[0].id)
+        assert task is not None
+        assert task.status == "completed"
 
 
 async def test_getcourse_webhook_updates_existing_lead_by_getcourse_id() -> None:
@@ -455,6 +486,101 @@ async def test_getcourse_redirect_join_page_creates_lead_and_renders_buttons() -
             )
         )
         assert consent_types == {"personal_data", "privacy_policy"}
+
+
+async def test_getcourse_redirect_join_page_queues_getcourse_enrichment_without_waiting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GETCOURSE_API_BASE_URL", "https://school.example.test")
+    monkeypatch.setenv("GETCOURSE_API_KEY", "api-key")
+    get_settings.cache_clear()
+
+    async def fail_if_called(
+        self: GetCourseExportClient,
+        filter_params: dict[str, str],
+    ) -> dict[str, object] | None:
+        raise AssertionError("GetCourse API must not run in the redirect response path.")
+
+    monkeypatch.setattr(GetCourseExportClient, "fetch_user_profile", fail_if_called)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get(
+            "/join/getcourse",
+            params={
+                "email": TEST_EMAIL,
+                "phone": "+7 999 000-00-00",
+                "name": "Сергей тест Gurban",
+            },
+        )
+
+    assert response.status_code == 200
+    assert "Спасибо за вашу заявку!" in response.text
+
+    async with async_session_maker() as session:
+        lead = await session.scalar(
+            select(Lead).join(LeadContact).where(LeadContact.normalized_value == TEST_EMAIL)
+        )
+        assert lead is not None
+        enrichment_task = await session.scalar(
+            select(LeadPostSubmitTask).where(
+                LeadPostSubmitTask.lead_id == lead.id,
+                LeadPostSubmitTask.task_type == TASK_GETCOURSE_PROFILE_ENRICHMENT,
+            )
+        )
+        assert enrichment_task is not None
+        assert enrichment_task.status == "pending"
+
+
+async def test_post_submit_task_runner_enriches_lead_from_getcourse_api(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GETCOURSE_API_BASE_URL", "https://school.example.test")
+    monkeypatch.setenv("GETCOURSE_API_KEY", "api-key")
+    get_settings.cache_clear()
+
+    async def fetch_profile(
+        self: GetCourseExportClient,
+        filter_params: dict[str, str],
+    ) -> dict[str, object] | None:
+        assert filter_params == {"email": TEST_EMAIL}
+        return {
+            "id": TEST_GC_ID,
+            "email": TEST_EMAIL,
+            "name": "Сергей из GetCourse",
+            "VK-ID": "id88996633",
+        }
+
+    monkeypatch.setattr(GetCourseExportClient, "fetch_user_profile", fetch_profile)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get(
+            "/join/getcourse",
+            params={"email": TEST_EMAIL, "name": "Сергей тест Gurban"},
+        )
+
+    assert response.status_code == 200
+
+    async with async_session_maker() as session:
+        stats = await run_due_lead_post_submit_tasks_once(
+            session=session,
+            settings=get_settings(),
+            email_client=None,
+        )
+        assert stats.due == 1
+        assert stats.completed == 1
+        assert stats.failed == 0
+
+        lead = await session.scalar(select(Lead).where(Lead.getcourse_user_id == int(TEST_GC_ID)))
+        assert lead is not None
+        assert lead.full_name == "Сергей из GetCourse"
+        external_id = await session.scalar(
+            select(LeadExternalId).where(
+                LeadExternalId.lead_id == lead.id,
+                LeadExternalId.provider == "getcourse_vk_id",
+                LeadExternalId.external_id == "88996633",
+            )
+        )
+        assert external_id is not None
 
 
 async def test_getcourse_redirect_join_page_derives_tariff_consent_from_form_type() -> None:

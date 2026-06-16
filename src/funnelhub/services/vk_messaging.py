@@ -6,6 +6,7 @@ import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any, Protocol, cast
 
 import httpx
@@ -71,16 +72,22 @@ class HttpVkMessageClient:
     async def publish_wall_post(
         self,
         *,
-        owner_id: int,
+        owner_id: int | None,
         message: str,
+        attachments: Sequence[str] | None = None,
+        from_group: bool = True,
     ) -> dict[str, Any]:
         data: dict[str, Any] = {
             "access_token": self._access_token,
             "v": self._api_version,
-            "owner_id": str(owner_id),
             "message": message,
-            "from_group": "1",
         }
+        if owner_id is not None:
+            data["owner_id"] = str(owner_id)
+        if from_group:
+            data["from_group"] = "1"
+        if attachments:
+            data["attachments"] = ",".join(attachments)
         async with httpx.AsyncClient(timeout=20.0) as client:
             response = await client.post(f"{self._base_url}/wall.post", data=data)
             response.raise_for_status()
@@ -93,6 +100,80 @@ class HttpVkMessageClient:
             )
             raise RuntimeError(error_message)
         return payload
+
+    async def upload_wall_photo(
+        self,
+        *,
+        owner_id: int | None,
+        image_path: Path,
+    ) -> str:
+        group_id = abs(owner_id) if owner_id is not None and owner_id < 0 else None
+        upload_server_data: dict[str, Any] = {
+            "access_token": self._access_token,
+            "v": self._api_version,
+        }
+        if group_id is not None:
+            upload_server_data["group_id"] = str(group_id)
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            upload_server_response = await client.post(
+                f"{self._base_url}/photos.getWallUploadServer",
+                data=upload_server_data,
+            )
+            upload_server_response.raise_for_status()
+            upload_server_payload = cast(dict[str, Any], upload_server_response.json())
+            if "error" in upload_server_payload:
+                raise RuntimeError(format_vk_error(upload_server_payload["error"]))
+
+            response_data = upload_server_payload.get("response")
+            if not isinstance(response_data, dict) or not response_data.get("upload_url"):
+                raise RuntimeError("VK did not return a wall photo upload URL.")
+
+            upload_url = str(response_data["upload_url"])
+            with image_path.open("rb") as image_file:
+                upload_response = await client.post(
+                    upload_url,
+                    files={"photo": (image_path.name, image_file)},
+                )
+            upload_response.raise_for_status()
+            upload_payload = cast(dict[str, Any], upload_response.json())
+
+            save_data: dict[str, Any] = {
+                "access_token": self._access_token,
+                "v": self._api_version,
+                "photo": upload_payload["photo"],
+                "server": str(upload_payload["server"]),
+                "hash": upload_payload["hash"],
+            }
+            if group_id is not None:
+                save_data["group_id"] = str(group_id)
+
+            save_response = await client.post(
+                f"{self._base_url}/photos.saveWallPhoto",
+                data=save_data,
+            )
+            save_response.raise_for_status()
+            save_payload = cast(dict[str, Any], save_response.json())
+            if "error" in save_payload:
+                raise RuntimeError(format_vk_error(save_payload["error"]))
+
+        saved_photos = save_payload.get("response")
+        if not isinstance(saved_photos, list) or not saved_photos:
+            raise RuntimeError("VK did not return saved wall photo metadata.")
+        saved_photo = saved_photos[0]
+        if not isinstance(saved_photo, dict):
+            raise RuntimeError("VK returned invalid wall photo metadata.")
+        photo_owner_id = saved_photo.get("owner_id")
+        photo_id = saved_photo.get("id")
+        if photo_owner_id is None or photo_id is None:
+            raise RuntimeError("VK saved wall photo metadata has no owner_id/id.")
+        return f"photo{photo_owner_id}_{photo_id}"
+
+
+def format_vk_error(error: Any) -> str:
+    if isinstance(error, dict):
+        return str(error.get("error_msg", "VK API error"))
+    return str(error)
 
 
 @dataclass(frozen=True)

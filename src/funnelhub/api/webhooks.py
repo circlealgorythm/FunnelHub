@@ -21,7 +21,7 @@ from funnelhub.services.ingestion_guard import (
     enforce_getcourse_ingestion_guard,
     strip_getcourse_webhook_secret_fields,
 )
-from funnelhub.services.lead_notifications import send_lead_application_notification
+from funnelhub.services.lead_post_submit_tasks import enqueue_lead_post_submit_tasks
 from funnelhub.vk_bot import handle_vk_message_allow, handle_vk_message_new
 
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
@@ -87,21 +87,20 @@ async def getcourse_webhook(
             settings=settings,
             lead_id=result.lead_id,
         )
+        await enqueue_lead_post_submit_tasks(
+            session=session,
+            settings=settings,
+            lead_id=result.lead_id,
+            created=result.created,
+            source="webhooks/getcourse",
+            notify_admin="form_type" not in payload,
+        )
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=str(exc),
         ) from exc
 
-    if "form_type" not in payload:
-        await session.commit()
-        await send_lead_application_notification(
-            session=session,
-            settings=settings,
-            lead_id=result.lead_id,
-            created=result.created,
-            source="webhooks/getcourse",
-        )
     await session.commit()
     return GetCourseWebhookResponse(
         status="ok",

@@ -19,6 +19,6 @@
     {"id": "autoposting", "title": "Public Autoposting MVP", "status": "completed"},
     {"id": "autoposting-followup", "title": "Follow-up posts after completed funnel", "status": "completed"},
     {"id": "autoposting-followup-hashtag-routing", "title": "Route marked public autoposts into follow-up posts", "status": "completed"},
-    {"id": "autoposting-public-platforms", "title": "Additional public autopost platforms", "status": "pending"}
+    {"id": "autoposting-public-platforms", "title": "Additional public autopost platforms", "status": "completed"}
   ]
 }
