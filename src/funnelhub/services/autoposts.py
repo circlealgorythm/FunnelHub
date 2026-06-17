@@ -20,7 +20,7 @@ from funnelhub.services.followup_posts import (
     strip_followup_marker,
 )
 
-SUPPORTED_AUTOPOST_CHANNELS = ("telegram", "vk", "vk_personal")
+SUPPORTED_AUTOPOST_CHANNELS = ("telegram", "vk")
 SUPPORTED_SOURCE_TYPES = ("manual", "youtube", "telegram", "vk", "other")
 
 

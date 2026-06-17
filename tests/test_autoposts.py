@@ -368,51 +368,6 @@ async def test_autopost_runner_publishes_to_telegram_and_vk_once() -> None:
     assert {item.external_post_id for item in publications} == {"501", "777"}
 
 
-async def test_autopost_runner_publishes_to_personal_vk_wall() -> None:
-    personal_client = FakeVkWallClient()
-
-    async with async_session_maker() as session:
-        post = await create_autopost(
-            session,
-            title=f"{TEST_TITLE_PREFIX} personal vk",
-            body="Текст для личной стены",
-            channels=["vk_personal"],
-        )
-        await session.commit()
-        post_id = post.id
-
-    settings = Settings(
-        AUTOPOST_VK_PERSONAL_OWNER_ID=258149228,
-        AUTOPOST_VK_PERSONAL_ACCESS_TOKEN="token",
-    )
-    async with async_session_maker() as session:
-        stats = await run_due_autoposts_once(
-            session,
-            clients=AutopostClients(
-                telegram_bot=None,
-                vk_client=None,
-                vk_personal_client=personal_client,
-            ),
-            settings=settings,
-        )
-
-    assert stats.due == 1
-    assert stats.published == 1
-    assert personal_client.calls == [(None, "Текст для личной стены")]
-
-    async with async_session_maker() as session:
-        stored = await session.get(Autopost, post_id)
-        publication = await session.scalar(
-            select(AutopostPublication).where(AutopostPublication.autopost_id == post_id)
-        )
-
-    assert stored is not None
-    assert stored.status == "published"
-    assert publication is not None
-    assert publication.status == "published"
-    assert publication.external_post_id == "777"
-
-
 async def test_autopost_runner_attaches_image_to_vk_only_and_deletes_file(tmp_path: Any) -> None:
     bot = FakeTelegramBot()
     vk_client = FakeVkWallClient()
@@ -464,6 +419,18 @@ async def test_autopost_rejects_unsupported_zen_channel() -> None:
                 title=f"{TEST_TITLE_PREFIX} zen rejected",
                 body="Текст без Дзен",
                 channels=["telegram", "zen"],
+            )
+        await session.rollback()
+
+
+async def test_autopost_rejects_personal_vk_channel() -> None:
+    async with async_session_maker() as session:
+        with pytest.raises(ValueError, match="Unsupported autopost channel: vk_personal"):
+            await create_autopost(
+                session,
+                title=f"{TEST_TITLE_PREFIX} personal vk rejected",
+                body="Текст без личной стены",
+                channels=["vk_personal"],
             )
         await session.rollback()
 

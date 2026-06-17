@@ -284,7 +284,6 @@ const channelLabels: Record<string, string> = {
 const publicAutopostChannelLabels: Record<string, string> = {
   telegram: "Telegram",
   vk: "VK группа",
-  vk_personal: "VK личная",
 };
 
 const autopostStatusLabels: Record<string, string> = {
@@ -2857,7 +2856,7 @@ function AutopostCreateModal({
           <div className="form-group">
             <label>Каналы публикации</label>
             <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginTop: "4px" }}>
-              {["telegram", "vk", "vk_personal"].map((ch) => (
+              {["telegram", "vk"].map((ch) => (
                 <button
                   key={ch}
                   type="button"

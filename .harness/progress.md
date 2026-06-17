@@ -885,3 +885,32 @@
   Production verification passed: `/health` returned 200, code smoke confirmed
   `owner_id=None` and `require_owner_id=False` for personal publishing, and in-container
   `pytest tests/test_autopost_external_urls.py tests/test_autoposts.py -q` passed with 10 tests.
+- 2026-06-16 deployed durable lead post-submit tasks to production. Public GetCourse lead
+  submission now commits the lead and email funnel state first, then queues GetCourse profile
+  enrichment and admin lead notification for the funnel worker. Production Alembic advanced to
+  `20260616_01 (head)`, `app`, `funnel-worker`, `telegram-bot`, `postgres`, and `redis` were
+  running, public `/health` returned OK, and a phone-only smoke lead was saved immediately with a
+  queued `getcourse_profile_enrichment` task. The smoke lead, task, and related event were cleaned
+  up by exact lead id. Worker/app logs showed no lead-submission traceback; an unrelated
+  `vk_personal` autopost warning remains due to the existing invalid VK token.
+- 2026-06-16 built the public site UI patch archive
+  `C:\Users\circlealgorythm\Documents\VibeCoding\AisuKam_site\aisukam-submit-close-lock-patch-20260616.zip`.
+  The archive contains the updated `index.html` and hashed JS/CSS assets. The site host was not
+  changed because `aisukam.ru` is on a separate hosting provider and the user will upload the
+  archive manually.
+- 2026-06-16 added and deployed `AUTOPOST_VK_PERSONAL_PROXY_URL` support for VK personal
+  autoposting. The proxy is applied only to the personal VK client used by the autopost worker;
+  the existing VK group/bot client remains direct. Local verification passed: focused `ruff`,
+  `mypy src`, and a settings smoke for empty/non-empty proxy URLs. Production deploy completed;
+  `/health` returned 200 and in-container settings smoke passed. A full production
+  `tests/test_autoposts.py` run was stopped as an invalid verification method because it picked
+  up a real failed `vk_personal` post from the production DB; the touched row
+  `e9d99318-9c1c-4311-995f-3ee69bb76d82` was restored to `failed` with the VK IP-bound-token
+  error.
+- 2026-06-16 removed VK personal wall autoposting after user rejected the proxy-token
+  operational cost. Public Autoposting now supports only Telegram channel and VK group wall.
+  Removed `vk_personal` from backend supported channels, worker clients, config/env example,
+  external URL construction, and Inbox UI. Production `/opt/funnelhub/.env` was cleaned of
+  `AUTOPOST_VK_PERSONAL_*` keys, services were restarted, and the one remaining active
+  `vk_personal` publication was cancelled so the worker stops retrying it. VK image attachments
+  remain for VK group wall posts; Telegram remains text-only.

@@ -132,12 +132,6 @@ class Settings(BaseSettings):
         default=None, validation_alias="AUTOPOST_TELEGRAM_CHAT_ID"
     )
     autopost_vk_owner_id: int | None = Field(default=None, validation_alias="AUTOPOST_VK_OWNER_ID")
-    autopost_vk_personal_owner_id: int | None = Field(
-        default=None, validation_alias="AUTOPOST_VK_PERSONAL_OWNER_ID"
-    )
-    autopost_vk_personal_access_token: str | None = Field(
-        default=None, validation_alias="AUTOPOST_VK_PERSONAL_ACCESS_TOKEN"
-    )
     autopost_followup_marker: str | None = Field(
         default="#aisukam", validation_alias="AUTOPOST_FOLLOWUP_MARKER"
     )
@@ -145,7 +139,7 @@ class Settings(BaseSettings):
         default=True, validation_alias="AUTOPOST_FOLLOWUP_STRIP_MARKER"
     )
 
-    @field_validator("autopost_vk_owner_id", "autopost_vk_personal_owner_id", mode="before")
+    @field_validator("autopost_vk_owner_id", mode="before")
     @classmethod
     def normalize_optional_int(cls, value: Any) -> Any:
         if isinstance(value, str) and not value.strip():

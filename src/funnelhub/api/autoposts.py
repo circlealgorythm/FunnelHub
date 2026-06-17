@@ -244,7 +244,6 @@ def serialize_autopost_detail(detail: AutopostDetail) -> AutopostResponse:
                 channel=publication.channel,
                 external_post_id=publication.external_post_id,
                 vk_owner_id=resolve_vk_owner_id(settings),
-                vk_personal_owner_id=settings.autopost_vk_personal_owner_id,
             ),
             attempted_at=publication.attempted_at,
             published_at=publication.published_at,
@@ -260,17 +259,11 @@ def build_external_post_url(
     channel: str,
     external_post_id: str | None,
     vk_owner_id: int | None,
-    vk_personal_owner_id: int | None,
 ) -> str | None:
     if not external_post_id:
         return None
     if channel == "vk" and vk_owner_id is not None:
         return f"https://vk.com/wall{vk_owner_id}_{external_post_id}"
-    if channel == "vk_personal" and vk_personal_owner_id is not None:
-        return (
-            f"https://vk.com/id{vk_personal_owner_id}"
-            f"?w=wall{vk_personal_owner_id}_{external_post_id}"
-        )
     return None
 
 

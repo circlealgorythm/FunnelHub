@@ -44,15 +44,6 @@ async def main() -> None:
         if settings.vk_group_access_token
         else None
     )
-    vk_personal_client = (
-        HttpVkMessageClient(
-            access_token=settings.autopost_vk_personal_access_token,
-            api_version=settings.vk_api_version,
-        )
-        if settings.autopost_vk_personal_access_token
-        else None
-    )
-
     try:
         while True:
             for definition in definitions:
@@ -105,7 +96,6 @@ async def main() -> None:
                     clients=AutopostClients(
                         telegram_bot=bot,
                         vk_client=vk_client,
-                        vk_personal_client=vk_personal_client,
                     ),
                     settings=settings,
                     limit=settings.funnel_runner_batch_size,

@@ -252,10 +252,6 @@ h2 {
   background: var(--plum);
 }
 
-.channel-vk_personal {
-  background: var(--rose);
-}
-
 .conversation-main {
   min-width: 0;
 }

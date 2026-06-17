@@ -39,7 +39,6 @@ class AutopostVkClient(Protocol):
 class AutopostClients:
     telegram_bot: TelegramMessageClient | None
     vk_client: AutopostVkClient | None
-    vk_personal_client: AutopostVkClient | None = None
 
 
 @dataclass(frozen=True)
@@ -167,15 +166,6 @@ async def publish_one_channel(
                 text=post.body,
                 image_path=get_autopost_image_path(post),
                 from_group=True,
-            )
-        elif publication.channel == "vk_personal":
-            external_id, payload = await publish_vk_post(
-                client=clients.vk_personal_client,
-                owner_id=None,
-                text=post.body,
-                image_path=get_autopost_image_path(post),
-                from_group=False,
-                require_owner_id=False,
             )
         else:
             raise ValueError(f"Unsupported autopost channel: {publication.channel}.")

@@ -30,7 +30,6 @@ The current production scope implements:
 
 - Telegram channel publishing.
 - VK wall publishing.
-- VK personal wall publishing for the configured account.
 - VK image attachments for public VK posts, using temporary local storage until publish/cancel.
 - Internal follow-up delivery to leads after day 18.
 - Automatic routing from a marked public autopost into an internal follow-up post.
@@ -51,7 +50,6 @@ Public channels:
 
 - Telegram channel.
 - VK group wall.
-- VK personal wall.
 
 Media behavior:
 

@@ -2,6 +2,26 @@
 
 ## Current Status
 
+- VK personal wall autoposting has been removed from the active product/code path after the user
+  decided not to operate proxy-bound VK user tokens. Current public Autoposting supports only
+  Telegram channel and VK group wall.
+- Removed active code/UI/config for `vk_personal`: backend supported channels are now
+  `telegram,vk`, the worker only creates the group VK client, `AUTOPOST_VK_PERSONAL_*` fields were
+  removed from code and `.env.example`, and Inbox no longer renders "VK личная".
+- Production cleanup completed: `/opt/funnelhub/.env` has zero `AUTOPOST_VK_PERSONAL_*` keys,
+  services were restarted, and active `vk_personal` publication rows were cancelled. Legacy
+  published/cancelled `vk_personal` history rows remain in the DB for audit/history only.
+- Current media behavior remains unchanged: one attached image is used for VK group wall posts;
+  Telegram channel autoposting remains text-only.
+- Latest verification for this removal: local focused `ruff` passed, `mypy src` passed,
+  `npm run build` passed, `tests/test_autopost_external_urls.py -q` passed, channel-normalization
+  smoke rejects `vk_personal`,
+  `tests/test_autoposts.py::test_autopost_rejects_personal_vk_channel -q` passed, production
+  `/health` returned OK, in-container smoke shows
+  `personal_env_count=0`, `has_personal_setting=False`, `supported_channels=telegram,vk`,
+  `vk_personal_rejected=true`, the deployed JS contains no `VK личная`/`vk_personal`, and DB smoke
+  shows `active_vk_personal_publications=0`. Fresh `funnel-worker` logs after restart showed only
+  normal `Funnel runner pass completed` entries.
 - Durable post-submit tasks for GetCourse lead ingestion are implemented locally but not deployed.
 - `/join/getcourse` and `/webhooks/getcourse` now save/update the lead, create/reuse the bot-link
   token, start the email funnel state, enqueue post-submit tasks, commit, and return without
@@ -213,6 +233,14 @@
   avoids making the API request look like an explicit post "to a profile wall" and should not
   require opening "Кто может публиковать посты в моём профиле" to anyone else. Keep
   `AUTOPOST_VK_PERSONAL_OWNER_ID=258149228` only for link construction.
+- VK personal autoposting now supports `AUTOPOST_VK_PERSONAL_PROXY_URL`. The proxy is passed only
+  to the personal VK HTTP client used by the autopost worker; VK group/bot traffic remains direct.
+  Use a paid dedicated static HTTP(S)/ISP proxy and store the full proxy URL only in deployment
+  secrets, for example `http://user:password@host:port`. Do not use random/free proxies for VK
+  because the user token and OAuth browser session depend on that IP path.
+- The current failed row `e9d99318-9c1c-4311-995f-3ee69bb76d82` was restored to `failed` after an
+  attempted production `tests/test_autoposts.py` run picked it up as real due work. Do not run the
+  full autopost runner tests against the live production DB while real due/failed autoposts exist.
 - Deployed an admin/API visibility improvement: `AutopostPublicationResponse` now includes
   `external_post_url`, and the Autoposting detail modal renders VK external IDs as clickable links.
   Existing rows derive the link from configured owner ids. For `vk_personal`, the link now uses
@@ -236,6 +264,10 @@
   - code smoke confirms personal publishing uses `owner_id=None` and `require_owner_id=False`;
   - in-container `pytest tests/test_autopost_external_urls.py tests/test_autoposts.py -q`
     passed: 10 passed.
+- Latest proxy-support verification: focused local `ruff` passed for changed files, `mypy src`
+  passed, local settings smoke passed for blank and non-blank
+  `AUTOPOST_VK_PERSONAL_PROXY_URL`, production `/health` returned OK, and an in-container settings
+  smoke returned `proxy_setting_ok`.
 
 ## Current Notes / Next Steps
 
@@ -297,6 +329,26 @@
   running.
 
 ## Verification
+
+- 2026-06-16 durable lead post-submit deployment:
+  - production deploy completed through `deploy_files.py`;
+  - Alembic current is `20260616_01 (head)`;
+  - `app`, `funnel-worker`, `telegram-bot`, `postgres`, and `redis` are running;
+  - public `https://bot.aisukam.ru/health` returned `{"status":"ok","service":"FunnelHub"}`;
+  - phone-only `/webhooks/getcourse` smoke created lead
+    `09481997-eea2-40ec-b066-0075cd06edd6` immediately;
+  - production DB showed the saved phone contact and a queued/processed
+    `getcourse_profile_enrichment` task; the task failed only because the fake smoke phone has no
+    GetCourse profile, which is expected retry behavior;
+  - the smoke lead, queued task, and related event were cleaned up by exact lead id;
+  - recent app/worker/bot logs showed no lead-submission traceback. An unrelated `vk_personal`
+    autopost warning about an invalid VK token remains.
+- Public site UI patch:
+  - `AisuKam_site` build passed earlier;
+  - archive ready at
+    `C:\Users\circlealgorythm\Documents\VibeCoding\AisuKam_site\aisukam-submit-close-lock-patch-20260616.zip`;
+  - `aisukam.ru` resolves to a different hosting IP than `bot.aisukam.ru`; no site files were
+    changed on hosting, per user instruction. User will upload the archive manually.
 
 - `.venv\Scripts\ruff.exe check .` passed.
 - `.venv\Scripts\mypy.exe src` passed.
