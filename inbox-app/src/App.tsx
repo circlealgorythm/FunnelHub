@@ -312,11 +312,11 @@ const sourceTypeLabels: Record<string, string> = {
 const publicAutopostSourceTypes = ["manual", "telegram", "vk", "other"];
 
 const filters: Array<{ value: ConversationStatus | "all"; label: string }> = [
+  { value: "all", label: "Все" },
   { value: "needs_reply", label: "Ждут" },
   { value: "open", label: "Открытые" },
   { value: "replied", label: "Отвеченные" },
   { value: "closed", label: "Закрытые" },
-  { value: "all", label: "Все" },
 ];
 
 export function App() {
@@ -326,7 +326,7 @@ export function App() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<ConversationDetail | null>(null);
-  const [filter, setFilter] = useState<ConversationStatus | "all">("needs_reply");
+  const [filter, setFilter] = useState<ConversationStatus | "all">("all");
   const [query, setQuery] = useState("");
   const [draft, setDraft] = useState("");
   const [replyChannels, setReplyChannels] = useState<ReplyChannel[]>([]);

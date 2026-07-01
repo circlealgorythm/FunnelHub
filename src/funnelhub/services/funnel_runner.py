@@ -16,6 +16,10 @@ from funnelhub.services.bot_linking import (
     create_or_get_active_bot_link_token,
 )
 from funnelhub.services.email_messaging import EmailProviderClient, send_email_text_message
+from funnelhub.services.followup_posts import (
+    FOLLOWUP_FUNNEL_KEY,
+    enqueue_followup_deliveries_for_completed_lead,
+)
 from funnelhub.services.funnel_answers import send_pending_question_reminder
 from funnelhub.services.funnel_engine import (
     FunnelButton,
@@ -46,6 +50,7 @@ PERMANENT_DELIVERY_ERROR_MARKERS = (
     "Lead has no subscribed email subscription.",
     "Lead has no subscribed VK identity.",
     "Can't send messages for users without permission",
+    "bot was blocked by the user",
     "No valid recipients",
 )
 
@@ -308,6 +313,16 @@ async def run_due_funnel_once(
                         sender=sender,
                         now=now,
                     )
+                if (
+                    result.status == "completed"
+                    and definition.key == FOLLOWUP_FUNNEL_KEY
+                    and state.completed_at is not None
+                ):
+                    await enqueue_followup_deliveries_for_completed_lead(
+                        session=session,
+                        lead_id=state.lead_id,
+                        completed_at=state.completed_at,
+                    )
             await session.commit()
         except Exception as exc:
             await session.rollback()
@@ -406,8 +421,11 @@ async def pause_funnel_state_after_permanent_delivery_error(
         "paused_error": str(error)[:1000],
         "paused_at": paused_at.isoformat(),
     }
-    if "Can't send messages for users without permission" in str(error):
+    error_message = str(error)
+    if "Can't send messages for users without permission" in error_message:
         await unsubscribe_latest_vk_identity_for_lead(session, state.lead_id, paused_at)
+    if "bot was blocked by the user" in error_message:
+        await unsubscribe_latest_telegram_identity_for_lead(session, state.lead_id, paused_at)
 
     await session.flush()
     return True
@@ -423,6 +441,28 @@ async def unsubscribe_latest_vk_identity_for_lead(
         .where(
             MessengerIdentity.lead_id == lead_id,
             MessengerIdentity.channel == "vk",
+            MessengerIdentity.is_subscribed.is_(True),
+        )
+        .order_by(MessengerIdentity.created_at.desc())
+    )
+    if identity is None:
+        return
+
+    identity.is_subscribed = False
+    identity.unsubscribed_at = unsubscribed_at
+    await session.flush()
+
+
+async def unsubscribe_latest_telegram_identity_for_lead(
+    session: AsyncSession,
+    lead_id: uuid.UUID,
+    unsubscribed_at: datetime,
+) -> None:
+    identity = await session.scalar(
+        select(MessengerIdentity)
+        .where(
+            MessengerIdentity.lead_id == lead_id,
+            MessengerIdentity.channel == "telegram",
             MessengerIdentity.is_subscribed.is_(True),
         )
         .order_by(MessengerIdentity.created_at.desc())

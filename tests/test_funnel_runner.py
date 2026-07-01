@@ -50,6 +50,16 @@ class FakeTelegramBot:
         return FakeSentMessage(message_id=888)
 
 
+class BlockedTelegramBot(FakeTelegramBot):
+    async def send_message(
+        self,
+        chat_id: str,
+        text: str,
+        reply_markup: object | None = None,
+    ) -> FakeSentMessage:
+        raise RuntimeError("Telegram server says - Forbidden: bot was blocked by the user")
+
+
 class FakeVkClient:
     def __init__(self) -> None:
         self.peer_id: str | None = None
@@ -902,6 +912,51 @@ async def test_run_due_funnel_once_pauses_vk_state_when_permission_revoked(
         assert state.status == "paused"
         assert state.current_step_key == "welcome"
         assert state.next_run_at is None
+
+        identity = await session.scalar(
+            select(MessengerIdentity).where(MessengerIdentity.lead_id == lead_id)
+        )
+        assert identity is not None
+        assert identity.is_subscribed is False
+        assert identity.unsubscribed_at == now
+
+
+async def test_run_due_funnel_once_pauses_telegram_state_when_bot_blocked(
+    prepare_database: None,
+) -> None:
+    lead_id = await create_lead_with_telegram_identity()
+    definition = build_messenger_definition()
+    now = datetime(2026, 5, 28, 12, 0, tzinfo=UTC)
+
+    async with async_session_maker() as session:
+        await start_funnel_for_lead(session, lead_id, definition, channel="telegram", now=now)
+        await session.commit()
+
+    async with async_session_maker() as session:
+        stats = await run_due_funnel_once(
+            session=session,
+            definition=definition,
+            bot=BlockedTelegramBot(),
+            now=now,
+        )
+
+    assert stats.due == 1
+    assert stats.sent == 0
+    assert stats.skipped == 1
+    assert stats.failed == 0
+
+    async with async_session_maker() as session:
+        state = await session.scalar(
+            select(FunnelState).where(
+                FunnelState.lead_id == lead_id,
+                FunnelState.funnel_key == definition.key,
+            )
+        )
+        assert state is not None
+        assert state.status == "paused"
+        assert state.current_step_key == "welcome"
+        assert state.next_run_at is None
+        assert state.metadata_["paused_reason"] == "permanent_delivery_error"
 
         identity = await session.scalar(
             select(MessengerIdentity).where(MessengerIdentity.lead_id == lead_id)

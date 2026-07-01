@@ -93,7 +93,7 @@ async def getcourse_webhook(
             lead_id=result.lead_id,
             created=result.created,
             source="webhooks/getcourse",
-            notify_admin="form_type" not in payload,
+            notify_admin=True,
         )
     except ValueError as exc:
         raise HTTPException(

@@ -24,7 +24,10 @@ from funnelhub.db.models import (
 from funnelhub.db.session import async_session_maker, engine
 from funnelhub.main import app
 from funnelhub.services.auth import hash_password
-from funnelhub.services.followup_posts import create_followup_post
+from funnelhub.services.followup_posts import (
+    create_followup_post,
+    enqueue_followup_deliveries_for_completed_lead,
+)
 from funnelhub.services.followup_runner import run_due_followup_posts_once
 
 TEST_GC_ID = 987660000
@@ -304,6 +307,80 @@ async def test_followup_runner_sends_each_delivery_once() -> None:
     assert stored.sent_deliveries == 2
     assert {delivery.status for delivery in deliveries} == {"sent"}
     assert {delivery.external_message_id for delivery in deliveries} == {"601", "902"}
+
+
+async def test_followup_queue_accumulates_until_funnel_completion() -> None:
+    lead_id = await create_completed_followup_lead(completed=False, vk=False)
+    first_scheduled_at = datetime(2026, 6, 30, 6, 30, tzinfo=UTC)
+    second_scheduled_at = datetime(2026, 7, 1, 7, 45, tzinfo=UTC)
+    completed_at = datetime(2026, 7, 2, 12, 0, tzinfo=UTC)
+
+    async with async_session_maker() as session:
+        first_post = await create_followup_post(
+            session,
+            title=f"{TEST_TITLE_PREFIX} queued first",
+            body="Первый накопленный пост",
+            channels=["telegram"],
+            scheduled_at=first_scheduled_at,
+        )
+        second_post = await create_followup_post(
+            session,
+            title=f"{TEST_TITLE_PREFIX} queued second",
+            body="Второй накопленный пост",
+            channels=["telegram"],
+            scheduled_at=second_scheduled_at,
+        )
+        await session.commit()
+        first_post_id = first_post.id
+        second_post_id = second_post.id
+
+    async with async_session_maker() as session:
+        deliveries_before = list(
+            (
+                await session.scalars(
+                    select(FunnelFollowupDelivery).where(
+                        FunnelFollowupDelivery.lead_id == lead_id
+                    )
+                )
+            ).all()
+        )
+        state = await session.scalar(
+            select(FunnelState).where(FunnelState.lead_id == lead_id)
+        )
+        assert state is not None
+        state.status = "completed"
+        state.completed_at = completed_at
+        state.current_step_key = None
+        state.next_run_at = None
+        created_count = await enqueue_followup_deliveries_for_completed_lead(
+            session=session,
+            lead_id=lead_id,
+            completed_at=completed_at,
+        )
+        await session.commit()
+
+    assert deliveries_before == []
+    assert created_count == 2
+
+    async with async_session_maker() as session:
+        deliveries = list(
+            (
+                await session.scalars(
+                    select(FunnelFollowupDelivery)
+                    .where(FunnelFollowupDelivery.lead_id == lead_id)
+                    .order_by(FunnelFollowupDelivery.available_at.asc())
+                )
+            ).all()
+        )
+
+    assert [delivery.followup_post_id for delivery in deliveries] == [
+        first_post_id,
+        second_post_id,
+    ]
+    assert [delivery.available_at for delivery in deliveries] == [
+        datetime(2026, 7, 3, 6, 30, tzinfo=UTC),
+        datetime(2026, 7, 4, 7, 45, tzinfo=UTC),
+    ]
 
 
 async def test_followup_runner_skips_unsubscribed_identity_at_send_time() -> None:

@@ -331,16 +331,16 @@ async def test_getcourse_webhook_queues_and_sends_one_admin_notification_for_dup
                 )
             )
         ).all()
-        assert len(notification_tasks) == 1
-        assert notification_tasks[0].status == "pending"
+        assert len(notification_tasks) == 2
+        assert {task.status for task in notification_tasks} == {"pending"}
 
         stats = await run_due_lead_post_submit_tasks_once(
             session=session,
             settings=get_settings(),
             email_client=None,
         )
-        assert stats.due == 1
-        assert stats.completed == 1
+        assert stats.due == 2
+        assert stats.completed == 2
         assert stats.failed == 0
 
         messages = (
@@ -375,6 +375,39 @@ async def test_getcourse_webhook_queues_and_sends_one_admin_notification_for_dup
         task = await session.get(LeadPostSubmitTask, notification_tasks[0].id)
         assert task is not None
         assert task.status == "completed"
+
+
+async def test_getcourse_webhook_with_form_type_queues_admin_notification(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("EMAIL_PROVIDER", "debug")
+    monkeypatch.setenv("LEAD_NOTIFICATION_EMAIL_TO", "aisukam-info@example.com")
+    get_settings.cache_clear()
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/webhooks/getcourse",
+            data={
+                "gc_user_id": TEST_GC_ID,
+                "email": TEST_EMAIL,
+                "phone": "+7 999 000-00-00",
+                "name": "Ольга",
+                "form_type": "consultation",
+            },
+        )
+
+    assert response.status_code == 200
+    lead_id = uuid.UUID(response.json()["lead_id"])
+
+    async with async_session_maker() as session:
+        notification_task = await session.scalar(
+            select(LeadPostSubmitTask).where(
+                LeadPostSubmitTask.lead_id == lead_id,
+                LeadPostSubmitTask.task_type == TASK_LEAD_APPLICATION_NOTIFICATION,
+            )
+        )
+        assert notification_task is not None
+        assert notification_task.status == "pending"
 
 
 async def test_getcourse_webhook_updates_existing_lead_by_getcourse_id() -> None:

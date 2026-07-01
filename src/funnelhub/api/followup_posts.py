@@ -42,6 +42,7 @@ class FollowupDeliveryResponse(BaseModel):
     lead_name: str | None
     channel: str
     status: str
+    available_at: datetime
     external_message_id: str | None
     attempted_at: datetime | None
     sent_at: datetime | None
@@ -203,6 +204,7 @@ def serialize_followup_detail(detail: FollowupDetail) -> FollowupPostResponse:
             lead_name=delivery.lead_name,
             channel=delivery.channel,
             status=delivery.status,
+            available_at=delivery.available_at,
             external_message_id=delivery.external_message_id,
             attempted_at=delivery.attempted_at,
             sent_at=delivery.sent_at,

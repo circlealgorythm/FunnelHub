@@ -381,6 +381,7 @@ class FunnelFollowupDelivery(Base, TimestampMixin):
         ForeignKey("messenger_identities.id", ondelete="SET NULL")
     )
     status: Mapped[str] = mapped_column(String(64), default="pending", nullable=False)
+    available_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     attempted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     message_id: Mapped[uuid.UUID | None] = mapped_column(

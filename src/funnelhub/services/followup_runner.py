@@ -37,57 +37,47 @@ async def run_due_followup_posts_once(
     limit: int = 50,
 ) -> FollowupRunStats:
     now = datetime.now(UTC)
-    posts = list(
-        (
-            await session.scalars(
-                select(FunnelFollowupPost)
-                .where(
-                    FunnelFollowupPost.status.in_(
-                        ["queued", "scheduled", "partial_failed", "failed"]
-                    ),
-                    FunnelFollowupPost.scheduled_at <= now,
-                )
-                .order_by(
-                    FunnelFollowupPost.scheduled_at.asc(),
-                    FunnelFollowupPost.created_at.asc(),
-                )
-                .limit(limit)
+    rows = (
+        await session.execute(
+            select(FunnelFollowupDelivery, FunnelFollowupPost)
+            .join(
+                FunnelFollowupPost,
+                FunnelFollowupPost.id == FunnelFollowupDelivery.followup_post_id,
             )
-        ).all()
-    )
-    if not posts:
+            .where(
+                FunnelFollowupPost.status != "cancelled",
+                FunnelFollowupDelivery.status.in_(["pending", "failed"]),
+                FunnelFollowupDelivery.available_at <= now,
+            )
+            .order_by(
+                FunnelFollowupDelivery.available_at.asc(),
+                FunnelFollowupDelivery.created_at.asc(),
+            )
+            .limit(limit)
+        )
+    ).all()
+    if not rows:
         return FollowupRunStats()
 
     completed_count = 0
     failed_count = 0
     partial_count = 0
+    posts_by_id: dict[uuid.UUID, FunnelFollowupPost] = {}
 
-    for post in posts:
+    for delivery, post in rows:
         post.status = "sending"
+        posts_by_id[post.id] = post
         await session.flush()
 
-        deliveries = list(
-            (
-                await session.scalars(
-                    select(FunnelFollowupDelivery)
-                    .where(
-                        FunnelFollowupDelivery.followup_post_id == post.id,
-                        FunnelFollowupDelivery.status.in_(["pending", "failed"]),
-                    )
-                    .order_by(FunnelFollowupDelivery.created_at.asc())
-                    .limit(limit)
-                )
-            ).all()
+        await send_one_delivery(
+            session=session,
+            post=post,
+            delivery=delivery,
+            clients=clients,
         )
+        await session.flush()
 
-        for delivery in deliveries:
-            await send_one_delivery(
-                session=session,
-                post=post,
-                delivery=delivery,
-                clients=clients,
-            )
-
+    for post in posts_by_id.values():
         await refresh_post_status(session, post)
         if post.status == "completed":
             completed_count += 1
@@ -95,10 +85,11 @@ async def run_due_followup_posts_once(
             partial_count += 1
         elif post.status == "failed":
             failed_count += 1
-        await session.commit()
+
+    await session.commit()
 
     return FollowupRunStats(
-        due=len(posts),
+        due=len(posts_by_id),
         completed=completed_count,
         failed=failed_count,
         partial_failed=partial_count,

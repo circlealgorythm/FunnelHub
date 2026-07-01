@@ -107,17 +107,18 @@ async def load_contacts(session: AsyncSession, lead_id: Any) -> dict[str, str]:
 
 def build_user_export_filter(lead: Lead, contacts: dict[str, str]) -> dict[str, str]:
     email = contacts.get("email")
-    if email:
+    if email and not is_getcourse_technical_email(email):
         return {"email": email}
 
     phone = contacts.get("phone")
     if phone:
         return {"phone": phone}
 
-    if lead.getcourse_user_id is not None:
-        return {"id": str(lead.getcourse_user_id)}
-
     return {}
+
+
+def is_getcourse_technical_email(email: str) -> bool:
+    return normalize_email(email).endswith("@vktech.gc")
 
 
 class GetCourseExportClient:

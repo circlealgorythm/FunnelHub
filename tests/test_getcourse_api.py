@@ -12,6 +12,7 @@ from funnelhub.db.base import Base
 from funnelhub.db.models import Lead, LeadContact, LeadExternalId
 from funnelhub.db.session import async_session_maker, engine
 from funnelhub.services.getcourse_api import (
+    build_user_export_filter,
     enrich_lead_from_getcourse_api,
     parse_export_rows,
 )
@@ -81,6 +82,29 @@ def test_parse_export_rows_maps_fields_to_items() -> None:
     )
 
     assert rows == [{"ID": 505, "Email": TEST_EMAIL, "VK-ID": "id321654"}]
+
+
+def test_build_user_export_filter_prefers_email_contact() -> None:
+    lead = Lead(
+        id=uuid.uuid4(),
+        getcourse_user_id=505218377,
+        raw_getcourse_data={},
+    )
+
+    assert build_user_export_filter(
+        lead,
+        {"email": TEST_EMAIL, "phone": TEST_PHONE},
+    ) == {"email": TEST_EMAIL}
+
+
+def test_build_user_export_filter_skips_getcourse_vk_technical_email() -> None:
+    lead = Lead(
+        id=uuid.uuid4(),
+        getcourse_user_id=505218377,
+        raw_getcourse_data={},
+    )
+
+    assert build_user_export_filter(lead, {"email": "id756616057@vktech.gc"}) == {}
 
 
 async def test_enrich_lead_from_getcourse_api_saves_vk_id(
