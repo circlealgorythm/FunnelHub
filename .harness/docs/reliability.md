@@ -19,7 +19,22 @@ Use a stable unique key for every external or repeatable action:
 - GetCourse lead identity;
 - broadcast target `(broadcast_id, lead_id)`;
 - autopost publication `(autopost_id, channel)`;
-- future follow-up delivery `(followup_post_id, lead_id, channel)`.
+- follow-up delivery `(followup_post_id, lead_id, channel)`.
+
+## Follow-Up Queue Reliability
+
+- Follow-up delivery state is stored in PostgreSQL through `followup_posts` and
+  `followup_deliveries`; Redis is not the source of truth for recipient queues.
+- Queued follow-up posts are backfilled for leads when the main `aisu_consultation` funnel
+  completes.
+- For queued mode, accumulated posts are delivered starting the day after completion, one post per
+  day per lead/channel, using the post's configured send time.
+- Immediate mode is independent of the personal queued cadence and must not shift queued
+  `available_at` values.
+- The worker sends only due `pending`/`failed` delivery rows and updates per-row status, timestamps,
+  message IDs, and errors.
+- Do not edit or delete a follow-up post after any delivery has started sending. Pending-only edits
+  rebuild pending delivery rows.
 
 ## Worker Concurrency
 
@@ -45,4 +60,3 @@ queue, add a claiming/lease model:
 - Rebuild frontend assets before uploading/deploying when `inbox-app/` changes.
 - Preserve production `.env` during archive deploys.
 - Smoke the changed route/service after deploy.
-

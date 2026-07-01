@@ -1,4 +1,4 @@
-# Autoposting Roadmap
+# Autoposting And Follow-Up Posts
 
 ## Goal
 
@@ -32,6 +32,11 @@ The current production scope implements:
 - VK wall publishing.
 - VK image attachments for public VK posts, using temporary local storage until publish/cancel.
 - Internal follow-up delivery to leads after day 18.
+- Durable per-lead follow-up queues for leads who finish the main funnel after a follow-up post is
+  created.
+- Immediate follow-up mode for urgent posts to completed-funnel leads without changing the
+  recipient's personal queued-post cadence.
+- Editing and deletion of follow-up posts that have not started sending.
 - Automatic routing from a marked public autopost into an internal follow-up post.
 
 The current production scope does not implement:
@@ -117,6 +122,36 @@ If a lead is subscribed to both Telegram and VK:
 - default behavior should be to send to both channels;
 - this can later become configurable, for example "both", "last active", or "preferred channel".
 
+Queue behavior:
+
+- queued follow-up posts are durable database rows, not Redis-only/in-memory jobs;
+- recipients who already completed the main funnel get delivery rows when the post is created;
+- recipients who have not completed the main funnel yet get rows created when their funnel state
+  transitions to completed;
+- for queued mode, the first accumulated post is scheduled for the day after funnel completion;
+- additional accumulated posts are scheduled one per day per lead/channel while the queue has
+  pending items;
+- the UI-selected `scheduled_at` time controls the send time of day;
+- a lead subscribed to both Telegram and VK receives separate delivery rows for both selected
+  channels.
+
+Immediate mode:
+
+- immediate follow-up posts are for urgent/private announcements to leads who already completed
+  the main funnel;
+- immediate posts use the UI-selected scheduled time, including "now" when no future time is set;
+- immediate posts do not reserve or shift the recipient's queued follow-up cadence.
+
+Editing and deletion:
+
+- a follow-up post can be edited or deleted only while none of its delivery rows has started
+  sending;
+- "started" means any delivery with status other than `pending`, or with `attempted_at`/`sent_at`
+  set;
+- editing rebuilds pending delivery rows from the updated title/body/channels/time/mode;
+- after sending starts, API mutations are rejected with conflict status and the UI hides
+  edit/delete actions.
+
 Follow-up delivery history should be tracked per lead and channel:
 
 - followup_post_id;
@@ -161,8 +196,10 @@ The Inbox/admin interface should show two separate workspaces:
    - Create private bot post.
    - Select delivery channels: Telegram, VK, or both.
    - Schedule send.
+   - Select queued or immediate mode.
    - Preview recipient count.
    - View per-lead delivery history.
+   - Edit/delete posts that are still fully pending.
 
 The UI should make it visually clear whether the post is public or private bot delivery.
 
@@ -176,30 +213,21 @@ The worker should process these independently:
    - update per-platform publication history.
 
 2. Funnel follow-up runner:
-   - find due follow-up posts;
-   - materialize eligible recipients if needed;
+   - find due follow-up deliveries;
    - send through Telegram/VK bot adapters;
    - update per-lead delivery history.
+   - never resend already sent delivery rows.
 
-## Suggested Implementation Order
+## Implemented Slices
 
-1. Preserve the existing public autopost MVP and make the public-vs-follow-up boundary explicit
-   in code and UI.
-2. Add `FunnelFollowupPost` and `FunnelFollowupDelivery` models.
-3. Implement recipient selection for completed `aisu_consultation` funnel states.
-4. Implement the follow-up worker using existing Telegram/VK send helpers.
-5. Add admin UI for follow-up posts and delivery history.
-6. Add hashtag/marker routing from public autoposts into follow-up posts after the base
-   follow-up model, worker, and UI exist.
-7. Add tests for completed-funnel recipient selection, no duplicate sends, and no duplicate
-   follow-up creation from a marked public post.
-8. Configure production Telegram/VK publishing values.
+- Public Autoposting MVP: Telegram channel and VK group wall.
+- Follow-up post model, API, worker, and Inbox tab.
+- Hashtag/marker routing from marked public autoposts into follow-up posts.
+- Durable follow-up queue backfill when a lead completes the main funnel.
+- Immediate follow-up mode.
+- Pending follow-up edit/delete.
 
 ## Open Questions
 
-- Should follow-up posts go to both Telegram and VK by default, or only to the latest active
-  messenger?
-- Should a lead start receiving follow-up posts immediately after day 18, or only from the next
-  new follow-up post after completion?
 - Should follow-up posts include buttons/links, and should those buttons support per-lead
   tracking links?

@@ -2,6 +2,41 @@
 
 ## Current Status
 
+- As of 2026-07-02, follow-up posts are implemented, verified, pushed, and deployed through commit
+  `f575cb4` plus the preceding follow-up queue/immediate-mode commits. WIP is empty.
+- Current follow-up behavior:
+  - queued posts are durable PostgreSQL-backed delivery rows;
+  - leads who already completed the main `aisu_consultation` funnel get deliveries when a queued
+    post is created;
+  - leads who complete the main funnel later get accumulated queued posts scheduled from the next
+    day;
+  - queued delivery cadence is one post per day per lead/channel while the personal queue has
+    pending posts;
+  - the post's `scheduled_at` controls the send time of day;
+  - selected Telegram and VK channels create separate deliveries, so a lead subscribed to both can
+    receive both;
+  - immediate mode sends urgent private follow-up posts to already-completed leads and does not
+    shift queued delivery timing;
+  - pending follow-up posts can be edited/deleted only before any delivery row starts sending.
+- Latest deployed follow-up UI supports:
+  - follow-up list/detail/create;
+  - queued vs immediate mode;
+  - recipient preview;
+  - cancel;
+  - edit/delete for fully pending posts.
+- Latest verification:
+  - `npm run build` passed in `inbox-app/`;
+  - `.venv\Scripts\python.exe -m ruff check .` passed;
+  - `.venv\Scripts\python.exe -m pytest -q` passed: `157 passed, 5 skipped`;
+  - production deploy through `deploy_files.py` completed;
+  - production `/health` returned OK;
+  - production `app`, `funnel-worker`, `telegram-bot`, `postgres`, and `redis` were `Up`;
+  - Telegram polling is running for `@vedicschool_aisu_bot`;
+  - VK does not have a separate compose service: incoming VK is handled by callbacks in `app`, and
+    outgoing VK funnel/follow-up/broadcast sends are handled by `funnel-worker` with configured VK
+    token/group id.
+- Public Autoposting remains in the project. The user considered removing it, then decided to
+  leave it in place. Do not remove Autoposting unless explicitly requested again.
 - VK personal wall autoposting has been removed from the active product/code path after the user
   decided not to operate proxy-bound VK user tokens. Current public Autoposting supports only
   Telegram channel and VK group wall.
@@ -113,7 +148,8 @@
   long VK button labels, and invalid/no email recipients. No follow-up/marker-routing traceback was
   observed in smoke.
 - `current_feature` is now `null`; WIP is empty.
-- Remaining Autoposting feature-list item is `autoposting-public-platforms`.
+- Autoposting feature-list items are completed. Public Autoposting remains available, but no
+  Autoposting removal or expansion is currently active.
 
 ## Latest Verification
 
@@ -165,8 +201,9 @@
   - require active subscribed Telegram/VK `messenger_identities`;
   - if a lead has both subscribed channels and both are selected, create two delivery rows;
   - if identity unsubscribes before sending, worker marks that delivery `skipped_unsubscribed`.
-- Marker routing is already complete. Next Autoposting work should start from
-  `autoposting-public-platforms` or from a new feature if follow-up delivery rules need to change.
+- Marker routing, queued follow-up delivery, immediate follow-up mode, and pending edit/delete are
+  already complete. Future work should start from a new feature if follow-up delivery rules need to
+  change again.
 
 ## Verification
 
@@ -185,9 +222,10 @@
 
 - Follow-up marker routing is deployed. The marker is `#aisukam` by default and is configurable
   through `AUTOPOST_FOLLOWUP_MARKER`.
-- Current follow-up recipient materialization happens at creation time. Leads who complete the
-  18-day funnel after a follow-up post is created will not be backfilled into that existing post;
-  that behavior can be changed later if product requirements need rolling delivery.
+- Current follow-up recipient materialization is split by lifecycle: leads already completed at
+  post creation get rows immediately, and leads who complete the main funnel later get accumulated
+  queued posts backfilled from the next day. This rolling delivery behavior is implemented and
+  deployed.
 
 - User confirmed that both Autoposting MVP and email-provider are already deployed.
 - `.harness/feature-list.json` was synchronized:

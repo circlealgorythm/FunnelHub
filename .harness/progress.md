@@ -2,6 +2,27 @@
 
 ## Current State
 
+- 2026-07-02 completed and deployed durable follow-up delivery queues. Queued follow-up posts now
+  cover both leads who already completed the main `aisu_consultation` funnel and leads who finish
+  it later. For queued mode, a lead receives the first accumulated post on the day after funnel
+  completion and then one queued post per day per selected channel while pending posts remain. The
+  UI-selected follow-up `scheduled_at` controls the send time of day. Leads subscribed to both
+  Telegram and VK receive separate deliveries for both selected channels.
+- 2026-07-02 completed and deployed immediate follow-up mode. Immediate follow-up posts are urgent
+  private bot posts for leads who already completed the main funnel. They use the selected
+  scheduled time, can be sent "now", and do not change the recipient's queued follow-up cadence.
+- 2026-07-02 completed and deployed pending follow-up edit/delete. A follow-up post can be edited
+  or deleted only while all delivery rows are still untouched `pending` rows. Editing updates
+  title/body/channels/time/mode, deletes old pending deliveries, rebuilds the delivery set, and
+  preserves the rule that already-started delivery rows cannot be mutated.
+- 2026-07-02 verification for the latest follow-up work passed: `npm run build` in `inbox-app/`,
+  `.venv\Scripts\python.exe -m ruff check .`, and `.venv\Scripts\python.exe -m pytest -q`
+  (`157 passed, 5 skipped`). Production deploy through `deploy_files.py` rebuilt/recreated
+  `app`, `funnel-worker`, and `telegram-bot`; `/health` returned
+  `{"status":"ok","service":"FunnelHub"}`; `app`, `funnel-worker`, `telegram-bot`, `postgres`,
+  and `redis` were `Up`; Telegram polling was running for `@vedicschool_aisu_bot`; VK outgoing
+  delivery remains handled by `funnel-worker` through configured VK token/group id, while incoming
+  VK uses callbacks in `app`.
 - 2026-06-16 implemented local durable post-submit tasks for GetCourse lead ingestion. Public
   `/join/getcourse` and `/webhooks/getcourse` now keep the request path to lead save, bot-link
   token creation, email funnel state start, task enqueue, and commit. GetCourse profile
@@ -238,6 +259,13 @@
 - Telegram Autoposting requires `AUTOPOST_TELEGRAM_CHAT_ID`; VK Autoposting uses
   `AUTOPOST_VK_OWNER_ID` when set, otherwise falls back to negative `VK_GROUP_ID` for community
   wall posting through `wall.post`.
+- Follow-up queues are durable PostgreSQL state, not in-memory or Redis-only state. The worker can
+  restart without losing each lead's personal follow-up position because `followup_deliveries`
+  stores status and `available_at`.
+- Queued follow-up delivery starts the day after main funnel completion and sends at most one
+  queued post per day per lead/channel. Immediate follow-up posts are separate from that cadence.
+- Pending follow-up posts are mutable only before any delivery starts; after a delivery is
+  attempted/sent/skipped/failed, edit/delete is blocked.
 - Odnoklassniki, Zen, and YouTube are excluded from the current Autoposting scope.
 - Autoposting content pulling from YouTube/Telegram/VK is represented in MVP by
   `source_type`/`source_url` and duplicate protection. Active external polling/crawling remains

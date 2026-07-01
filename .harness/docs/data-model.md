@@ -18,6 +18,10 @@ Initial PostgreSQL schema is managed by Alembic migration:
 - `funnel_states`: current scheduled funnel state per lead and funnel.
 - `conversations`: inbox conversation state per lead/channel.
 - `messages`: inbound/outbound bot and email message history.
+- `autoposts`: public social post queue for Telegram channel/VK group wall publishing.
+- `autopost_publications`: per-public-channel publication history for an autopost.
+- `followup_posts`: private bot follow-up posts for leads who completed the main messenger funnel.
+- `followup_deliveries`: per-lead/per-channel follow-up delivery queue and send history.
 - `import_batches`: uploaded GetCourse import files and processing stats.
 - `import_rows`: raw row-level import data and row-level errors.
 - `events`: deduplicated business/technical event log.
@@ -31,6 +35,12 @@ Initial PostgreSQL schema is managed by Alembic migration:
 - Consent checkboxes are normalized into `lead_consents` only after a custom-field mapping is known.
 - Raw GetCourse/import data is kept as JSONB for traceability and future remapping.
 - Message/inbox tables are channel-generic so Telegram, VK, Max, and email can share the same core model.
+- Follow-up posts and public autoposts are separate runtime entities. A marked public autopost may
+  create a private follow-up copy, but publication rows and follow-up delivery rows remain
+  independent.
+- Follow-up delivery idempotency is enforced by `followup_post_id + lead_id + channel`.
+- Queued follow-up delivery timing is persisted in `followup_deliveries.available_at`; this
+  survives worker/app restarts.
 
 ## Notes For Import Implementation
 
