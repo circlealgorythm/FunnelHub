@@ -21,6 +21,7 @@ from funnelhub.db.models import (
 from funnelhub.services.funnel_engine import FUNNEL_LOCAL_TIMEZONE
 
 SUPPORTED_FOLLOWUP_CHANNELS = ("telegram", "vk")
+SUPPORTED_FOLLOWUP_DELIVERY_MODES = ("queued", "immediate")
 FOLLOWUP_FUNNEL_KEY = "aisu_consultation"
 FOLLOWUP_FIRST_DELIVERY_DELAY_DAYS = 1
 
@@ -58,6 +59,7 @@ async def create_followup_post(
     body: str,
     channels: Sequence[str],
     scheduled_at: datetime | None = None,
+    delivery_mode: str = "queued",
     source_type: str = "manual",
     source_autopost_id: uuid.UUID | None = None,
     dedupe_key: str | None = None,
@@ -66,6 +68,7 @@ async def create_followup_post(
     clean_title = title.strip()
     clean_body = body.strip()
     clean_channels = normalize_followup_channels(channels)
+    clean_delivery_mode = normalize_followup_delivery_mode(delivery_mode)
     clean_source_type = source_type.strip() or "manual"
 
     if not clean_title:
@@ -81,6 +84,7 @@ async def create_followup_post(
         body=clean_body,
         channels=clean_channels,
         scheduled_at=send_at,
+        delivery_mode=clean_delivery_mode,
         source_type=clean_source_type,
         source_autopost_id=source_autopost_id,
     )
@@ -96,6 +100,7 @@ async def create_followup_post(
         body=clean_body,
         channels=list(clean_channels),
         status=status,
+        delivery_mode=clean_delivery_mode,
         source_type=clean_source_type,
         source_autopost_id=source_autopost_id,
         dedupe_key=key,
@@ -105,9 +110,20 @@ async def create_followup_post(
     session.add(post)
     await session.flush()
 
-    deliveries = await build_followup_deliveries(session, post=post, channels=clean_channels)
+    if clean_delivery_mode == "immediate":
+        deliveries = await build_immediate_followup_deliveries(
+            session,
+            post=post,
+            channels=clean_channels,
+            available_at=send_at,
+        )
+    else:
+        deliveries = await build_followup_deliveries(session, post=post, channels=clean_channels)
     session.add_all(deliveries)
     post.total_deliveries = len(deliveries)
+    if clean_delivery_mode == "immediate" and not deliveries:
+        post.status = "completed"
+        post.completed_at = datetime.now(UTC)
     await session.flush()
     await session.refresh(post)
     return post
@@ -119,6 +135,9 @@ async def build_followup_deliveries(
     post: FunnelFollowupPost,
     channels: Sequence[str],
 ) -> list[FunnelFollowupDelivery]:
+    if post.delivery_mode != "queued":
+        return []
+
     completed_at_by_lead = await load_completed_followup_leads(session)
     if not completed_at_by_lead:
         return []
@@ -134,6 +153,49 @@ async def build_followup_deliveries(
         identities=identities,
         completed_at_by_lead=completed_at_by_lead,
     )
+
+
+async def build_immediate_followup_deliveries(
+    session: AsyncSession,
+    *,
+    post: FunnelFollowupPost,
+    channels: Sequence[str],
+    available_at: datetime,
+) -> list[FunnelFollowupDelivery]:
+    completed_at_by_lead = await load_completed_followup_leads(session)
+    if not completed_at_by_lead:
+        return []
+
+    identities = await load_subscribed_followup_identities(
+        session,
+        lead_ids=list(completed_at_by_lead),
+        channels=channels,
+    )
+    existing_keys = await load_existing_delivery_keys(
+        session,
+        post_ids=[post.id],
+        lead_ids=list({identity.lead_id for identity in identities}),
+        channels=list({identity.channel for identity in identities}),
+    )
+
+    deliveries: list[FunnelFollowupDelivery] = []
+    for identity in identities:
+        delivery_key = (post.id, identity.lead_id, identity.channel)
+        if delivery_key in existing_keys:
+            continue
+        deliveries.append(
+            FunnelFollowupDelivery(
+                id=uuid.uuid4(),
+                followup_post_id=post.id,
+                lead_id=identity.lead_id,
+                channel=identity.channel,
+                messenger_identity_id=identity.id,
+                status="pending",
+                available_at=available_at,
+                payload={},
+            )
+        )
+    return deliveries
 
 
 async def enqueue_followup_deliveries_for_completed_lead(
@@ -152,7 +214,10 @@ async def enqueue_followup_deliveries_for_completed_lead(
         (
             await session.scalars(
                 select(FunnelFollowupPost)
-                .where(FunnelFollowupPost.status != "cancelled")
+                .where(
+                    FunnelFollowupPost.status != "cancelled",
+                    FunnelFollowupPost.delivery_mode == "queued",
+                )
                 .order_by(
                     FunnelFollowupPost.scheduled_at.asc(),
                     FunnelFollowupPost.created_at.asc(),
@@ -340,10 +405,15 @@ async def load_last_delivery_available_at(
                 FunnelFollowupDelivery.channel,
                 func.max(FunnelFollowupDelivery.available_at),
             )
+            .join(
+                FunnelFollowupPost,
+                FunnelFollowupPost.id == FunnelFollowupDelivery.followup_post_id,
+            )
             .where(
                 FunnelFollowupDelivery.lead_id.in_(lead_ids),
                 FunnelFollowupDelivery.channel.in_(channels),
                 FunnelFollowupDelivery.status != "cancelled",
+                FunnelFollowupPost.delivery_mode == "queued",
             )
             .group_by(FunnelFollowupDelivery.lead_id, FunnelFollowupDelivery.channel)
         )
@@ -541,6 +611,13 @@ def normalize_followup_channels(channels: Sequence[str]) -> tuple[str, ...]:
     return tuple(result)
 
 
+def normalize_followup_delivery_mode(value: str) -> str:
+    clean_value = value.strip() or "queued"
+    if clean_value not in SUPPORTED_FOLLOWUP_DELIVERY_MODES:
+        raise ValueError(f"Unsupported follow-up delivery mode: {clean_value}.")
+    return clean_value
+
+
 def normalize_schedule(value: datetime | None) -> datetime:
     if value is None:
         return datetime.now(UTC)
@@ -554,15 +631,16 @@ def build_followup_dedupe_key(
     body: str,
     channels: Sequence[str],
     scheduled_at: datetime,
+    delivery_mode: str,
     source_type: str,
     source_autopost_id: uuid.UUID | None,
 ) -> str:
     channel_part = ",".join(sorted(channels))
     if source_autopost_id is not None:
-        basis = f"source:{source_type}:{source_autopost_id}:{channel_part}"
+        basis = f"source:{source_type}:{source_autopost_id}:{channel_part}:{delivery_mode}"
     else:
         scheduled_minute = scheduled_at.replace(second=0, microsecond=0).isoformat()
-        basis = f"manual:{body}:{channel_part}:{scheduled_minute}"
+        basis = f"manual:{body}:{channel_part}:{scheduled_minute}:{delivery_mode}"
     digest = hashlib.sha256(basis.encode("utf-8")).hexdigest()
     return f"followup:{digest}"
 

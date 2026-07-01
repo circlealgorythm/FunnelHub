@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -33,6 +33,7 @@ class FollowupPostCreateRequest(BaseModel):
     body: str = Field(min_length=1)
     channels: list[str] = Field(min_length=1)
     scheduled_at: datetime | None = None
+    delivery_mode: Literal["queued", "immediate"] = "queued"
     metadata: dict[str, Any] | None = None
 
 
@@ -55,6 +56,7 @@ class FollowupPostResponse(BaseModel):
     body: str
     channels: list[str]
     status: str
+    delivery_mode: str
     source_type: str
     source_autopost_id: uuid.UUID | None
     scheduled_at: datetime
@@ -92,6 +94,7 @@ async def create_new_followup_post(
             body=request.body,
             channels=request.channels,
             scheduled_at=request.scheduled_at,
+            delivery_mode=request.delivery_mode,
             metadata=request.metadata,
         )
     except ValueError as exc:
@@ -181,6 +184,7 @@ def serialize_followup_summary(post: Any) -> FollowupPostResponse:
         body=post.body,
         channels=post.channels,
         status=post.status,
+        delivery_mode=post.delivery_mode,
         source_type=post.source_type,
         source_autopost_id=post.source_autopost_id,
         scheduled_at=post.scheduled_at,

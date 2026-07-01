@@ -227,6 +227,7 @@ async def test_followup_api_previews_creates_dedupes_and_cancels(
     duplicated = second_response.json()
     assert duplicated["id"] == created["id"]
     assert created["channels"] == ["telegram", "vk"]
+    assert created["delivery_mode"] == "queued"
     assert created["status"] == "scheduled"
     assert created["total_deliveries"] == 3
     assert {item["status"] for item in created["deliveries"]} == {"pending"}
@@ -380,6 +381,70 @@ async def test_followup_queue_accumulates_until_funnel_completion() -> None:
     assert [delivery.available_at for delivery in deliveries] == [
         datetime(2026, 7, 3, 6, 30, tzinfo=UTC),
         datetime(2026, 7, 4, 7, 45, tzinfo=UTC),
+    ]
+
+
+async def test_immediate_followup_does_not_shift_personal_queue() -> None:
+    lead_id = await create_completed_followup_lead(completed=False, vk=False)
+    completed_at = datetime(2026, 7, 2, 12, 0, tzinfo=UTC)
+    immediate_at = datetime(2026, 7, 3, 6, 0, tzinfo=UTC)
+    queued_at = datetime(2026, 7, 3, 7, 0, tzinfo=UTC)
+
+    async with async_session_maker() as session:
+        state = await session.scalar(
+            select(FunnelState).where(FunnelState.lead_id == lead_id)
+        )
+        assert state is not None
+        state.status = "completed"
+        state.completed_at = completed_at
+        state.current_step_key = None
+        state.next_run_at = None
+
+        immediate_post = await create_followup_post(
+            session,
+            title=f"{TEST_TITLE_PREFIX} immediate promo",
+            body="Срочная акция",
+            channels=["telegram"],
+            scheduled_at=immediate_at,
+            delivery_mode="immediate",
+        )
+        queued_post = await create_followup_post(
+            session,
+            title=f"{TEST_TITLE_PREFIX} queued after promo",
+            body="Очередной пост",
+            channels=["telegram"],
+            scheduled_at=queued_at,
+        )
+        await session.commit()
+        immediate_post_id = immediate_post.id
+        queued_post_id = queued_post.id
+
+    async with async_session_maker() as session:
+        deliveries = list(
+            (
+                await session.scalars(
+                    select(FunnelFollowupDelivery)
+                    .where(FunnelFollowupDelivery.lead_id == lead_id)
+                    .order_by(FunnelFollowupDelivery.available_at.asc())
+                )
+            ).all()
+        )
+        posts = {
+            post.id: post
+            for post in (
+                await session.scalars(
+                    select(FunnelFollowupPost).where(
+                        FunnelFollowupPost.id.in_([immediate_post_id, queued_post_id])
+                    )
+                )
+            ).all()
+        }
+
+    assert posts[immediate_post_id].delivery_mode == "immediate"
+    assert posts[queued_post_id].delivery_mode == "queued"
+    assert [(delivery.followup_post_id, delivery.available_at) for delivery in deliveries] == [
+        (immediate_post_id, immediate_at),
+        (queued_post_id, queued_at),
     ]
 
 

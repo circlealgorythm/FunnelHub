@@ -150,6 +150,7 @@ type FollowupPost = {
   body: string;
   channels: string[];
   status: string;
+  delivery_mode: FollowupDeliveryMode;
   source_type: string;
   source_autopost_id: string | null;
   scheduled_at: string;
@@ -169,6 +170,7 @@ type FollowupDelivery = {
   lead_name: string | null;
   channel: string;
   status: string;
+  available_at: string;
   external_message_id: string | null;
   attempted_at: string | null;
   sent_at: string | null;
@@ -279,6 +281,13 @@ const channelLabels: Record<string, string> = {
   telegram: "Telegram",
   vk: "VK",
   email: "Email",
+};
+
+type FollowupDeliveryMode = "queued" | "immediate";
+
+const followupDeliveryModeLabels: Record<FollowupDeliveryMode, string> = {
+  queued: "В очередь",
+  immediate: "Срочно",
 };
 
 const publicAutopostChannelLabels: Record<string, string> = {
@@ -3063,6 +3072,7 @@ function AutopostDetailModal({
                   <tr>
                     <th>Канал</th>
                     <th>Статус</th>
+                    <th>Запланировано</th>
                     <th>Внешний ID</th>
                     <th>Попытка</th>
                     <th>Ошибка</th>
@@ -3192,6 +3202,7 @@ function FollowupPostsWorkspace({
             <thead>
               <tr>
                 <th>Пост</th>
+                <th>Режим</th>
                 <th>Расписание</th>
                 <th>Каналы</th>
                 <th>Доставки</th>
@@ -3201,11 +3212,11 @@ function FollowupPostsWorkspace({
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={5} style={{ textAlign: "center", padding: "2rem" }}>Загрузка...</td>
+                  <td colSpan={6} style={{ textAlign: "center", padding: "2rem" }}>Загрузка...</td>
                 </tr>
               ) : posts.length === 0 ? (
                 <tr>
-                  <td colSpan={5} style={{ textAlign: "center", padding: "2rem" }}>
+                  <td colSpan={6} style={{ textAlign: "center", padding: "2rem" }}>
                     Нет follow-up постов
                   </td>
                 </tr>
@@ -3222,6 +3233,7 @@ function FollowupPostsWorkspace({
                         {trimPreview(post.body, 96)}
                       </p>
                     </td>
+                    <td>{followupDeliveryModeLabels[post.delivery_mode] || post.delivery_mode}</td>
                     <td>{formatDetailValue(post.scheduled_at)}</td>
                     <td>{post.channels.map((c) => channelLabels[c] || c).join(", ")}</td>
                     <td>
@@ -3268,6 +3280,7 @@ function FollowupCreateModal({
 }) {
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
+  const [deliveryMode, setDeliveryMode] = useState<FollowupDeliveryMode>("queued");
   const [channels, setChannels] = useState<string[]>(["telegram", "vk"]);
   const [scheduledAt, setScheduledAt] = useState("");
   const [preview, setPreview] = useState<FollowupRecipientPreview | null>(null);
@@ -3326,6 +3339,7 @@ function FollowupCreateModal({
           body: body.trim(),
           channels,
           scheduled_at: scheduledAt ? new Date(scheduledAt).toISOString() : null,
+          delivery_mode: deliveryMode,
         }),
       });
 
@@ -3375,6 +3389,27 @@ function FollowupCreateModal({
           </div>
 
           <div className="form-group">
+            <label>Режим доставки</label>
+            <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginTop: "4px" }}>
+              {(["queued", "immediate"] as FollowupDeliveryMode[]).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  className={deliveryMode === mode ? "filter-chip is-active" : "filter-chip"}
+                  onClick={() => setDeliveryMode(mode)}
+                >
+                  {followupDeliveryModeLabels[mode]}
+                </button>
+              ))}
+            </div>
+            <p className="field-hint">
+              {deliveryMode === "queued"
+                ? "Пост попадет в персональную очередь после основной воронки."
+                : "Пост уйдет завершившим основной сценарий вне персональной очереди."}
+            </p>
+          </div>
+
+          <div className="form-group">
             <label>Каналы доставки</label>
             <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginTop: "4px" }}>
               {["telegram", "vk"].map((ch) => (
@@ -3412,7 +3447,11 @@ function FollowupCreateModal({
             <button className="soft-button" type="button" onClick={onClose} disabled={loading}>Отмена</button>
             <button className="send-button" type="submit" disabled={loading}>
               <Send size={16} />
-              {loading ? "Сохраняем..." : "Поставить в очередь"}
+              {loading
+                ? "Сохраняем..."
+                : deliveryMode === "queued"
+                  ? "Поставить в очередь"
+                  : "Создать срочную рассылку"}
             </button>
           </footer>
         </form>
@@ -3497,6 +3536,10 @@ function FollowupDetailModal({
             <>
               <div className="key-value-list">
                 <KeyValueLine label="Статус" value={autopostStatusLabels[post.status] || post.status} />
+                <KeyValueLine
+                  label="Режим"
+                  value={followupDeliveryModeLabels[post.delivery_mode] || post.delivery_mode}
+                />
                 <KeyValueLine label="Расписание" value={post.scheduled_at} />
                 <KeyValueLine label="Каналы" value={post.channels.map((c) => channelLabels[c] || c).join(", ")} />
                 <KeyValueLine label="Всего доставок" value={post.total_deliveries} />
@@ -3518,6 +3561,7 @@ function FollowupDetailModal({
                     <th>Лид</th>
                     <th>Канал</th>
                     <th>Статус</th>
+                    <th>Запланировано</th>
                     <th>Внешний ID</th>
                     <th>Попытка</th>
                     <th>Ошибка</th>
@@ -3529,6 +3573,7 @@ function FollowupDetailModal({
                       <td>{delivery.lead_name || "Без имени"}</td>
                       <td>{channelLabels[delivery.channel] || delivery.channel}</td>
                       <td><GenericStatusPill status={delivery.status} /></td>
+                      <td>{formatDetailValue(delivery.available_at)}</td>
                       <td><code className="mono-badge">{delivery.external_message_id || "—"}</code></td>
                       <td>{delivery.attempted_at ? formatDetailValue(delivery.attempted_at) : "—"}</td>
                       <td style={{ color: "var(--danger)" }}>{delivery.error || ""}</td>
@@ -3536,7 +3581,7 @@ function FollowupDetailModal({
                   ))}
                   {post.deliveries.length === 0 ? (
                     <tr>
-                      <td colSpan={6} style={{ textAlign: "center" }}>Получателей нет</td>
+                      <td colSpan={7} style={{ textAlign: "center" }}>Получателей нет</td>
                     </tr>
                   ) : null}
                 </tbody>

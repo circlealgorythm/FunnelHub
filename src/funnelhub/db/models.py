@@ -351,6 +351,7 @@ class FunnelFollowupPost(Base, TimestampMixin):
     body: Mapped[str] = mapped_column(Text, nullable=False)
     channels: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
     status: Mapped[str] = mapped_column(String(64), default="queued", nullable=False)
+    delivery_mode: Mapped[str] = mapped_column(String(32), default="queued", nullable=False)
     source_type: Mapped[str] = mapped_column(String(64), default="manual", nullable=False)
     source_autopost_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("autoposts.id", ondelete="SET NULL")
