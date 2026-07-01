@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import distinct, func, select
+from sqlalchemy import delete, distinct, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from funnelhub.db.models import (
@@ -594,6 +594,99 @@ async def cancel_followup_post(session: AsyncSession, post_id: uuid.UUID) -> Fun
             delivery.status = "cancelled"
     await session.flush()
     return post
+
+
+async def update_followup_post(
+    session: AsyncSession,
+    post_id: uuid.UUID,
+    *,
+    title: str,
+    body: str,
+    channels: Sequence[str],
+    scheduled_at: datetime | None = None,
+    delivery_mode: str = "queued",
+) -> FunnelFollowupPost:
+    post = await session.get(FunnelFollowupPost, post_id)
+    if post is None:
+        raise ValueError("Follow-up post not found.")
+    await ensure_followup_post_is_mutable(session, post_id)
+
+    clean_title = title.strip()
+    clean_body = body.strip()
+    clean_channels = normalize_followup_channels(channels)
+    clean_delivery_mode = normalize_followup_delivery_mode(delivery_mode)
+    if not clean_title:
+        raise ValueError("Title is required.")
+    if not clean_body:
+        raise ValueError("Post body is required.")
+
+    send_at = normalize_schedule(scheduled_at)
+    await session.execute(
+        delete(FunnelFollowupDelivery).where(
+            FunnelFollowupDelivery.followup_post_id == post_id
+        )
+    )
+    await session.flush()
+
+    post.title = clean_title
+    post.body = clean_body
+    post.channels = list(clean_channels)
+    post.delivery_mode = clean_delivery_mode
+    post.scheduled_at = send_at
+    post.status = "queued" if send_at <= datetime.now(UTC) else "scheduled"
+    post.completed_at = None
+    post.total_deliveries = 0
+    post.sent_deliveries = 0
+    post.failed_deliveries = 0
+    post.skipped_deliveries = 0
+
+    if clean_delivery_mode == "immediate":
+        deliveries = await build_immediate_followup_deliveries(
+            session,
+            post=post,
+            channels=clean_channels,
+            available_at=send_at,
+        )
+    else:
+        deliveries = await build_followup_deliveries(session, post=post, channels=clean_channels)
+    session.add_all(deliveries)
+    post.total_deliveries = len(deliveries)
+    if clean_delivery_mode == "immediate" and not deliveries:
+        post.status = "completed"
+        post.completed_at = datetime.now(UTC)
+
+    await session.flush()
+    await session.refresh(post)
+    return post
+
+
+async def delete_followup_post(session: AsyncSession, post_id: uuid.UUID) -> None:
+    post = await session.get(FunnelFollowupPost, post_id)
+    if post is None:
+        raise ValueError("Follow-up post not found.")
+    await ensure_followup_post_is_mutable(session, post_id)
+    await session.delete(post)
+    await session.flush()
+
+
+async def ensure_followup_post_is_mutable(
+    session: AsyncSession,
+    post_id: uuid.UUID,
+) -> None:
+    started_delivery = await session.scalar(
+        select(FunnelFollowupDelivery.id)
+        .where(
+            FunnelFollowupDelivery.followup_post_id == post_id,
+            (
+                (FunnelFollowupDelivery.status != "pending")
+                | FunnelFollowupDelivery.attempted_at.is_not(None)
+                | FunnelFollowupDelivery.sent_at.is_not(None)
+            ),
+        )
+        .limit(1)
+    )
+    if started_delivery is not None:
+        raise ValueError("Follow-up post already started sending.")
 
 
 def normalize_followup_channels(channels: Sequence[str]) -> tuple[str, ...]:

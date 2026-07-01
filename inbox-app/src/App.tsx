@@ -1868,6 +1868,12 @@ function formatDetailValue(value: unknown) {
   return String(value);
 }
 
+function toDatetimeLocalValue(value: string) {
+  const date = new Date(value);
+  const offsetMs = date.getTimezoneOffset() * 60_000;
+  return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16);
+}
+
 function fieldValue(field: Record<string, unknown>) {
   if (field.normalized_bool === true) {
     return "Да";
@@ -3072,7 +3078,6 @@ function AutopostDetailModal({
                   <tr>
                     <th>Канал</th>
                     <th>Статус</th>
-                    <th>Запланировано</th>
                     <th>Внешний ID</th>
                     <th>Попытка</th>
                     <th>Ошибка</th>
@@ -3272,17 +3277,24 @@ function FollowupPostsWorkspace({
 }
 
 function FollowupCreateModal({
+  post,
   onClose,
   onSuccess,
 }: {
+  post?: FollowupPost;
   onClose: () => void;
   onSuccess: () => void;
 }) {
-  const [title, setTitle] = useState("");
-  const [body, setBody] = useState("");
-  const [deliveryMode, setDeliveryMode] = useState<FollowupDeliveryMode>("queued");
-  const [channels, setChannels] = useState<string[]>(["telegram", "vk"]);
-  const [scheduledAt, setScheduledAt] = useState("");
+  const isEditing = Boolean(post);
+  const [title, setTitle] = useState(post?.title ?? "");
+  const [body, setBody] = useState(post?.body ?? "");
+  const [deliveryMode, setDeliveryMode] = useState<FollowupDeliveryMode>(
+    post?.delivery_mode ?? "queued"
+  );
+  const [channels, setChannels] = useState<string[]>(post?.channels ?? ["telegram", "vk"]);
+  const [scheduledAt, setScheduledAt] = useState(
+    post?.scheduled_at ? toDatetimeLocalValue(post.scheduled_at) : ""
+  );
   const [preview, setPreview] = useState<FollowupRecipientPreview | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -3330,8 +3342,10 @@ function FollowupCreateModal({
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${API_BASE_URL}/api/inbox/followup-posts`, {
-        method: "POST",
+      const res = await fetch(
+        `${API_BASE_URL}/api/inbox/followup-posts${post ? `/${post.id}` : ""}`,
+        {
+        method: post ? "PUT" : "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -3358,7 +3372,7 @@ function FollowupCreateModal({
     <div className="modal-overlay">
       <div className="modal-dialog">
         <header className="modal-header">
-          <h2>Новый follow-up пост</h2>
+          <h2>{isEditing ? "Редактировать follow-up" : "Новый follow-up пост"}</h2>
           <button className="icon-button soft-button" onClick={onClose} type="button">
             <LogOut aria-hidden="true" size={18} />
           </button>
@@ -3449,7 +3463,9 @@ function FollowupCreateModal({
               <Send size={16} />
               {loading
                 ? "Сохраняем..."
-                : deliveryMode === "queued"
+                : isEditing
+                  ? "Сохранить"
+                  : deliveryMode === "queued"
                   ? "Поставить в очередь"
                   : "Создать срочную рассылку"}
             </button>
@@ -3472,6 +3488,7 @@ function FollowupDetailModal({
   const [post, setPost] = useState<FollowupPost | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
+  const [showEdit, setShowEdit] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const loadPost = useCallback(async () => {
@@ -3517,7 +3534,37 @@ function FollowupDetailModal({
     }
   };
 
+  const deletePost = async () => {
+    if (!window.confirm("Удалить follow-up пост?")) {
+      return;
+    }
+    setActionLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/inbox/followup-posts/${postId}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const payload = await res.json().catch(() => null);
+        throw new Error(payload?.detail || `Ошибка ${res.status}`);
+      }
+      onChanged();
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   const canCancel = post && ["queued", "scheduled", "failed", "partial_failed"].includes(post.status);
+  const canEditOrDelete = post
+    ? post.deliveries.every(
+        (delivery) =>
+          delivery.status === "pending" && !delivery.attempted_at && !delivery.sent_at
+      )
+    : false;
 
   return (
     <div className="modal-overlay">
@@ -3589,6 +3636,26 @@ function FollowupDetailModal({
 
               <footer className="modal-footer">
                 <button className="soft-button" type="button" onClick={onClose}>Закрыть</button>
+                {canEditOrDelete ? (
+                  <>
+                    <button
+                      className="soft-button"
+                      type="button"
+                      onClick={() => setShowEdit(true)}
+                      disabled={actionLoading}
+                    >
+                      Редактировать
+                    </button>
+                    <button
+                      className="soft-button"
+                      type="button"
+                      onClick={() => void deletePost()}
+                      disabled={actionLoading}
+                    >
+                      Удалить
+                    </button>
+                  </>
+                ) : null}
                 {canCancel ? (
                   <button
                     className="soft-button"
@@ -3604,6 +3671,17 @@ function FollowupDetailModal({
           ) : null}
         </div>
       </div>
+      {showEdit && post ? (
+        <FollowupCreateModal
+          post={post}
+          onClose={() => setShowEdit(false)}
+          onSuccess={() => {
+            setShowEdit(false);
+            void loadPost();
+            onChanged();
+          }}
+        />
+      ) : null}
     </div>
   );
 }

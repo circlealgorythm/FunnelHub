@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,9 +14,11 @@ from funnelhub.services.followup_posts import (
     FollowupDetail,
     cancel_followup_post,
     create_followup_post,
+    delete_followup_post,
     get_followup_detail,
     list_followup_posts,
     preview_followup_recipients,
+    update_followup_post,
 )
 
 router = APIRouter(
@@ -156,6 +158,40 @@ async def get_followup_post(
     return serialize_followup_detail(detail)
 
 
+@router.put("/{post_id}", response_model=FollowupPostResponse)
+async def update_existing_followup_post(
+    post_id: uuid.UUID,
+    request: FollowupPostCreateRequest,
+    session: SessionDep,
+) -> FollowupPostResponse:
+    try:
+        post = await update_followup_post(
+            session=session,
+            post_id=post_id,
+            title=request.title,
+            body=request.body,
+            channels=request.channels,
+            scheduled_at=request.scheduled_at,
+            delivery_mode=request.delivery_mode,
+        )
+    except ValueError as exc:
+        error_detail = str(exc)
+        status_code = 404 if error_detail == "Follow-up post not found." else 409
+        if error_detail in {
+            "Title is required.",
+            "Post body is required.",
+            "At least one follow-up channel is required.",
+        } or error_detail.startswith("Unsupported follow-up"):
+            status_code = 422
+        raise HTTPException(status_code=status_code, detail=error_detail) from exc
+
+    await session.commit()
+    detail = await get_followup_detail(session, post.id)
+    if detail is None:
+        raise HTTPException(status_code=404, detail="Follow-up post not found")
+    return serialize_followup_detail(detail)
+
+
 @router.patch("/{post_id}/cancel", response_model=FollowupPostResponse)
 async def cancel_existing_followup_post(
     post_id: uuid.UUID,
@@ -175,6 +211,24 @@ async def cancel_existing_followup_post(
     if detail is None:
         raise HTTPException(status_code=404, detail="Follow-up post not found")
     return serialize_followup_detail(detail)
+
+
+@router.delete("/{post_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_existing_followup_post(
+    post_id: uuid.UUID,
+    session: SessionDep,
+) -> Response:
+    try:
+        await delete_followup_post(session, post_id)
+    except ValueError as exc:
+        error_detail = str(exc)
+        raise HTTPException(
+            status_code=404 if error_detail == "Follow-up post not found." else 409,
+            detail=error_detail,
+        ) from exc
+
+    await session.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 def serialize_followup_summary(post: Any) -> FollowupPostResponse:

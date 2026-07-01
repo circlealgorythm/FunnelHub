@@ -310,6 +310,117 @@ async def test_followup_runner_sends_each_delivery_once() -> None:
     assert {delivery.external_message_id for delivery in deliveries} == {"601", "902"}
 
 
+async def test_followup_api_updates_and_deletes_pending_post(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    configure_auth(monkeypatch)
+    await create_completed_followup_lead()
+    schedule = datetime.now(UTC) + timedelta(days=3)
+
+    try:
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://127.0.0.1:8000",
+        ) as client:
+            await client.post(
+                "/api/auth/login",
+                json={"username": "aisu", "password": "secret"},
+            )
+            create_response = await client.post(
+                "/api/inbox/followup-posts",
+                json={
+                    "title": f"{TEST_TITLE_PREFIX} editable",
+                    "body": "Исходный текст",
+                    "channels": ["telegram"],
+                    "scheduled_at": schedule.isoformat(),
+                },
+            )
+            created = create_response.json()
+            update_response = await client.put(
+                f"/api/inbox/followup-posts/{created['id']}",
+                json={
+                    "title": f"{TEST_TITLE_PREFIX} edited",
+                    "body": "Обновленный текст",
+                    "channels": ["vk"],
+                    "scheduled_at": (schedule + timedelta(hours=2)).isoformat(),
+                    "delivery_mode": "immediate",
+                },
+            )
+            delete_response = await client.delete(
+                f"/api/inbox/followup-posts/{created['id']}"
+            )
+            missing_response = await client.get(
+                f"/api/inbox/followup-posts/{created['id']}"
+            )
+    finally:
+        get_settings.cache_clear()
+
+    assert create_response.status_code == 200
+    assert update_response.status_code == 200
+    updated = update_response.json()
+    assert updated["title"] == f"{TEST_TITLE_PREFIX} edited"
+    assert updated["body"] == "Обновленный текст"
+    assert updated["channels"] == ["vk"]
+    assert updated["delivery_mode"] == "immediate"
+    assert delete_response.status_code == 204
+    assert missing_response.status_code == 404
+
+
+async def test_followup_api_rejects_update_and_delete_after_send(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    configure_auth(monkeypatch)
+    await create_completed_followup_lead()
+    bot = FakeTelegramBot()
+
+    async with async_session_maker() as session:
+        post = await create_followup_post(
+            session,
+            title=f"{TEST_TITLE_PREFIX} sent locked",
+            body="Уже отправлено",
+            channels=["telegram"],
+        )
+        await session.commit()
+        post_id = post.id
+
+    clients = ApiInboxSendClients(
+        telegram_bot=bot,
+        vk_client=None,
+        email_client=None,
+        email_subject="",
+        public_base_url="http://127.0.0.1:8000",
+        email_from_email=None,
+        email_from_name=None,
+        email_signature_image_url=None,
+    )
+    async with async_session_maker() as session:
+        await run_due_followup_posts_once(session, clients=clients)
+
+    try:
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://127.0.0.1:8000",
+        ) as client:
+            await client.post(
+                "/api/auth/login",
+                json={"username": "aisu", "password": "secret"},
+            )
+            update_response = await client.put(
+                f"/api/inbox/followup-posts/{post_id}",
+                json={
+                    "title": f"{TEST_TITLE_PREFIX} cannot edit",
+                    "body": "Нельзя поменять",
+                    "channels": ["telegram"],
+                },
+            )
+            delete_response = await client.delete(f"/api/inbox/followup-posts/{post_id}")
+    finally:
+        get_settings.cache_clear()
+
+    assert update_response.status_code == 409
+    assert delete_response.status_code == 409
+
+
 async def test_followup_queue_accumulates_until_funnel_completion() -> None:
     lead_id = await create_completed_followup_lead(completed=False, vk=False)
     first_scheduled_at = datetime(2026, 6, 30, 6, 30, tzinfo=UTC)
