@@ -9,7 +9,10 @@
   to the last available page. Verification passed: `npm run build` in `inbox-app/`,
   `.venv\Scripts\python.exe -m ruff check .`, and `git diff --check`. Focused
   `tests/test_inbox_database.py -q` could not run locally because Docker Desktop/PostgreSQL was
-  not running and the connection was refused.
+  not running and the connection was refused. Production deploy through `deploy_files.py`
+  rebuilt/recreated `app`, `funnel-worker`, and `telegram-bot`; `/health` returned OK; bundle
+  smoke confirmed the pagination controls are present; in-container focused pagination test
+  passed (`1 passed`); service logs showed normal startup/polling.
 - 2026-07-02 completed and deployed durable follow-up delivery queues. Queued follow-up posts now
   cover both leads who already completed the main `aisu_consultation` funnel and leads who finish
   it later. For queued mode, a lead receives the first accumulated post on the day after funnel

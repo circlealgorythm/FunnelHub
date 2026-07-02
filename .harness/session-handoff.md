@@ -6,7 +6,10 @@
   size selector, previous/next buttons, visible range summary, offset reset on search/page-size
   change, and last-page correction after deletion. `npm run build`, full ruff, and
   `git diff --check` passed. Local focused DB tests were blocked because Docker Desktop/PostgreSQL
-  was not running.
+  was not running. The feature is deployed to production; `/health` is OK, the deployed bundle
+  contains the pagination controls, and
+  `pytest tests/test_inbox_database.py::test_list_database_leads_supports_limit_and_offset -q`
+  passed in the production app container.
 - As of 2026-07-02, follow-up posts are implemented, verified, pushed, and deployed through commit
   `f575cb4` plus the preceding follow-up queue/immediate-mode commits. WIP is empty.
 - Current follow-up behavior:
