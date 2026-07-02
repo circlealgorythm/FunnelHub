@@ -2,6 +2,11 @@
 
 ## Current Status
 
+- As of 2026-07-02, Inbox database pagination has local code changes ready for deploy: 20/50 page
+  size selector, previous/next buttons, visible range summary, offset reset on search/page-size
+  change, and last-page correction after deletion. `npm run build`, full ruff, and
+  `git diff --check` passed. Local focused DB tests were blocked because Docker Desktop/PostgreSQL
+  was not running.
 - As of 2026-07-02, follow-up posts are implemented, verified, pushed, and deployed through commit
   `f575cb4` plus the preceding follow-up queue/immediate-mode commits. WIP is empty.
 - Current follow-up behavior:

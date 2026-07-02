@@ -72,6 +72,7 @@ type ConversationDetail = {
 type LoadState = "idle" | "loading" | "error";
 type AuthState = "checking" | "authenticated" | "anonymous";
 type AppView = "inbox" | "database" | "broadcasts" | "autoposts" | "followups";
+type DatabasePageSize = 20 | 50;
 
 type Broadcast = {
   id: string;
@@ -344,6 +345,8 @@ export function App() {
   const [replyState, setReplyState] = useState<LoadState>("idle");
   const [databaseQuery, setDatabaseQuery] = useState("");
   const [databaseList, setDatabaseList] = useState<DatabaseLeadList | null>(null);
+  const [databasePageSize, setDatabasePageSize] = useState<DatabasePageSize>(20);
+  const [databaseOffset, setDatabaseOffset] = useState(0);
   const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
   const [selectedLeadDetail, setSelectedLeadDetail] = useState<DatabaseLeadDetail | null>(null);
   const [databaseState, setDatabaseState] = useState<LoadState>("idle");
@@ -459,11 +462,14 @@ export function App() {
     }
   }, []);
 
-  const loadDatabaseLeads = useCallback(async () => {
+  const loadDatabaseLeads = useCallback(async (nextOffset = databaseOffset) => {
     setDatabaseState("loading");
     setError(null);
     try {
-      const params = new URLSearchParams({ limit: "80", offset: "0" });
+      const params = new URLSearchParams({
+        limit: String(databasePageSize),
+        offset: String(nextOffset),
+      });
       if (databaseQuery.trim()) {
         params.set("q", databaseQuery.trim());
       }
@@ -481,7 +487,15 @@ export function App() {
         throw new Error(`Database list failed: ${response.status}`);
       }
       const payload = (await response.json()) as DatabaseLeadList;
+      if (payload.items.length === 0 && payload.total > 0 && payload.offset > 0) {
+        const lastPageOffset =
+          Math.floor((payload.total - 1) / payload.limit) * payload.limit;
+        setDatabaseOffset(lastPageOffset);
+        setDatabaseState("idle");
+        return;
+      }
       setDatabaseList(payload);
+      setDatabaseOffset(payload.offset);
       setSelectedLeadId((current) => {
         if (current && payload.items.some((lead) => lead.id === current)) {
           return current;
@@ -493,7 +507,7 @@ export function App() {
       setDatabaseState("error");
       setError(formatError(caught));
     }
-  }, [databaseQuery]);
+  }, [databaseOffset, databasePageSize, databaseQuery]);
 
   const loadDatabaseLeadDetail = useCallback(async (leadId: string) => {
     setDatabaseDetailState("loading");
@@ -643,7 +657,20 @@ export function App() {
   function submitDatabaseSearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSelectedLeadId(null);
-    void loadDatabaseLeads();
+    setDatabaseOffset(0);
+    void loadDatabaseLeads(0);
+  }
+
+  function changeDatabasePageSize(size: DatabasePageSize) {
+    setSelectedLeadId(null);
+    setDatabasePageSize(size);
+    setDatabaseOffset(0);
+  }
+
+  function changeDatabasePage(offset: number) {
+    const nextOffset = Math.max(0, offset);
+    setSelectedLeadId(null);
+    setDatabaseOffset(nextOffset);
   }
 
   async function exportDatabase() {
@@ -785,8 +812,11 @@ export function App() {
           databaseImportState={databaseImportState}
           databaseImportSummary={databaseImportSummary}
           databaseList={databaseList}
+          databasePageSize={databasePageSize}
           databaseQuery={databaseQuery}
           databaseState={databaseState}
+          onChangePage={changeDatabasePage}
+          onChangePageSize={changeDatabasePageSize}
           onExport={() => void exportDatabase()}
           onImport={openImportModal}
           onOpenHistory={() => setShowImportHistory(true)}
@@ -1182,8 +1212,11 @@ function DatabaseWorkspace({
   databaseImportState,
   databaseImportSummary,
   databaseList,
+  databasePageSize,
   databaseQuery,
   databaseState,
+  onChangePage,
+  onChangePageSize,
   onExport,
   onImport,
   onOpenHistory,
@@ -1203,8 +1236,11 @@ function DatabaseWorkspace({
   databaseImportState: LoadState;
   databaseImportSummary: DatabaseImportSummary | null;
   databaseList: DatabaseLeadList | null;
+  databasePageSize: DatabasePageSize;
   databaseQuery: string;
   databaseState: LoadState;
+  onChangePage: (offset: number) => void;
+  onChangePageSize: (size: DatabasePageSize) => void;
   onExport: () => void;
   onImport: (event: ChangeEvent<HTMLInputElement>) => void;
   onOpenHistory: () => void;
@@ -1220,6 +1256,16 @@ function DatabaseWorkspace({
   onDeleteLead: (leadId: string) => Promise<void>;
 }) {
   const leads = databaseList?.items ?? [];
+  const pageOffset = databaseList?.offset ?? 0;
+  const pageLimit = databaseList?.limit ?? databasePageSize;
+  const totalLeads = databaseList?.total ?? 0;
+  const currentPage = totalLeads === 0 ? 1 : Math.floor(pageOffset / pageLimit) + 1;
+  const totalPages = Math.max(1, Math.ceil(totalLeads / pageLimit));
+  const firstLeadNumber = totalLeads === 0 ? 0 : pageOffset + 1;
+  const lastLeadNumber = Math.min(pageOffset + leads.length, totalLeads);
+  const hasPreviousPage = pageOffset > 0;
+  const hasNextPage = pageOffset + pageLimit < totalLeads;
+  const paginationDisabled = databaseState === "loading";
   return (
     <>
       <header className="database-header">
@@ -1269,13 +1315,53 @@ function DatabaseWorkspace({
           </form>
 
           <div className="database-summary">
-            <span>{databaseList ? `${databaseList.total} лидов` : "База лидов"}</span>
+            <span>
+              {databaseList
+                ? `${firstLeadNumber}-${lastLeadNumber} из ${totalLeads} лидов`
+                : "База лидов"}
+            </span>
             {databaseImportSummary ? (
               <span>
                 Импорт: {databaseImportSummary.processed_rows} ок,{" "}
                 {databaseImportSummary.failed_rows} ошибок
               </span>
             ) : null}
+          </div>
+
+          <div className="database-pagination">
+            <label>
+              <span>На странице</span>
+              <select
+                onChange={(event) =>
+                  onChangePageSize(Number(event.target.value) as DatabasePageSize)
+                }
+                value={databasePageSize}
+              >
+                <option value={20}>20</option>
+                <option value={50}>50</option>
+              </select>
+            </label>
+            <div className="database-page-controls">
+              <button
+                className="soft-button"
+                disabled={!hasPreviousPage || paginationDisabled}
+                onClick={() => onChangePage(Math.max(0, pageOffset - pageLimit))}
+                type="button"
+              >
+                Назад
+              </button>
+              <span>
+                {currentPage} / {totalPages}
+              </span>
+              <button
+                className="soft-button"
+                disabled={!hasNextPage || paginationDisabled}
+                onClick={() => onChangePage(pageOffset + pageLimit)}
+                type="button"
+              >
+                Вперёд
+              </button>
+            </div>
           </div>
 
           <div className="lead-table-wrap">

@@ -98,16 +98,21 @@ async def cleanup_test_data() -> None:
         await session.commit()
 
 
-async def create_database_lead() -> uuid.UUID:
+async def create_database_lead(
+    *,
+    gc_id: int = TEST_GC_ID,
+    email: str = TEST_EMAIL,
+    name: str = "Database Test Lead",
+) -> uuid.UUID:
     async with async_session_maker() as session:
         lead = Lead(
             id=uuid.uuid4(),
-            getcourse_user_id=TEST_GC_ID,
-            full_name="Database Test Lead",
+            getcourse_user_id=gc_id,
+            full_name=name,
             city="Moscow",
             country="Russia",
             source="manual",
-            raw_getcourse_data={"name": "Database Test Lead"},
+            raw_getcourse_data={"name": name},
         )
         session.add(lead)
         await session.flush()
@@ -116,8 +121,8 @@ async def create_database_lead() -> uuid.UUID:
                 id=uuid.uuid4(),
                 lead_id=lead.id,
                 contact_type="email",
-                value=TEST_EMAIL,
-                normalized_value=TEST_EMAIL,
+                value=email,
+                normalized_value=email,
                 is_primary=True,
             )
         )
@@ -172,6 +177,43 @@ async def test_list_database_leads_searches_contacts_and_counts_messages() -> No
     assert lead_list.items[0].telegram == "database_tg"
     assert lead_list.items[0].vk == "199271782"
     assert lead_list.items[0].messages_count == 1
+
+
+async def test_list_database_leads_supports_limit_and_offset() -> None:
+    created_ids = [
+        await create_database_lead(
+            gc_id=TEST_GC_ID + index,
+            email=f"database-page-{index}@example.com",
+            name=f"Database Page Lead {index}",
+        )
+        for index in range(3)
+    ]
+
+    async with async_session_maker() as session:
+        first_page = await list_database_leads(
+            session,
+            query="Database Page Lead",
+            limit=2,
+            offset=0,
+        )
+        second_page = await list_database_leads(
+            session,
+            query="Database Page Lead",
+            limit=2,
+            offset=2,
+        )
+
+    created_id_set = set(created_ids)
+    first_page_ids = {lead.id for lead in first_page.items}
+    second_page_ids = {lead.id for lead in second_page.items}
+    assert first_page.total == 3
+    assert first_page.limit == 2
+    assert first_page.offset == 0
+    assert len(first_page.items) == 2
+    assert second_page.limit == 2
+    assert second_page.offset == 2
+    assert first_page_ids.isdisjoint(second_page_ids)
+    assert first_page_ids | second_page_ids <= created_id_set
 
 
 async def test_export_database_leads_csv() -> None:

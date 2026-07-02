@@ -779,6 +779,40 @@ h2 {
   padding: 14px 2px;
 }
 
+.database-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 2px 14px;
+}
+
+.database-pagination label,
+.database-page-controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.database-pagination label span,
+.database-page-controls span {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.database-pagination select {
+  min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-strong);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 800;
+  padding: 0 34px 0 10px;
+}
+
 .lead-table-wrap {
   min-height: 0;
   overflow: auto;
@@ -1345,6 +1379,23 @@ h2 {
   .database-search .soft-button {
     grid-column: 1 / -1;
     width: 100%;
+  }
+
+  .database-pagination,
+  .database-page-controls {
+    align-items: stretch;
+  }
+
+  .database-pagination {
+    flex-direction: column;
+  }
+
+  .database-pagination label {
+    justify-content: space-between;
+  }
+
+  .database-page-controls .soft-button {
+    flex: 1;
   }
 
   .lead-table {

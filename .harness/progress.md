@@ -2,6 +2,14 @@
 
 ## Current State
 
+- 2026-07-02 added Inbox database pagination UI. The database lead list now requests
+  `/api/inbox/database/leads` with the selected `limit` and `offset`, supports 20/50 leads per
+  page, shows the visible range out of total leads, and provides previous/next page controls.
+  Search and page-size changes reset to the first page; deleting the last lead on a page redirects
+  to the last available page. Verification passed: `npm run build` in `inbox-app/`,
+  `.venv\Scripts\python.exe -m ruff check .`, and `git diff --check`. Focused
+  `tests/test_inbox_database.py -q` could not run locally because Docker Desktop/PostgreSQL was
+  not running and the connection was refused.
 - 2026-07-02 completed and deployed durable follow-up delivery queues. Queued follow-up posts now
   cover both leads who already completed the main `aisu_consultation` funnel and leads who finish
   it later. For queued mode, a lead receives the first accumulated post on the day after funnel
