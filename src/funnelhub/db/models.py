@@ -220,6 +220,7 @@ class Conversation(Base, TimestampMixin):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
     lead_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("leads.id", ondelete="CASCADE"))
     channel: Mapped[str] = mapped_column(String(32), nullable=False)
+    source: Mapped[str | None] = mapped_column(String(64))
     status: Mapped[str] = mapped_column(String(64), default="open", nullable=False)
     last_message_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 

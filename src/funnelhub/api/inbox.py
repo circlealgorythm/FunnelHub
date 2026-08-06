@@ -16,6 +16,7 @@ from funnelhub.db.models import BotLinkToken, Conversation, Lead
 from funnelhub.db.session import get_session
 from funnelhub.services.auth import require_admin_session
 from funnelhub.services.bot_linking import (
+    build_most_telegram_deep_link,
     build_telegram_deep_link,
     build_vk_launch_link,
     create_or_get_active_bot_link_token,
@@ -48,6 +49,7 @@ from funnelhub.services.inbox_database import (
     preview_import_file,
     upsert_database_lead_vk_id,
 )
+from funnelhub.services.landing_applications import MOST_TSENNOSTEY_SOURCE
 from funnelhub.services.telegram_messaging import TelegramMessageClient
 from funnelhub.services.vk_messaging import HttpVkMessageClient, VkMessageClient
 
@@ -524,6 +526,7 @@ async def get_database_lead(
     lead_id: uuid.UUID,
     session: SessionDep,
     settings: SettingsDep,
+    source: Literal["most-tsennostey"] | None = None,
 ) -> DatabaseLeadDetailResponse:
     detail = await get_database_lead_detail(session, lead_id)
     if detail is None:
@@ -535,7 +538,7 @@ async def get_database_lead(
     await session.commit()
     return database_lead_detail_response(
         detail,
-        bot_links=database_bot_link_responses(settings, bot_link_token),
+        bot_links=database_bot_link_responses(settings, bot_link_token, source or lead.source),
     )
 
 
@@ -545,6 +548,7 @@ async def put_database_lead_vk_id(
     request: DatabaseLeadVkIdRequest,
     session: SessionDep,
     settings: SettingsDep,
+    source: Literal["most-tsennostey"] | None = None,
 ) -> DatabaseLeadDetailResponse:
     try:
         await upsert_database_lead_vk_id(session, lead_id, request.vk_id)
@@ -568,7 +572,7 @@ async def put_database_lead_vk_id(
     await session.commit()
     return database_lead_detail_response(
         detail,
-        bot_links=database_bot_link_responses(settings, bot_link_token),
+        bot_links=database_bot_link_responses(settings, bot_link_token, source or lead.source),
     )
 
 
@@ -695,16 +699,22 @@ def database_lead_detail_response(
 def database_bot_link_responses(
     settings: Settings,
     bot_link_token: BotLinkToken,
+    lead_source: str | None,
 ) -> list[DatabaseBotLinkResponse]:
     token = bot_link_token.token
     expires_at = bot_link_token.expires_at
     links: list[DatabaseBotLinkResponse] = []
-    telegram_link = build_telegram_deep_link(settings, token)
+    is_most_lead = lead_source == MOST_TSENNOSTEY_SOURCE
+    telegram_link = (
+        build_most_telegram_deep_link(settings, token)
+        if is_most_lead
+        else build_telegram_deep_link(settings, token)
+    )
     if telegram_link:
         links.append(
             DatabaseBotLinkResponse(
                 channel="telegram",
-                label="Telegram",
+                label="Telegram — Мост ценностей" if is_most_lead else "Telegram",
                 url=telegram_link,
                 token=token,
                 expires_at=expires_at,

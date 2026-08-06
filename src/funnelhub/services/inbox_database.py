@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from funnelhub.db.models import (
     Conversation,
     EmailSubscription,
+    Event,
     FunnelState,
     ImportBatch,
     ImportRow,
@@ -213,8 +214,9 @@ async def list_database_leads(
         count_statement = count_statement.where(search_filter)
 
     if source:
-        base_statement = base_statement.where(Lead.source == source)
-        count_statement = count_statement.where(Lead.source == source)
+        source_filter = lead_source_filter(source)
+        base_statement = base_statement.where(source_filter)
+        count_statement = count_statement.where(source_filter)
     if exclude_source:
         source_filter = (Lead.source.is_(None)) | (Lead.source != exclude_source)
         base_statement = base_statement.where(source_filter)
@@ -815,7 +817,10 @@ async def get_import_batch_detail(
 def build_lead_summary_query() -> Select[tuple[Any, ...]]:
     email = lead_contact_subquery("email")
     phone = lead_contact_subquery("phone")
-    telegram = messenger_identity_subquery("telegram")
+    # The Most Tsennostey bot is a separate Telegram bot, but it should still
+    # be presented as Telegram in the database list rather than as an empty
+    # messenger column.
+    telegram = messenger_identity_subquery("telegram", "telegram_most")
     vk = messenger_identity_subquery("vk")
     conversations_count = (
         select(func.count(Conversation.id))
@@ -876,6 +881,16 @@ def build_lead_search_filter(query: str) -> Any:
     )
 
 
+def lead_source_filter(source: str) -> Any:
+    source_event_exists = (
+        select(Event.id)
+        .where(Event.lead_id == Lead.id, Event.source == source)
+        .correlate(Lead)
+        .exists()
+    )
+    return or_(Lead.source == source, source_event_exists)
+
+
 def lead_contact_subquery(contact_type: str) -> Any:
     return (
         select(LeadContact.value)
@@ -887,7 +902,9 @@ def lead_contact_subquery(contact_type: str) -> Any:
     )
 
 
-def messenger_identity_subquery(channel: str) -> Any:
+def messenger_identity_subquery(*channels: str) -> Any:
+    if not channels:
+        raise ValueError("At least one messenger channel is required.")
     return (
         select(
             func.coalesce(
@@ -898,7 +915,7 @@ def messenger_identity_subquery(channel: str) -> Any:
         )
         .where(
             MessengerIdentity.lead_id == Lead.id,
-            MessengerIdentity.channel == channel,
+            MessengerIdentity.channel.in_(channels),
             MessengerIdentity.is_subscribed.is_(True),
         )
         .order_by(MessengerIdentity.created_at.desc())

@@ -22,6 +22,7 @@ from funnelhub.services.vk_messaging import VkMessageClient, send_vk_text_messag
 
 ReplyChannel = Literal["telegram", "telegram_most", "vk", "email"]
 SUPPORTED_REPLY_CHANNELS: tuple[ReplyChannel, ...] = ("telegram", "telegram_most", "vk", "email")
+MOST_TSENNOSTEY_SOURCE = "most-tsennostey"
 
 
 class InboxSendClients(Protocol):
@@ -102,6 +103,7 @@ async def record_inbound_messenger_message(
         session=session,
         lead_id=identity.lead_id,
         channel=channel,
+        source=MOST_TSENNOSTEY_SOURCE if channel == "telegram_most" else None,
     )
     conversation.last_message_at = now
     if needs_reply:
@@ -200,9 +202,18 @@ async def list_inbox_conversations(
     if status:
         statement = statement.where(Conversation.status == status)
     if source:
-        statement = statement.where(Lead.source == source)
+        statement = statement.where(
+            (Conversation.source == source)
+            | ((Conversation.source.is_(None)) & (Lead.source == source))
+        )
     if exclude_source:
-        statement = statement.where((Lead.source.is_(None)) | (Lead.source != exclude_source))
+        statement = statement.where(
+            (Conversation.source.is_not(None) & (Conversation.source != exclude_source))
+            | (
+                Conversation.source.is_(None)
+                & ((Lead.source.is_(None)) | (Lead.source != exclude_source))
+            )
+        )
     statement = statement.order_by(
         Conversation.last_message_at.desc().nullslast(),
         Conversation.updated_at.desc(),
@@ -444,8 +455,14 @@ async def get_or_create_conversation(
     *,
     lead_id: uuid.UUID,
     channel: str,
+    source: str | None = None,
 ) -> Conversation:
-    conversation = await get_latest_conversation(session=session, lead_id=lead_id, channel=channel)
+    conversation = await get_latest_conversation(
+        session=session,
+        lead_id=lead_id,
+        channel=channel,
+        source=source,
+    )
     if conversation is not None:
         return conversation
 
@@ -453,6 +470,7 @@ async def get_or_create_conversation(
         id=uuid.uuid4(),
         lead_id=lead_id,
         channel=channel,
+        source=source,
         status="open",
     )
     session.add(conversation)
@@ -474,6 +492,7 @@ async def get_latest_conversation(
     *,
     lead_id: uuid.UUID,
     channel: str,
+    source: str | None = None,
 ) -> Conversation | None:
     return cast(
         Conversation | None,
@@ -482,6 +501,7 @@ async def get_latest_conversation(
             .where(
                 Conversation.lead_id == lead_id,
                 Conversation.channel == channel,
+                Conversation.source == source if source else Conversation.source.is_(None),
             )
             .order_by(Conversation.updated_at.desc())
         )

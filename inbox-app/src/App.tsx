@@ -24,7 +24,7 @@ import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useState } fro
 import type { ReactNode } from "react";
 
 type ConversationStatus = "open" | "needs_reply" | "replied" | "closed";
-type ReplyChannel = "telegram" | "vk" | "email";
+type ReplyChannel = "telegram" | "telegram_most" | "vk" | "email";
 type InboxSegment = "main" | "most-tsennostey";
 type DatabaseSegment = "main" | "most-tsennostey";
 
@@ -356,6 +356,7 @@ const statusLabels: Record<ConversationStatus, string> = {
 
 const channelLabels: Record<string, string> = {
   telegram: "Telegram",
+  telegram_most: "Telegram — Мост ценностей",
   vk: "VK",
   email: "Email",
 };
@@ -617,7 +618,8 @@ export function App() {
     setDatabaseDetailState("loading");
     setError(null);
     try {
-      const response = await fetch(`${API_BASE_URL}/api/inbox/database/leads/${leadId}`, {
+      const query = databaseSegment === "most-tsennostey" ? "?source=most-tsennostey" : "";
+      const response = await fetch(`${API_BASE_URL}/api/inbox/database/leads/${leadId}${query}`, {
         credentials: "include",
       });
       if (response.status === 401) {
@@ -636,7 +638,7 @@ export function App() {
       setDatabaseDetailState("error");
       setError(formatError(caught));
     }
-  }, []);
+  }, [databaseSegment]);
 
   useEffect(() => {
     void checkAuth();
@@ -824,7 +826,8 @@ export function App() {
 
   async function saveLeadVkId(leadId: string, vkId: string) {
     setError(null);
-    const response = await fetch(`${API_BASE_URL}/api/inbox/database/leads/${leadId}/vk-id`, {
+    const query = databaseSegment === "most-tsennostey" ? "?source=most-tsennostey" : "";
+    const response = await fetch(`${API_BASE_URL}/api/inbox/database/leads/${leadId}/vk-id${query}`, {
       method: "PUT",
       credentials: "include",
       headers: { "Content-Type": "application/json" },

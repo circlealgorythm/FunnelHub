@@ -55,7 +55,11 @@ async def ingest_most_tsennostey_application(
         session.add(lead)
 
     lead.full_name = name
-    lead.source = MOST_TSENNOSTEY_SOURCE
+    # A contact may submit applications for several projects.  Keep the
+    # original lead source for an existing contact; the dedicated application
+    # event and conversation below add its membership in the Most segment.
+    if created:
+        lead.source = MOST_TSENNOSTEY_SOURCE
     lead.updated_at = now
     lead.raw_getcourse_data = {
         **(lead.raw_getcourse_data or {}),
@@ -95,6 +99,7 @@ async def ingest_most_tsennostey_application(
         session=session,
         lead_id=lead.id,
         channel="email",
+        source=MOST_TSENNOSTEY_SOURCE,
     )
     conversation.status = "needs_reply"
     conversation.last_message_at = now
