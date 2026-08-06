@@ -210,6 +210,12 @@ class FunnelState(Base, TimestampMixin):
 
 class Conversation(Base, TimestampMixin):
     __tablename__ = "conversations"
+    __table_args__ = (
+        CheckConstraint(
+            "channel IN ('telegram', 'telegram_most', 'vk', 'max', 'email')",
+            name="ck_conversations_channel",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
     lead_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("leads.id", ondelete="CASCADE"))
@@ -220,6 +226,12 @@ class Conversation(Base, TimestampMixin):
 
 class Message(Base, TimestampMixin):
     __tablename__ = "messages"
+    __table_args__ = (
+        CheckConstraint(
+            "channel IN ('telegram', 'telegram_most', 'vk', 'max', 'email')",
+            name="ck_messages_channel",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
     lead_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("leads.id", ondelete="SET NULL"))
