@@ -1029,3 +1029,11 @@
 - Decision (2026-08-06): campaign isolation is modelled as the `telegram_most` messenger channel
   plus two dedicated Compose services, rather than a second copy of the database. This prevents
   messages from crossing into the existing bot while preserving a unified lead history and Inbox.
+- 2026-08-06 published and deployed the «Мост ценностей» Telegram funnel after explicit user
+  approval. Backend commit `0300320` is on `FunnelHub/main`; production Alembic advanced to
+  `20260806_01`, and `app`, `most-telegram-bot`, and `most-funnel-worker` are running. The bot
+  log confirms polling for `@most_cennostei_bot`; local and public health checks returned OK.
+  The landing source was rebased onto concurrent site commit `e4d3f5a`, built successfully, and
+  published as `9110d76`. The live site did not update because its stored Sites project is no
+  longer available; its deployment integration must be restored before the runtime secrets can
+  be set and the application-to-bot handoff can go live.

@@ -550,3 +550,19 @@
 - Do not deploy blindly: both server and site repositories already have substantial uncommitted
   user changes. The current deploy scripts upload the full working tree, so obtain explicit user
   permission before publishing all outstanding changes.
+
+## Most tsennostey deployment update — 2026-08-06
+
+- User explicitly approved publishing all current changes. Backend `0300320` was pushed to
+  `FunnelHub/main`; it includes the deployment uploader fix for `content/`.
+- Production `/opt/funnelhub/.env` now has the configured dedicated Telegram bot, notification
+  recipient, and a protected landing-ingest token. Production deploy completed successfully:
+  Alembic upgraded to `20260806_01`, the app and both dedicated campaign services are running,
+  local server health and `https://bot.aisukam.ru/health` returned OK, and the bot log confirms
+  polling for `@most_cennostei_bot`.
+- Site source `9110d76` was rebased over concurrent upstream commit `e4d3f5a`, passed the direct
+  Vinext production build, and was pushed to `Landing-page-Most_cennostei/main`.
+- The live `https://most.aisukam.ru/posle-zayavki/` still serves the previous build. The Sites
+  connector reports the project referenced by `.openai/hosting.json` as missing, so the runtime
+  environment cannot yet receive `FUNNELHUB_APPLICATION_URL` and the matching ingest token. Restore
+  or supply a replacement deployment project, then configure these values and publish the site.
