@@ -28,10 +28,7 @@ from funnelhub.services.ingestion_guard import (
     strip_getcourse_webhook_secret_fields,
 )
 from funnelhub.services.landing_applications import ingest_most_tsennostey_application
-from funnelhub.services.lead_post_submit_tasks import (
-    enqueue_lead_post_submit_tasks,
-    enqueue_lead_tag_notification,
-)
+from funnelhub.services.lead_post_submit_tasks import enqueue_lead_post_submit_tasks
 from funnelhub.vk_bot import handle_vk_message_allow, handle_vk_message_new
 
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
@@ -212,12 +209,6 @@ async def most_tsennostey_application(
         created=result.created,
         source="most-tsennostey",
         notify_admin=True,
-    )
-    await enqueue_lead_tag_notification(
-        session=session,
-        settings=settings,
-        lead_id=result.lead_id,
-        tag="заявка с сайта",
     )
     await session.commit()
     return MostTsennosteyApplicationResponse(

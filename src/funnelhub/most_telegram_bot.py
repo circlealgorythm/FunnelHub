@@ -45,6 +45,7 @@ logger = logging.getLogger(__name__)
 router = Router()
 MOST_CHANNEL = "telegram_most"
 MOST_FUNNEL_KEY = "most_tsennostey_telegram"
+EMAIL_NOTIFICATION_TAGS = frozenset({"заявка", "занять место", "онлайн-формат"})
 
 
 @dataclass(frozen=True)
@@ -251,7 +252,7 @@ BUTTON_REPLIES: dict[str, tuple[str | None, str, list[FunnelButton]]] = {
     ),
     "Вернуться к практике": (None, "Вернитесь к девяти пунктам практики «Моя цепочка».", []),
     "Оставить заявку": ("заявка", "Спасибо! Мы скоро с вами свяжемся!", []),
-    "Занять место": ("заявка", "Спасибо! Мы скоро с вами свяжемся!", []),
+    "Занять место": ("занять место", "Спасибо! Мы скоро с вами свяжемся!", []),
     "Не сейчас": (
         "не сейчас",
         "Хорошо. Я не буду отправлять вам частые рекламные сообщения. Вы можете выбрать, "
@@ -515,7 +516,7 @@ async def handle_button(
     tag, text, buttons = reply
     if tag is not None:
         assigned = await assign_lead_tag(session, lead_id=identity.lead_id, tag=tag)
-        if assigned:
+        if assigned and should_notify_about_tag_by_email(tag):
             await enqueue_lead_tag_notification(
                 session=session,
                 settings=settings,
@@ -566,16 +567,9 @@ async def handle_quiz_answer(
     )
     state.current_step_key = "lesson"
     state.next_run_at = datetime.now(UTC) + timedelta(minutes=1)
-    assigned = await assign_lead_tag(
+    await assign_lead_tag(
         session, lead_id=state.lead_id, tag=f"результат теста: {result}"
     )
-    if assigned:
-        await enqueue_lead_tag_notification(
-            session=session,
-            settings=settings,
-            lead_id=state.lead_id,
-            tag=f"результат теста: {result}",
-        )
     await sender.send_text(lead_id=state.lead_id, channel=channel, text=RESULT_TEXTS[result])
     return True
 
@@ -626,6 +620,10 @@ def resolve_quiz_option_value(value: str, quiz_index: int) -> str:
 
 def can_start_most_quiz(metadata: dict[str, Any]) -> bool:
     return "most_quiz_result" not in metadata
+
+
+def should_notify_about_tag_by_email(tag: str) -> bool:
+    return tag in EMAIL_NOTIFICATION_TAGS
 
 
 async def get_active_state(

@@ -7,6 +7,7 @@ from funnelhub.most_telegram_bot import (
     quiz_result,
     resolve_funnel_button_value,
     resolve_quiz_option_value,
+    should_notify_about_tag_by_email,
 )
 from funnelhub.most_vk_bot import MOST_VK_CHANNEL, MOST_VK_FUNNEL_KEY
 from funnelhub.services.funnel_engine import load_funnel_definition
@@ -116,3 +117,11 @@ def test_most_vk_text_buttons_resolve_to_the_same_actions_as_telegram_callbacks(
 def test_completed_quiz_cannot_be_started_again_from_an_old_button() -> None:
     assert can_start_most_quiz({})
     assert not can_start_most_quiz({"most_quiz_result": "внешняя безопасность"})
+
+
+def test_only_application_choice_tags_notify_by_email() -> None:
+    assert should_notify_about_tag_by_email("заявка")
+    assert should_notify_about_tag_by_email("занять место")
+    assert should_notify_about_tag_by_email("онлайн-формат")
+    assert not should_notify_about_tag_by_email("результат теста: внешняя безопасность")
+    assert not should_notify_about_tag_by_email("зависимость от реакции людей")
