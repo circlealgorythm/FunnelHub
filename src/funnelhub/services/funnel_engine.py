@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from funnelhub.db.models import FunnelState
 
-SUPPORTED_CHANNELS = {"messenger", "telegram", "vk", "email"}
+SUPPORTED_CHANNELS = {"messenger", "telegram", "telegram_most", "vk", "email"}
 FUNNEL_LOCAL_TIMEZONE = timezone(timedelta(hours=3), name="Europe/Moscow")
 DAILY_FUNNEL_SEND_TIME = time(hour=9)
 
@@ -23,6 +23,7 @@ DAILY_FUNNEL_SEND_TIME = time(hour=9)
 class FunnelButton(BaseModel):
     text: str = Field(min_length=1, max_length=255)
     url: str | None = Field(default=None, min_length=1, max_length=2048)
+    callback_data: str | None = Field(default=None, min_length=1, max_length=48)
 
 
 class FunnelQuestionOption(BaseModel):
@@ -51,7 +52,7 @@ class FunnelQuestionnaire(BaseModel):
 class FunnelStep(BaseModel):
     key: str = Field(min_length=1, max_length=255)
     delay: str = Field(default="0m")
-    channel: Literal["messenger", "telegram", "vk", "email"]
+    channel: Literal["messenger", "telegram", "telegram_most", "vk", "email"]
     kind: Literal["message", "question"] = "message"
     question_key: str | None = Field(default=None, min_length=1, max_length=255)
     subject: str | None = Field(default=None, min_length=1, max_length=255)
@@ -307,8 +308,8 @@ def build_state_metadata(
     metadata = dict(existing_metadata or {})
     metadata.update(
         {
-        "definition_version": definition.version,
-        "step_index": step_index,
+            "definition_version": definition.version,
+            "step_index": step_index,
         }
     )
     return metadata

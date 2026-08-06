@@ -273,6 +273,7 @@ async def test_followup_runner_sends_each_delivery_once() -> None:
 
     clients = ApiInboxSendClients(
         telegram_bot=bot,
+        most_telegram_bot=None,
         vk_client=vk_client,
         email_client=None,
         email_subject="",
@@ -385,6 +386,7 @@ async def test_followup_api_rejects_update_and_delete_after_send(
 
     clients = ApiInboxSendClients(
         telegram_bot=bot,
+        most_telegram_bot=None,
         vk_client=None,
         email_client=None,
         email_subject="",
@@ -582,6 +584,7 @@ async def test_followup_runner_skips_unsubscribed_identity_at_send_time() -> Non
 
     clients = ApiInboxSendClients(
         telegram_bot=None,
+        most_telegram_bot=None,
         vk_client=FakeVkClient(),
         email_client=None,
         email_subject="",

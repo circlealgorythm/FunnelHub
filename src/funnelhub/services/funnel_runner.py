@@ -76,6 +76,7 @@ class MessengerFunnelStepSender:
         email_signature_image_url: str | None = None,
         email_default_subject: str = "Сообщение от Aisu Kam",
         settings: Settings | None = None,
+        telegram_channel: str = "telegram",
     ) -> None:
         self._session = session
         self._telegram_bot = telegram_bot
@@ -87,14 +88,15 @@ class MessengerFunnelStepSender:
         self._email_signature_image_url = email_signature_image_url
         self._email_default_subject = email_default_subject
         self._settings = settings
+        self._telegram_channel = telegram_channel
 
     async def send(self, payload: FunnelStepSend) -> None:
         step = payload.step
         if step.channel == "email":
             await self._send_email(payload)
             return
-        if step.channel == "telegram":
-            await self._send_telegram(payload)
+        if step.channel in {"telegram", "telegram_most"}:
+            await self._send_telegram(payload, channel=step.channel)
             return
         if step.channel == "vk":
             await self._send_vk(payload)
@@ -106,8 +108,8 @@ class MessengerFunnelStepSender:
             )
             if identity is None:
                 raise ValueError("Lead has no subscribed messenger identity.")
-            if identity.channel == "telegram":
-                await self._send_telegram(payload)
+            if identity.channel in {"telegram", "telegram_most"}:
+                await self._send_telegram(payload, channel=identity.channel)
                 return
             if identity.channel == "vk":
                 await self._send_vk(payload)
@@ -142,10 +144,10 @@ class MessengerFunnelStepSender:
             },
         )
 
-    async def _send_telegram(self, payload: FunnelStepSend) -> None:
+    async def _send_telegram(self, payload: FunnelStepSend, *, channel: str) -> None:
         await self.send_text(
             lead_id=payload.lead_id,
-            channel="telegram",
+            channel=channel,
             text=payload.step.text,
             buttons=payload.step.buttons,
         )
@@ -165,8 +167,13 @@ class MessengerFunnelStepSender:
         text: str,
         buttons: list[FunnelButton] | None = None,
     ) -> None:
-        if channel == "telegram":
-            await self._send_telegram_text(lead_id=lead_id, text=text, buttons=buttons or [])
+        if channel == self._telegram_channel:
+            await self._send_telegram_text(
+                lead_id=lead_id,
+                text=text,
+                buttons=buttons or [],
+                channel=channel,
+            )
             return
         if channel == "vk":
             await self._send_vk_text(lead_id=lead_id, text=text, buttons=buttons or [])
@@ -178,6 +185,7 @@ class MessengerFunnelStepSender:
         lead_id: uuid.UUID,
         text: str,
         buttons: list[FunnelButton],
+        channel: str,
     ) -> None:
         if self._telegram_bot is None:
             raise ValueError("Telegram client is not configured.")
@@ -188,6 +196,7 @@ class MessengerFunnelStepSender:
             lead_id=lead_id,
             text=text,
             url_buttons=build_telegram_buttons(buttons),
+            channel=channel,
         )
 
     async def _send_vk_text(
@@ -243,7 +252,7 @@ class MessengerFunnelStepSender:
     def _configured_channels(self) -> list[str]:
         channels: list[str] = []
         if self._telegram_bot is not None:
-            channels.append("telegram")
+            channels.append(self._telegram_channel)
         if self._vk_client is not None:
             channels.append("vk")
         return channels
@@ -261,6 +270,7 @@ async def run_due_funnel_once(
     email_signature_image_url: str | None = None,
     email_default_subject: str = "Сообщение от Aisu Kam",
     settings: Settings | None = None,
+    telegram_channel: str = "telegram",
     now: datetime | None = None,
     limit: int = 100,
 ) -> FunnelRunnerStats:
@@ -281,6 +291,7 @@ async def run_due_funnel_once(
         email_signature_image_url=email_signature_image_url,
         email_default_subject=email_default_subject,
         settings=settings,
+        telegram_channel=telegram_channel,
     )
     sent = 0
     skipped = 0
@@ -379,7 +390,7 @@ def build_telegram_buttons(
     result: list[TelegramUrlButton | TelegramTextButton] = []
     for button in buttons:
         if button.url is None:
-            result.append(TelegramTextButton(text=button.text))
+            result.append(TelegramTextButton(text=button.text, callback_data=button.callback_data))
         else:
             result.append(TelegramUrlButton(text=button.text, url=button.url))
     return result
@@ -476,11 +487,7 @@ async def unsubscribe_latest_telegram_identity_for_lead(
 
 
 def build_email_body(text: str, buttons: list[FunnelButton]) -> str:
-    url_lines = [
-        f"{button.text}: {button.url}"
-        for button in buttons
-        if button.url is not None
-    ]
+    url_lines = [f"{button.text}: {button.url}" for button in buttons if button.url is not None]
     if not url_lines:
         return text
     return f"{text.rstrip()}\n\n" + "\n".join(url_lines)

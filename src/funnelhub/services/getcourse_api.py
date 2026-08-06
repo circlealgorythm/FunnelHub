@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import json
 import logging
 from dataclasses import dataclass
 from typing import Any, cast
@@ -95,9 +97,7 @@ async def lead_has_getcourse_vk_id(session: AsyncSession, lead_id: Any) -> bool:
 
 async def load_contacts(session: AsyncSession, lead_id: Any) -> dict[str, str]:
     contacts = (
-        await session.scalars(
-            select(LeadContact).where(LeadContact.lead_id == lead_id)
-        )
+        await session.scalars(select(LeadContact).where(LeadContact.lead_id == lead_id))
     ).all()
     result: dict[str, str] = {}
     for contact in contacts:
@@ -118,7 +118,7 @@ def build_user_export_filter(lead: Lead, contacts: dict[str, str]) -> dict[str, 
 
 
 def is_getcourse_technical_email(email: str) -> bool:
-    return normalize_email(email).endswith("@vktech.gc")
+    return (normalize_email(email) or "").endswith("@vktech.gc")
 
 
 class GetCourseExportClient:
@@ -191,6 +191,72 @@ class GetCourseExportClient:
         if not isinstance(data, dict):
             raise RuntimeError("GetCourse API returned non-object JSON.")
         return cast(dict[str, Any], data)
+
+
+class GetCourseUserImportClient:
+    """Minimal GetCourse Import API client used only to update an existing user field."""
+
+    def __init__(
+        self,
+        *,
+        settings: Settings,
+        http_client: httpx.AsyncClient | None = None,
+    ) -> None:
+        if not settings.getcourse_api_base_url or not settings.getcourse_api_key:
+            raise ValueError("GetCourse API is not configured.")
+        self._base_url = settings.getcourse_api_base_url.rstrip("/")
+        self._api_key = settings.getcourse_api_key
+        self._http_client = http_client
+
+    async def update_user_custom_field(
+        self,
+        *,
+        email: str,
+        field_label: str,
+        value: str,
+    ) -> None:
+        if not email.strip():
+            raise ValueError("GetCourse user email is required.")
+        if not field_label.strip():
+            raise ValueError("GetCourse custom field label is required.")
+
+        params = {
+            "user": {
+                "email": email.strip(),
+                "addfields": {field_label.strip(): value},
+            },
+            "system": {"refresh_if_exists": 1},
+        }
+        encoded_params = base64.b64encode(
+            json.dumps(params, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        ).decode("ascii")
+        payload = await self._post_json(
+            f"{self._base_url}/pl/api/users",
+            data={"action": "add", "key": self._api_key, "params": encoded_params},
+        )
+        if payload.get("success") is not True:
+            raise RuntimeError(str(payload.get("error_message") or "GetCourse user update failed"))
+
+        result = payload.get("result")
+        if isinstance(result, dict) and result.get("error") is True:
+            raise RuntimeError(str(result.get("error_message") or "GetCourse user update failed"))
+
+    async def _post_json(self, url: str, data: dict[str, str]) -> dict[str, Any]:
+        previous_httpx_level = httpx_logger.level
+        httpx_logger.setLevel(logging.WARNING)
+        try:
+            if self._http_client is not None:
+                response = await self._http_client.post(url, data=data)
+            else:
+                async with httpx.AsyncClient(timeout=20.0, follow_redirects=True) as client:
+                    response = await client.post(url, data=data)
+        finally:
+            httpx_logger.setLevel(previous_httpx_level)
+        response.raise_for_status()
+        payload = response.json()
+        if not isinstance(payload, dict):
+            raise RuntimeError("GetCourse API returned non-object JSON.")
+        return cast(dict[str, Any], payload)
 
 
 def parse_export_rows(payload: dict[str, Any]) -> list[dict[str, Any]]:

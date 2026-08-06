@@ -206,6 +206,7 @@ class DatabaseLeadVkIdRequest(BaseModel):
 @dataclass
 class ApiInboxSendClients:
     telegram_bot: TelegramMessageClient | None
+    most_telegram_bot: TelegramMessageClient | None
     vk_client: VkMessageClient | None
     email_client: EmailProviderClient | None
     email_subject: str
@@ -219,8 +220,15 @@ class ApiInboxSendClients:
 async def get_conversations(
     session: SessionDep,
     status: ConversationStatus | None = None,
+    source: Literal["most-tsennostey"] | None = None,
+    exclude_source: Literal["most-tsennostey"] | None = None,
 ) -> list[InboxConversationResponse]:
-    summaries = await list_inbox_conversations(session, status=status)
+    summaries = await list_inbox_conversations(
+        session,
+        status=status,
+        source=source,
+        exclude_source=exclude_source,
+    )
     return [conversation_response(summary) for summary in summaries]
 
 
@@ -253,13 +261,15 @@ async def post_conversation_reply(
         raise HTTPException(status_code=404, detail="Conversation not found.")
 
     telegram_bot: Bot | None = None
+    most_telegram_bot: Bot | None = None
     try:
         telegram_client: TelegramMessageClient | None = None
+        most_telegram_client: TelegramMessageClient | None = None
         vk_client: VkMessageClient | None = None
         email_client = None
         selected_channels = request.channels or []
         if not selected_channels:
-            if conversation.channel not in ("telegram", "vk", "email"):
+            if conversation.channel not in ("telegram", "telegram_most", "vk", "email"):
                 raise HTTPException(
                     status_code=422,
                     detail=f"Unsupported inbox channel: {conversation.channel}",
@@ -270,6 +280,14 @@ async def post_conversation_reply(
                 raise HTTPException(status_code=503, detail="Telegram client is not configured.")
             telegram_bot = Bot(token=settings.telegram_bot_token)
             telegram_client = telegram_bot
+        if "telegram_most" in selected_channels:
+            if not settings.most_telegram_bot_token:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Most Telegram client is not configured.",
+                )
+            most_telegram_bot = Bot(token=settings.most_telegram_bot_token)
+            most_telegram_client = most_telegram_bot
         if "vk" in selected_channels:
             if not settings.vk_group_access_token:
                 raise HTTPException(status_code=503, detail="VK client is not configured.")
@@ -292,6 +310,7 @@ async def post_conversation_reply(
             channels=request.channels,
             clients=ApiInboxSendClients(
                 telegram_bot=telegram_client,
+                most_telegram_bot=most_telegram_client,
                 vk_client=vk_client,
                 email_client=email_client,
                 email_subject=settings.email_default_subject,
@@ -326,6 +345,8 @@ async def post_conversation_reply(
     finally:
         if telegram_bot is not None:
             await telegram_bot.session.close()
+        if most_telegram_bot is not None:
+            await most_telegram_bot.session.close()
 
 
 @router.patch(
@@ -353,6 +374,8 @@ async def patch_conversation_status(
 async def get_database_leads(
     session: SessionDep,
     q: str | None = None,
+    source: Literal["most-tsennostey"] | None = None,
+    exclude_source: Literal["most-tsennostey"] | None = None,
     limit: int = 50,
     offset: int = 0,
 ) -> DatabaseLeadListResponse:
@@ -360,7 +383,14 @@ async def get_database_leads(
         raise HTTPException(status_code=422, detail="Limit must be between 1 and 200.")
     if offset < 0:
         raise HTTPException(status_code=422, detail="Offset must be non-negative.")
-    lead_list = await list_database_leads(session, query=q, limit=limit, offset=offset)
+    lead_list = await list_database_leads(
+        session,
+        query=q,
+        source=source,
+        exclude_source=exclude_source,
+        limit=limit,
+        offset=offset,
+    )
     return database_lead_list_response(lead_list)
 
 
@@ -368,8 +398,15 @@ async def get_database_leads(
 async def export_database_leads(
     session: SessionDep,
     q: str | None = None,
+    source: Literal["most-tsennostey"] | None = None,
+    exclude_source: Literal["most-tsennostey"] | None = None,
 ) -> Response:
-    content = await export_database_leads_csv(session, query=q)
+    content = await export_database_leads_csv(
+        session,
+        query=q,
+        source=source,
+        exclude_source=exclude_source,
+    )
     file_name = f"funnelhub-leads-{datetime.now().date().isoformat()}.csv"
     return Response(
         content=content.encode("utf-8-sig"),
@@ -382,8 +419,15 @@ async def export_database_leads(
 async def export_database_leads_as_xlsx(
     session: SessionDep,
     q: str | None = None,
+    source: Literal["most-tsennostey"] | None = None,
+    exclude_source: Literal["most-tsennostey"] | None = None,
 ) -> Response:
-    content = await export_database_leads_xlsx(session, query=q)
+    content = await export_database_leads_xlsx(
+        session,
+        query=q,
+        source=source,
+        exclude_source=exclude_source,
+    )
     file_name = f"funnelhub-leads-{datetime.now().date().isoformat()}.xlsx"
     return Response(
         content=content,

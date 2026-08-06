@@ -80,13 +80,17 @@ async def create_followup_post(
 
     send_at = normalize_schedule(scheduled_at)
     status = "queued" if send_at <= datetime.now(UTC) else "scheduled"
-    key = dedupe_key.strip() if dedupe_key and dedupe_key.strip() else build_followup_dedupe_key(
-        body=clean_body,
-        channels=clean_channels,
-        scheduled_at=send_at,
-        delivery_mode=clean_delivery_mode,
-        source_type=clean_source_type,
-        source_autopost_id=source_autopost_id,
+    key = (
+        dedupe_key.strip()
+        if dedupe_key and dedupe_key.strip()
+        else build_followup_dedupe_key(
+            body=clean_body,
+            channels=clean_channels,
+            scheduled_at=send_at,
+            delivery_mode=clean_delivery_mode,
+            source_type=clean_source_type,
+            source_autopost_id=source_autopost_id,
+        )
     )
     existing = await session.scalar(
         select(FunnelFollowupPost).where(FunnelFollowupPost.dedupe_key == key)
@@ -471,9 +475,7 @@ def local_date(value: datetime) -> date:
 
 
 def combine_post_time_with_date(target_date: date, post_scheduled_at: datetime) -> datetime:
-    post_local_time = normalize_schedule(post_scheduled_at).astimezone(
-        FUNNEL_LOCAL_TIMEZONE
-    ).time()
+    post_local_time = normalize_schedule(post_scheduled_at).astimezone(FUNNEL_LOCAL_TIMEZONE).time()
     local_value = datetime.combine(
         target_date,
         post_local_time,
@@ -584,9 +586,7 @@ async def cancel_followup_post(session: AsyncSession, post_id: uuid.UUID) -> Fun
     post.status = "cancelled"
     deliveries = (
         await session.scalars(
-            select(FunnelFollowupDelivery).where(
-                FunnelFollowupDelivery.followup_post_id == post_id
-            )
+            select(FunnelFollowupDelivery).where(FunnelFollowupDelivery.followup_post_id == post_id)
         )
     ).all()
     for delivery in deliveries:
@@ -622,9 +622,7 @@ async def update_followup_post(
 
     send_at = normalize_schedule(scheduled_at)
     await session.execute(
-        delete(FunnelFollowupDelivery).where(
-            FunnelFollowupDelivery.followup_post_id == post_id
-        )
+        delete(FunnelFollowupDelivery).where(FunnelFollowupDelivery.followup_post_id == post_id)
     )
     await session.flush()
 

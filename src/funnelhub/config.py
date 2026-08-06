@@ -47,6 +47,12 @@ class Settings(BaseSettings):
         default=None, validation_alias="TELEGRAM_BOT_USERNAME"
     )
     telegram_bot_token: str | None = Field(default=None, validation_alias="TELEGRAM_BOT_TOKEN")
+    most_telegram_bot_username: str | None = Field(
+        default=None, validation_alias="MOST_TELEGRAM_BOT_USERNAME"
+    )
+    most_telegram_bot_token: str | None = Field(
+        default=None, validation_alias="MOST_TELEGRAM_BOT_TOKEN"
+    )
     vk_group_screen_name: str | None = Field(default=None, validation_alias="VK_GROUP_SCREEN_NAME")
     vk_group_access_token: str | None = Field(
         default=None, validation_alias="VK_GROUP_ACCESS_TOKEN"
@@ -116,11 +122,18 @@ class Settings(BaseSettings):
         default="https://goapi.unisender.ru/ru/transactional/api/v1/email/send.json",
         validation_alias="EMAIL_UNISENDER_GO_API_URL",
     )
+    most_telegram_funnel_path: str = Field(
+        default="content/funnels/most_tsennostey.yml",
+        validation_alias="MOST_TELEGRAM_FUNNEL_PATH",
+    )
     lead_notification_email_to: str | None = Field(
         default=None, validation_alias="LEAD_NOTIFICATION_EMAIL_TO"
     )
     lead_notification_cooldown_seconds: int = Field(
         default=300, validation_alias="LEAD_NOTIFICATION_COOLDOWN_SECONDS"
+    )
+    most_tsennostey_ingest_token: str | None = Field(
+        default=None, validation_alias="MOST_TSENNOSTEY_INGEST_TOKEN"
     )
     autopost_upload_dir: str = Field(
         default="/app/uploads/autoposts", validation_alias="AUTOPOST_UPLOAD_DIR"

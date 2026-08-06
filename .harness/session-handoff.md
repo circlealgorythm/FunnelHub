@@ -2,6 +2,74 @@
 
 ## Current Status
 
+- 2026-07-23: the user cancelled the legacy TG/VK migration. Both Inbox migration tabs and the
+  corresponding API/service are removed from production. Alembic is now `20260723_02 (head)`;
+  the migration tables, campaign tokens and migration custom fields are gone. Cleanup deleted
+  672 profiles created solely by the cancelled import. Five already-existing Inbox leads with
+  independent activity were deliberately preserved unchanged. No GetCourse update, TG message,
+  VK message, or funnel activation was ever performed for this campaign. Do not restore or run
+  this migration unless the user explicitly requests a new design.
+- Verification: frontend build, ruff, mypy, Python compilation, Alembic-head and diff checks
+  passed; production health is OK; app, worker, Telegram bot, Postgres and Redis are running;
+  the removed API route returns 404.
+
+- 2026-07-23: separate Inbox tab “Миграция — кто не купил” is deployed. It is read-only and has
+  no preparation-status column: name/GC-ID, contacts, TG or VK channel and VK-ID only, with search
+  and pagination. The current draft has 677 unique nonbuyer leads (475 TG, 202 VK); 2 source-row
+  pairs collapsed through existing contact deduplication. The tab is populated already.
+- No migration work has been queued: every recipient has `sync_stage = null` and remains outside
+  GetCourse sync. No GetCourse field was changed, no user message was sent, and no VK funnel was
+  started. Do not press migration test/full actions until the user explicitly asks to start them.
+- Latest verification: production-container `pytest tests/test_legacy_tg_migration.py -q` passed
+  (5 passed), health is OK, all services are Up, and the production list query reports 475 TG +
+  202 VK recipients.
+
+- 2026-07-23: `legacy-tg-migration` is deployed for nonbuyers only. Open Inbox → “Миграция TG +
+  VK” and upload only `Телеграм не купил (2).csv` and `Вк кто не купил (2).csv`. The validated
+  source totals are 491 TG rows and 202 VK rows; 14 TG/VK overlaps use VK priority, so the
+  campaign target is 679 (477 TG, 202 VK). Buyers are excluded entirely.
+- Operating sequence: check segments → create draft → “Тест: TG и VK”. The worker writes one
+  personal TG link into GetCourse and starts exactly one VK prospect in the current VK funnel.
+  Send the TG test broadcast manually from GetCourse using the existing custom field variable.
+  After confirming both paths, choose “Подготовить остальные”; the worker clears the test TG
+  link and prepares the remaining TG links and VK funnel starts. Send one manual GetCourse
+  broadcast only to users with a nonempty migration-link field after the workspace reports
+  `full_ready`. No campaign exists yet, and no external message or GetCourse field update has
+  been made by the deployment.
+- Production is at Alembic `20260723_01 (head)`; app, worker and Telegram bot are Up; public
+  health is OK. `pytest tests/test_legacy_tg_migration.py -q` passed in the production app
+  container (4 passed); its test data is cleaned up.
+
+- 2026-07-21: user changed the migration segmentation to four supplied exports: TG buyers, TG
+  nonbuyers, VK buyers, and VK nonbuyers. Local `inbox-app` UI has been redesigned as “Миграция
+  TG + VK” with four upload cards and channel-specific outcomes. It is not deployed yet: its
+  preview/run action is intentionally disabled because the deployed service still has the prior
+  three-file `legacy-tg-migration` API. Next implementation must replace that API/service model
+  with a four-file durable campaign: TG recipients get individual deep links; VK buyer recipients
+  enter follow-up immediately; VK nonbuyers start the current VK funnel; validation must reject
+  duplicates and missing/invalid VK IDs. No user data or external message has been sent.
+
+- 2026-07-20: `legacy-tg-migration` is implemented and deployed. Production Alembic is
+  `20260720_01 (head)` and app/worker/Telegram bot are running. The Inbox navigation includes
+  “Миграция TG”. It accepts the three exports supplied by the user and protects the workflow:
+  recipients with valid VK-ID are excluded; buyers connect to the new bot and become eligible for
+  Telegram follow-ups without restarting the main funnel; nonbuyers connect and start the normal
+  Telegram funnel. No campaign has been created and no external messages or GetCourse user-field
+  writes have occurred yet.
+- To operate it: open Inbox → “Миграция TG”, upload buyers, nonbuyers, and the 522-user legacy
+  Telegram export, confirm the expected 502 targets (28 buyers, 474 nonbuyers; 19 VK exclusions),
+  create campaign, press “Подготовить тест”. The worker writes links for exactly five recipients.
+  In GetCourse send the old `Aisu_Kam_bot` a test broadcast to the segment whose custom field
+  `FunnelHub — ссылка перехода в новый Telegram-бот` is filled; place the same variable in the
+  message. After all five flows are confirmed, press “Подготовить полную рассылку”; only after the
+  workspace reports `full_ready`, run the one real GetCourse broadcast with that same nonempty-field
+  segment. Never include VK-ID recipients in the Telegram migration audience.
+- Verification: `tests/test_legacy_tg_migration.py -q` 3 passed; focused existing integration
+  tests 47 passed; ruff and mypy passed; Inbox production build passed. The test configuration
+  now reuses one session event loop for async tests and fixtures because the SQLAlchemy engine is
+  shared; full `pytest -x` passes with 161 passed, 5 skipped. Production health/config/schema
+  smoke passed.
+
 - As of 2026-07-02, Inbox database pagination has local code changes ready for deploy: 20/50 page
   size selector, previous/next buttons, visible range summary, offset reset on search/page-size
   change, and last-page correction after deletion. `npm run build`, full ruff, and
@@ -464,3 +532,21 @@
   unsubscribed recipients, unrelated to Autoposting. No Autoposting traceback was observed.
 - Rotate the SSH password because earlier tracked helper/archive files had contained real SSH
   credentials before this cleanup.
+
+## Most tsennostey Telegram handoff — 2026-08-06
+
+- Implemented locally but not deployed: separate `most-telegram-bot` and `most-funnel-worker`,
+  `telegram_most` channel, seven-day content at `content/funnels/most_tsennostey.yml`, durable
+  `lead_tags`, tag email tasks, personal deep links from the landing webhook, and the landing
+  page session-storage handoff to `@most_cennostei_bot`.
+- Target email recipient is `aisukam-info@yandex.ru`. Production must set
+  `LEAD_NOTIFICATION_EMAIL_TO`, `MOST_TELEGRAM_BOT_USERNAME=most_cennostei_bot`,
+  `MOST_TELEGRAM_BOT_TOKEN`, and one shared `MOST_TSENNOSTEY_INGEST_TOKEN`; the latter must also
+  be stored in the site runtime as `FUNNELHUB_APPLICATION_TOKEN`, with
+  `FUNNELHUB_APPLICATION_URL=https://bot.aisukam.ru/webhooks/landing-applications/most-tsennostey`.
+- Verification passed: `ruff check .`, `mypy src`, `pytest tests/test_most_telegram_bot.py -q`
+  (4 passed), `alembic heads` (`20260806_01`), and the site vinext build plus worker artifact
+  validation. Full DB tests are blocked locally because Docker Desktop is not running.
+- Do not deploy blindly: both server and site repositories already have substantial uncommitted
+  user changes. The current deploy scripts upload the full working tree, so obtain explicit user
+  permission before publishing all outstanding changes.

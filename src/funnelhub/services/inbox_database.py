@@ -198,6 +198,8 @@ async def list_database_leads(
     session: AsyncSession,
     *,
     query: str | None = None,
+    source: str | None = None,
+    exclude_source: str | None = None,
     limit: int = 50,
     offset: int = 0,
 ) -> DatabaseLeadList:
@@ -209,6 +211,14 @@ async def list_database_leads(
         search_filter = build_lead_search_filter(clean_query)
         base_statement = base_statement.where(search_filter)
         count_statement = count_statement.where(search_filter)
+
+    if source:
+        base_statement = base_statement.where(Lead.source == source)
+        count_statement = count_statement.where(Lead.source == source)
+    if exclude_source:
+        source_filter = (Lead.source.is_(None)) | (Lead.source != exclude_source)
+        base_statement = base_statement.where(source_filter)
+        count_statement = count_statement.where(source_filter)
 
     total = int(await session.scalar(count_statement) or 0)
     rows = (
@@ -495,8 +505,21 @@ def normalize_vk_external_id(vk_id: str) -> str:
     return cleaned
 
 
-async def export_database_leads_csv(session: AsyncSession, *, query: str | None = None) -> str:
-    lead_list = await list_database_leads(session, query=query, limit=10_000, offset=0)
+async def export_database_leads_csv(
+    session: AsyncSession,
+    *,
+    query: str | None = None,
+    source: str | None = None,
+    exclude_source: str | None = None,
+) -> str:
+    lead_list = await list_database_leads(
+        session,
+        query=query,
+        source=source,
+        exclude_source=exclude_source,
+        limit=10_000,
+        offset=0,
+    )
     output = io.StringIO()
     writer = csv.DictWriter(output, fieldnames=CSV_EXPORT_COLUMNS, lineterminator="\n")
     writer.writeheader()
@@ -505,8 +528,21 @@ async def export_database_leads_csv(session: AsyncSession, *, query: str | None 
     return output.getvalue()
 
 
-async def export_database_leads_xlsx(session: AsyncSession, *, query: str | None = None) -> bytes:
-    lead_list = await list_database_leads(session, query=query, limit=10_000, offset=0)
+async def export_database_leads_xlsx(
+    session: AsyncSession,
+    *,
+    query: str | None = None,
+    source: str | None = None,
+    exclude_source: str | None = None,
+) -> bytes:
+    lead_list = await list_database_leads(
+        session,
+        query=query,
+        source=source,
+        exclude_source=exclude_source,
+        limit=10_000,
+        offset=0,
+    )
     workbook = Workbook()
     sheet = workbook.active
     sheet.title = "Лиды"

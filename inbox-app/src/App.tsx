@@ -25,6 +25,8 @@ import type { ReactNode } from "react";
 
 type ConversationStatus = "open" | "needs_reply" | "replied" | "closed";
 type ReplyChannel = "telegram" | "vk" | "email";
+type InboxSegment = "main" | "most-tsennostey";
+type DatabaseSegment = "main" | "most-tsennostey";
 
 type Conversation = {
   id: string;
@@ -107,6 +109,80 @@ type BroadcastList = {
   limit: number;
   offset: number;
 };
+
+type MigrationFileKey = "tg_prospects" | "vk_prospects";
+type MigrationFiles = Record<MigrationFileKey, File | null>;
+
+type MigrationPreview = {
+  tg_prospects_total: number;
+  vk_prospects_total: number;
+  priority_vk: number;
+  target_total: number;
+  telegram_total: number;
+  vk_total: number;
+};
+
+type MigrationCampaign = {
+  id: string;
+  name: string;
+  status: string;
+  target_total: number;
+  telegram_total: number;
+  vk_total: number;
+  telegram_buyers: number;
+  telegram_prospects: number;
+  vk_buyers: number;
+  vk_prospects: number;
+  priority_vk: number;
+  excluded_current_telegram: number;
+  synced_test: number;
+  synced_full: number;
+  test_total: number;
+  activated_buyers: number;
+  activated_prospects: number;
+};
+
+type MigrationProspect = {
+  lead_id: string;
+  getcourse_user_id: number | null;
+  name: string | null;
+  email: string | null;
+  phone: string | null;
+  channel: "telegram" | "vk";
+  vk_id: string | null;
+};
+
+type MigrationProspectList = {
+  campaign_id: string | null;
+  campaign_name: string | null;
+  items: MigrationProspect[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+
+const migrationFileSlots: Array<{
+  key: MigrationFileKey;
+  channel: "telegram" | "vk";
+  title: string;
+  description: string;
+  result: string;
+}> = [
+  {
+    key: "tg_prospects",
+    channel: "telegram",
+    title: "Непокупатели · Telegram",
+    description: "Уже были в Telegram-боте",
+    result: "Персональная ссылка → воронка с дня 1",
+  },
+  {
+    key: "vk_prospects",
+    channel: "vk",
+    title: "Непокупатели · VK",
+    description: "Есть VK-ID и диалог с группой",
+    result: "Без ссылки → VK-воронка с дня 1",
+  },
+];
 
 type Autopost = {
   id: string;
@@ -329,6 +405,16 @@ const filters: Array<{ value: ConversationStatus | "all"; label: string }> = [
   { value: "closed", label: "Закрытые" },
 ];
 
+const inboxSegments: Array<{ value: InboxSegment; label: string }> = [
+  { value: "main", label: "Основной Inbox" },
+  { value: "most-tsennostey", label: "Мост ценностей" },
+];
+
+const databaseSegments: Array<{ value: DatabaseSegment; label: string }> = [
+  { value: "main", label: "Общая база" },
+  { value: "most-tsennostey", label: "Мост ценностей" },
+];
+
 export function App() {
   const [authState, setAuthState] = useState<AuthState>("checking");
   const [adminName, setAdminName] = useState<string | null>(null);
@@ -337,6 +423,7 @@ export function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<ConversationDetail | null>(null);
   const [filter, setFilter] = useState<ConversationStatus | "all">("all");
+  const [inboxSegment, setInboxSegment] = useState<InboxSegment>("main");
   const [query, setQuery] = useState("");
   const [draft, setDraft] = useState("");
   const [replyChannels, setReplyChannels] = useState<ReplyChannel[]>([]);
@@ -344,6 +431,7 @@ export function App() {
   const [detailState, setDetailState] = useState<LoadState>("idle");
   const [replyState, setReplyState] = useState<LoadState>("idle");
   const [databaseQuery, setDatabaseQuery] = useState("");
+  const [databaseSegment, setDatabaseSegment] = useState<DatabaseSegment>("main");
   const [databaseList, setDatabaseList] = useState<DatabaseLeadList | null>(null);
   const [databasePageSize, setDatabasePageSize] = useState<DatabasePageSize>(20);
   const [databaseOffset, setDatabaseOffset] = useState(0);
@@ -403,8 +491,15 @@ export function App() {
     setListState("loading");
     setError(null);
     try {
-      const statusParam = filter === "all" ? "" : `?status=${filter}`;
-      const response = await fetch(`${API_BASE_URL}/api/inbox/conversations${statusParam}`, {
+      const params = new URLSearchParams();
+      if (filter !== "all") params.set("status", filter);
+      if (inboxSegment === "most-tsennostey") {
+        params.set("source", "most-tsennostey");
+      } else {
+        params.set("exclude_source", "most-tsennostey");
+      }
+      const queryString = params.toString();
+      const response = await fetch(`${API_BASE_URL}/api/inbox/conversations${queryString ? `?${queryString}` : ""}`, {
         credentials: "include",
       });
       if (response.status === 401) {
@@ -434,7 +529,7 @@ export function App() {
       setListState("error");
       setError(formatError(caught));
     }
-  }, [filter]);
+  }, [filter, inboxSegment]);
 
   const loadDetail = useCallback(async (conversationId: string) => {
     setDetailState("loading");
@@ -462,7 +557,11 @@ export function App() {
     }
   }, []);
 
-  const loadDatabaseLeads = useCallback(async (nextOffset = databaseOffset) => {
+  const loadDatabaseLeads = useCallback(async (requestedOffset?: number) => {
+    const nextOffset =
+      typeof requestedOffset === "number" && Number.isFinite(requestedOffset)
+        ? requestedOffset
+        : databaseOffset;
     setDatabaseState("loading");
     setError(null);
     try {
@@ -472,6 +571,11 @@ export function App() {
       });
       if (databaseQuery.trim()) {
         params.set("q", databaseQuery.trim());
+      }
+      if (databaseSegment === "most-tsennostey") {
+        params.set("source", "most-tsennostey");
+      } else {
+        params.set("exclude_source", "most-tsennostey");
       }
       const response = await fetch(`${API_BASE_URL}/api/inbox/database/leads?${params}`, {
         credentials: "include",
@@ -484,7 +588,7 @@ export function App() {
         return;
       }
       if (!response.ok) {
-        throw new Error(`Database list failed: ${response.status}`);
+        throw new Error(await readApiError(response, `Database list failed: ${response.status}`));
       }
       const payload = (await response.json()) as DatabaseLeadList;
       if (payload.items.length === 0 && payload.total > 0 && payload.offset > 0) {
@@ -507,7 +611,7 @@ export function App() {
       setDatabaseState("error");
       setError(formatError(caught));
     }
-  }, [databaseOffset, databasePageSize, databaseQuery]);
+  }, [databaseOffset, databasePageSize, databaseQuery, databaseSegment]);
 
   const loadDatabaseLeadDetail = useCallback(async (leadId: string) => {
     setDatabaseDetailState("loading");
@@ -680,6 +784,11 @@ export function App() {
       if (databaseQuery.trim()) {
         params.set("q", databaseQuery.trim());
       }
+      if (databaseSegment === "most-tsennostey") {
+        params.set("source", "most-tsennostey");
+      } else {
+        params.set("exclude_source", "most-tsennostey");
+      }
       const suffix = params.toString() ? `?${params}` : "";
       const response = await fetch(
         `${API_BASE_URL}/api/inbox/database/leads/export.xlsx${suffix}`,
@@ -814,6 +923,7 @@ export function App() {
           databaseList={databaseList}
           databasePageSize={databasePageSize}
           databaseQuery={databaseQuery}
+          databaseSegment={databaseSegment}
           databaseState={databaseState}
           onChangePage={changeDatabasePage}
           onChangePageSize={changeDatabasePageSize}
@@ -822,7 +932,12 @@ export function App() {
           onOpenHistory={() => setShowImportHistory(true)}
           onLogout={() => void logout()}
           onQueryChange={setDatabaseQuery}
-          onRefresh={loadDatabaseLeads}
+          onSegmentChange={(segment) => {
+            setDatabaseOffset(0);
+            setSelectedLeadId(null);
+            setDatabaseSegment(segment);
+          }}
+          onRefresh={() => void loadDatabaseLeads()}
           onSaveLeadVkId={(leadId, vkId) => saveLeadVkId(leadId, vkId)}
           onDeleteLead={deleteDatabaseLead}
           onSearch={(event) => void submitDatabaseSearch(event)}
@@ -939,6 +1054,22 @@ export function App() {
             placeholder="Имя, контакт, сообщение"
           />
         </div>
+
+        <nav className="view-switch inbox-source-tabs" aria-label="Разделы Inbox">
+          {inboxSegments.map((segment) => (
+            <button
+              className={inboxSegment === segment.value ? "view-tab is-active" : "view-tab"}
+              key={segment.value}
+              onClick={() => {
+                setSelectedId(null);
+                setInboxSegment(segment.value);
+              }}
+              type="button"
+            >
+              {segment.label}
+            </button>
+          ))}
+        </nav>
 
         <div className="filter-row" aria-label="Фильтр диалогов">
           {filters.map((item) => (
@@ -1206,6 +1337,381 @@ function ViewSwitch({
   );
 }
 
+function LegacyTelegramMigrationWorkspace({
+  adminName,
+  activeView,
+  onSwitchView,
+  onLogout,
+}: {
+  adminName: string | null;
+  activeView: AppView;
+  onSwitchView: (view: AppView) => void;
+  onLogout: () => void;
+}) {
+  const [migrationFiles, setMigrationFiles] = useState<MigrationFiles>({
+    tg_prospects: null,
+    vk_prospects: null,
+  });
+  const [preview, setPreview] = useState<MigrationPreview | null>(null);
+  const [campaign, setCampaign] = useState<MigrationCampaign | null>(null);
+  const [state, setState] = useState<LoadState>("idle");
+  const [error, setError] = useState<string | null>(null);
+  const selectedFiles = Object.values(migrationFiles).filter(Boolean).length;
+
+  function selectMigrationFile(key: MigrationFileKey, file: File | null) {
+    setMigrationFiles((current) => ({ ...current, [key]: file }));
+    setPreview(null);
+  }
+
+  function buildFilesForm() {
+    if (Object.values(migrationFiles).some((file) => file === null)) {
+      throw new Error("Выберите оба файла непокупателей: Telegram и VK.");
+    }
+    const form = new FormData();
+    form.append("tg_prospects_file", migrationFiles.tg_prospects as File);
+    form.append("vk_prospects_file", migrationFiles.vk_prospects as File);
+    return form;
+  }
+
+  async function readError(response: Response) {
+    const payload = (await response.json().catch(() => null)) as { detail?: string } | null;
+    return payload?.detail || `Ошибка: ${response.status}`;
+  }
+
+  async function previewCampaign() {
+    setError(null);
+    setState("loading");
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/inbox/legacy-tg-migration/preview`, {
+        method: "POST",
+        credentials: "include",
+        body: buildFilesForm(),
+      });
+      if (!response.ok) throw new Error(await readError(response));
+      setPreview((await response.json()) as MigrationPreview);
+    } catch (caught) {
+      setError(formatError(caught));
+    } finally {
+      setState("idle");
+    }
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadLatestCampaign() {
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/inbox/legacy-tg-migration`, {
+          credentials: "include",
+        });
+        if (!response.ok) return;
+        const campaigns = (await response.json()) as MigrationCampaign[];
+        if (!cancelled) setCampaign(campaigns[0] || null);
+      } catch {
+        // A new campaign can still be prepared when status refresh is temporarily unavailable.
+      }
+    }
+    void loadLatestCampaign();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function createCampaign() {
+    setError(null);
+    setState("loading");
+    try {
+      const form = buildFilesForm();
+      form.append("name", "Миграция непокупателей TG + VK");
+      const response = await fetch(`${API_BASE_URL}/api/inbox/legacy-tg-migration`, {
+        method: "POST",
+        credentials: "include",
+        body: form,
+      });
+      if (!response.ok) throw new Error(await readError(response));
+      setCampaign((await response.json()) as MigrationCampaign);
+    } catch (caught) {
+      setError(formatError(caught));
+    } finally {
+      setState("idle");
+    }
+  }
+
+  async function updateCampaign(action: "prepare-test" | "prepare-full" | "refresh") {
+    if (!campaign) return;
+    setError(null);
+    setState("loading");
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/api/inbox/legacy-tg-migration/${campaign.id}${action === "refresh" ? "" : `/${action}`}`,
+        { method: action === "refresh" ? "GET" : "POST", credentials: "include" },
+      );
+      if (!response.ok) throw new Error(await readError(response));
+      setCampaign((await response.json()) as MigrationCampaign);
+    } catch (caught) {
+      setError(formatError(caught));
+    } finally {
+      setState("idle");
+    }
+  }
+
+  return (
+    <>
+      <header className="panel-header">
+        <div>
+          <p className="eyebrow">FunnelHub</p>
+          <h1>Миграция TG + VK</h1>
+          <ViewSwitch activeView={activeView} onSwitchView={onSwitchView} />
+        </div>
+        <div className="panel-actions">
+          <span className="admin-name">{adminName || "Администратор"}</span>
+          {campaign ? (
+            <button className="icon-button" onClick={() => void updateCampaign("refresh")} type="button">
+              <RefreshCw aria-hidden="true" size={18} />
+            </button>
+          ) : null}
+          <button className="icon-button secondary" onClick={onLogout} type="button">
+            <LogOut aria-hidden="true" size={18} />
+          </button>
+        </div>
+      </header>
+      <div className="workspace is-list-only">
+        <section className="migration-hero">
+          <div>
+            <p className="migration-kicker">Новая схема сегментации</p>
+            <h2>Непокупатели — две разные коммуникации</h2>
+            <p>Telegram получает персональную ссылку на новый бот. VK продолжает общение сразу в сообщениях той же группы — без ссылки. Покупатели исключены.</p>
+          </div>
+          <div className="migration-counter" aria-live="polite">
+            <strong>{selectedFiles}/2</strong>
+            <span>файла выбрано</span>
+          </div>
+        </section>
+
+        <section className="migration-flow" aria-label="Логика миграции">
+          <article className="migration-flow-card is-telegram">
+            <MessageCircle aria-hidden="true" size={20} />
+            <div><strong>Telegram</strong><span>Ссылка → новый бот → нужная ветка</span></div>
+          </article>
+          <article className="migration-flow-card is-vk">
+            <UserRound aria-hidden="true" size={20} />
+            <div><strong>ВКонтакте</strong><span>VK-ID → сообщения группы → нужная ветка</span></div>
+          </article>
+        </section>
+
+        <section className="migration-upload-panel">
+          <div className="migration-section-heading">
+            <div><p className="migration-kicker">Шаг 1</p><h2>Загрузите два сегмента непокупателей</h2></div>
+            <span>CSV или XLSX</span>
+          </div>
+          <div className="migration-file-grid">
+            {migrationFileSlots.map((slot) => {
+              const file = migrationFiles[slot.key];
+              return (
+                <label className={`migration-file-card is-${slot.channel}${file ? " is-ready" : ""}`} key={slot.key}>
+                  <input accept=".csv,.xlsx" disabled={Boolean(campaign) || state === "loading"} onChange={(event) => selectMigrationFile(slot.key, event.target.files?.[0] || null)} type="file" />
+                  <div className="migration-file-card-head">
+                    <span className="migration-channel-badge">{slot.channel === "telegram" ? "TG" : "VK"}</span>
+                    {file ? <Check aria-label="Файл выбран" size={18} /> : <Upload aria-hidden="true" size={18} />}
+                  </div>
+                  <strong>{slot.title}</strong>
+                  <small>{slot.description}</small>
+                  <span className="migration-file-name">{file ? file.name : "Выбрать файл"}</span>
+                  <span className="migration-result">{slot.result}</span>
+                </label>
+              );
+            })}
+          </div>
+          <div className="migration-actions">
+            <button className="secondary-button" disabled={state === "loading" || Boolean(campaign)} onClick={() => void previewCampaign()} type="button">Проверить сегменты</button>
+            <button className="send-button" disabled={state === "loading" || !preview || Boolean(campaign)} onClick={() => void createCampaign()} type="button">Создать черновик</button>
+          </div>
+        </section>
+
+        {preview ? (
+          <section className="migration-preview">
+            <strong>Готово к созданию черновика: {preview.target_total} уникальных лидов</strong>
+            <span>TG: {preview.telegram_total} · VK: {preview.vk_total} · приоритет VK у {preview.priority_vk} пересечений.</span>
+          </section>
+        ) : null}
+
+        <section className="migration-next-step">
+          <div className="migration-step-mark">2</div>
+          <div>
+            <h2>{campaign ? `Кампания: ${campaign.name}` : "Проверка и запуск кампании"}</h2>
+            {campaign ? (
+              <p>Статус: {campaign.status}. В кампании: TG — {campaign.telegram_prospects} непокупателей, VK — {campaign.vk_prospects} непокупателей. Запущено воронок: {campaign.activated_prospects}. Покупатели не включены.</p>
+            ) : <p>Сначала проверьте состав. Дубли между TG и VK автоматически остаются только в VK; покупателей кампания не затрагивает.</p>}
+          </div>
+          {campaign ? (
+            <div className="migration-campaign-actions">
+              <button className="secondary-button" disabled={state === "loading" || campaign.status !== "draft"} onClick={() => void updateCampaign("prepare-test")} type="button">Тест: TG и VK</button>
+              <button className="send-button" disabled={state === "loading" || campaign.status !== "testing_ready"} onClick={() => void updateCampaign("prepare-full")} type="button">Подготовить остальные</button>
+              <small>Тест готов: {campaign.synced_test}/{campaign.test_total || 2}. Основная часть: {campaign.synced_full}/{Math.max(campaign.target_total - (campaign.test_total || 2), 0)}. Тест запускает одну VK-ветку; TG-ссылку затем отправляете из GetCourse вручную.</small>
+            </div>
+          ) : <button className="soft-button" disabled type="button">Сначала проверьте сегменты</button>}
+        </section>
+        {error ? <div className="toast" role="status">{error}</div> : null}
+      </div>
+    </>
+  );
+}
+
+function MigrationProspectsWorkspace({
+  adminName,
+  activeView,
+  onSwitchView,
+  onLogout,
+}: {
+  adminName: string | null;
+  activeView: AppView;
+  onSwitchView: (view: AppView) => void;
+  onLogout: () => void;
+}) {
+  const [list, setList] = useState<MigrationProspectList | null>(null);
+  const [query, setQuery] = useState("");
+  const [appliedQuery, setAppliedQuery] = useState("");
+  const [offset, setOffset] = useState(0);
+  const [state, setState] = useState<LoadState>("loading");
+  const [error, setError] = useState<string | null>(null);
+
+  const loadProspects = useCallback(async () => {
+    setState("loading");
+    setError(null);
+    try {
+      const params = new URLSearchParams({ limit: "20", offset: String(offset) });
+      if (appliedQuery) params.set("q", appliedQuery);
+      const response = await fetch(
+        `${API_BASE_URL}/api/inbox/legacy-tg-migration/recipients?${params.toString()}`,
+        { credentials: "include" },
+      );
+      if (!response.ok) throw new Error(`Не удалось загрузить список: ${response.status}`);
+      setList((await response.json()) as MigrationProspectList);
+      setState("idle");
+    } catch (caught) {
+      setState("error");
+      setError(formatError(caught));
+    }
+  }, [appliedQuery, offset]);
+
+  useEffect(() => {
+    void loadProspects();
+  }, [loadProspects]);
+
+  const prospects = list?.items ?? [];
+  const total = list?.total ?? 0;
+  const limit = list?.limit ?? 20;
+  const currentPage = total === 0 ? 1 : Math.floor(offset / limit) + 1;
+  const totalPages = Math.max(1, Math.ceil(total / limit));
+  const first = total === 0 ? 0 : offset + 1;
+  const last = Math.min(offset + prospects.length, total);
+
+  function submitSearch(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setOffset(0);
+    setAppliedQuery(query.trim());
+  }
+
+  return (
+    <>
+      <header className="database-header">
+        <div>
+          <p className="eyebrow">FunnelHub</p>
+          <h1>Миграция — кто не купил</h1>
+          <ViewSwitch activeView={activeView} onSwitchView={onSwitchView} />
+        </div>
+        <div className="database-actions">
+          <span className="admin-name">{adminName || "Администратор"}</span>
+          <button className="soft-button" disabled={state === "loading"} onClick={() => void loadProspects()} type="button">
+            <RefreshCw aria-hidden="true" size={17} />
+            <span>Обновить</span>
+          </button>
+          <button className="icon-button secondary" onClick={onLogout} type="button">
+            <LogOut aria-hidden="true" size={18} />
+            <span className="sr-only">Выйти</span>
+          </button>
+        </div>
+      </header>
+
+      <section className="workspace is-list-only migration-prospect-workspace">
+        <form className="database-search" onSubmit={submitSearch}>
+          <Search aria-hidden="true" size={18} />
+          <input
+            aria-label="Поиск по миграции"
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Имя, email, телефон или GetCourse ID"
+            value={query}
+          />
+          <button className="soft-button" type="submit">Найти</button>
+        </form>
+
+        <div className="migration-prospect-summary">
+          <strong>{list ? `${first}-${last} из ${total} непокупателей` : "Загружаем список…"}</strong>
+          <span>Пользователи сохранены в базе FunnelHub; здесь нет действий и статусов рассылки.</span>
+        </div>
+
+        <div className="database-pagination">
+          <span>По 20 на странице</span>
+          <div className="database-page-controls">
+            <button
+              className="soft-button"
+              disabled={state === "loading" || offset === 0}
+              onClick={() => setOffset(Math.max(0, offset - limit))}
+              type="button"
+            >
+              Назад
+            </button>
+            <span>{currentPage} / {totalPages}</span>
+            <button
+              className="soft-button"
+              disabled={state === "loading" || offset + limit >= total}
+              onClick={() => setOffset(offset + limit)}
+              type="button"
+            >
+              Вперёд
+            </button>
+          </div>
+        </div>
+
+        <div className="lead-table-wrap">
+          <table className="lead-table">
+            <thead>
+              <tr>
+                <th>Лид</th>
+                <th>Контакт</th>
+                <th>Канал миграции</th>
+                <th>VK-ID</th>
+              </tr>
+            </thead>
+            <tbody>
+              {state === "loading" ? (
+                <tr><td colSpan={4}>Загружаем список…</td></tr>
+              ) : null}
+              {state !== "loading" && prospects.length === 0 ? (
+                <tr><td colSpan={4}>Черновик миграции пока не создан.</td></tr>
+              ) : null}
+              {prospects.map((prospect) => (
+                <tr key={prospect.lead_id}>
+                  <td>
+                    <strong>{prospect.name || "Без имени"}</strong>
+                    <span>{prospect.getcourse_user_id ? `GC ${prospect.getcourse_user_id}` : "GC-ID нет"}</span>
+                  </td>
+                  <td>
+                    <span>{prospect.email || "email нет"}</span>
+                    <span>{prospect.phone || "телефон нет"}</span>
+                  </td>
+                  <td><span>{prospect.channel === "telegram" ? "Telegram" : "ВКонтакте"}</span></td>
+                  <td><span>{prospect.vk_id || "—"}</span></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {error ? <div className="toast" role="status">{error}</div> : null}
+      </section>
+    </>
+  );
+}
+
 function DatabaseWorkspace({
   adminName,
   databaseDetailState,
@@ -1214,6 +1720,7 @@ function DatabaseWorkspace({
   databaseList,
   databasePageSize,
   databaseQuery,
+  databaseSegment,
   databaseState,
   onChangePage,
   onChangePageSize,
@@ -1222,6 +1729,7 @@ function DatabaseWorkspace({
   onOpenHistory,
   onLogout,
   onQueryChange,
+  onSegmentChange,
   onRefresh,
   onSaveLeadVkId,
   onSearch,
@@ -1238,6 +1746,7 @@ function DatabaseWorkspace({
   databaseList: DatabaseLeadList | null;
   databasePageSize: DatabasePageSize;
   databaseQuery: string;
+  databaseSegment: DatabaseSegment;
   databaseState: LoadState;
   onChangePage: (offset: number) => void;
   onChangePageSize: (size: DatabasePageSize) => void;
@@ -1246,6 +1755,7 @@ function DatabaseWorkspace({
   onOpenHistory: () => void;
   onLogout: () => void;
   onQueryChange: (query: string) => void;
+  onSegmentChange: (segment: DatabaseSegment) => void;
   onRefresh: () => void;
   onSaveLeadVkId: (leadId: string, vkId: string) => Promise<void>;
   onSearch: (event: FormEvent<HTMLFormElement>) => void;
@@ -1275,7 +1785,7 @@ function DatabaseWorkspace({
           <ViewSwitch activeView="database" onSwitchView={onSwitchView} />
         </div>
         <div className="database-actions">
-          <button className="soft-button" onClick={onRefresh} type="button">
+          <button className="soft-button" onClick={() => onRefresh()} type="button">
             <RefreshCw aria-hidden="true" size={17} />
             <span>Обновить</span>
           </button>
@@ -1301,6 +1811,18 @@ function DatabaseWorkspace({
 
       <section className="database-grid">
         <div className="database-list-panel">
+          <nav className="view-switch database-source-tabs" aria-label="Разделы базы">
+            {databaseSegments.map((segment) => (
+              <button
+                className={databaseSegment === segment.value ? "view-tab is-active" : "view-tab"}
+                key={segment.value}
+                onClick={() => onSegmentChange(segment.value)}
+                type="button"
+              >
+                {segment.label}
+              </button>
+            ))}
+          </nav>
           <form className="database-search" onSubmit={onSearch}>
             <Search aria-hidden="true" size={18} />
             <input
@@ -2683,6 +3205,19 @@ function BroadcastDetailModal({
       </div>
     </div>
   );
+}
+
+async function readApiError(response: Response, fallback: string) {
+  const payload = (await response.json().catch(() => null)) as { detail?: unknown } | null;
+  if (typeof payload?.detail === "string") {
+    return payload.detail;
+  }
+  if (Array.isArray(payload?.detail)) {
+    return payload.detail
+      .map((item) => (typeof item === "object" && item ? JSON.stringify(item) : String(item)))
+      .join("; ");
+  }
+  return fallback;
 }
 
 

@@ -16,6 +16,8 @@ from funnelhub.services.email_messaging import EmailProviderClient, build_email_
 logger = logging.getLogger(__name__)
 SENT_EVENT_TYPE = "lead.application.notification.sent"
 FAILED_EVENT_TYPE = "lead.application.notification.failed"
+TAG_SENT_EVENT_TYPE = "lead.tag.notification.sent"
+TAG_FAILED_EVENT_TYPE = "lead.tag.notification.failed"
 
 
 async def send_lead_application_notification(
@@ -80,6 +82,68 @@ async def send_lead_application_notification(
     return sent
 
 
+async def send_lead_tag_notification(
+    *,
+    session: AsyncSession,
+    settings: Settings,
+    lead_id: uuid.UUID,
+    tag: str,
+    source: str,
+    client: EmailProviderClient | None = None,
+) -> int:
+    recipients = parse_notification_recipients(settings.lead_notification_email_to)
+    if not recipients:
+        return 0
+    if await has_tag_notification(session, lead_id, tag):
+        return 0
+    try:
+        email_client = client or build_email_provider_client(settings)
+    except Exception as exc:
+        await record_notification_event(
+            session=session,
+            lead_id=lead_id,
+            event_type=TAG_FAILED_EVENT_TYPE,
+            source=source,
+            payload={"tag": tag, "error": str(exc), "stage": "build_email_client"},
+        )
+        logger.exception("Lead tag notification email client is not available")
+        return 0
+    if email_client is None:
+        return 0
+    lead = await session.get(Lead, lead_id)
+    if lead is None:
+        return 0
+    contacts = await load_lead_contacts(session, lead_id)
+    subject = f"Мост ценностей — присвоен тег: {tag}"
+    body = build_lead_notification_text(
+        lead=lead,
+        contacts=contacts,
+        created=False,
+        source=source,
+        settings=settings,
+        tag=tag,
+    )
+    html = build_lead_notification_html(body)
+    sent = 0
+    for recipient in recipients:
+        if await send_one_notification(
+            session=session,
+            client=email_client,
+            lead=lead,
+            recipient=recipient,
+            subject=subject,
+            body=body,
+            html=html,
+            settings=settings,
+            source=source,
+            notification_type="lead_tag",
+            sent_event_type=TAG_SENT_EVENT_TYPE,
+            tag=tag,
+        ):
+            sent += 1
+    return sent
+
+
 def parse_notification_recipients(value: str | None) -> list[str]:
     if value is None:
         return []
@@ -113,6 +177,19 @@ async def has_recent_notification(
     return existing is not None
 
 
+async def has_tag_notification(session: AsyncSession, lead_id: uuid.UUID, tag: str) -> bool:
+    return (
+        await session.scalar(
+            select(Event.id).where(
+                Event.lead_id == lead_id,
+                Event.event_type == TAG_SENT_EVENT_TYPE,
+                Event.payload["tag"].astext == tag,
+            )
+        )
+        is not None
+    )
+
+
 async def load_lead_contacts(session: AsyncSession, lead_id: uuid.UUID) -> dict[str, str]:
     contacts = (
         await session.scalars(
@@ -138,10 +215,13 @@ async def send_one_notification(
     html: str,
     settings: Settings,
     source: str,
+    notification_type: str = "lead_application",
+    sent_event_type: str = SENT_EVENT_TYPE,
+    tag: str | None = None,
 ) -> bool:
     now = datetime.now(UTC)
     message_metadata: dict[str, Any] = {
-        "notification_type": "lead_application",
+        "notification_type": notification_type,
         "to_email": recipient,
         "subject": subject,
         "source": source,
@@ -170,7 +250,7 @@ async def send_one_notification(
             metadata={
                 "lead_id": str(lead.id),
                 "message_id": str(message.id),
-                "notification_type": "lead_application",
+                "notification_type": notification_type,
                 "source": source,
             },
         )
@@ -200,11 +280,12 @@ async def send_one_notification(
     await record_notification_event(
         session=session,
         lead_id=lead.id,
-        event_type=SENT_EVENT_TYPE,
+        event_type=sent_event_type,
         source=source,
         payload={
             "message_id": str(message.id),
             "to_email": recipient,
+            **({"tag": tag} if tag is not None else {}),
         },
     )
     await session.flush()
@@ -238,11 +319,12 @@ def build_lead_notification_text(
     created: bool,
     source: str,
     settings: Settings,
+    tag: str | None = None,
 ) -> str:
     raw = lead.raw_getcourse_data or {}
     vk_id = raw.get("vk_id") or raw.get("VK-ID") or raw.get("vk_user_id")
     lines = [
-        "В FunnelHub поступила заявка.",
+        "В FunnelHub обновлён лид." if tag is not None else "В FunnelHub поступила заявка.",
         "",
         f"Тип: {'новый лид' if created else 'повторная заявка'}",
         f"Источник заявки: {source}",
@@ -255,6 +337,8 @@ def build_lead_notification_text(
         f"VK-ID: {vk_id or '-'}",
         f"Lead ID: {lead.id}",
     ]
+    if tag is not None:
+        lines.insert(2, f"Присвоен тег: {tag}")
     if settings.inbox_app_url:
         lines.append(f"Inbox: {settings.inbox_app_url.rstrip('/')}")
     return "\n".join(str(line) for line in lines)

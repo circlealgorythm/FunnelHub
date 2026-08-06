@@ -61,8 +61,13 @@ async def link_messenger_identity(
     display_name: str | None,
     raw_profile: dict[str, Any],
     allow_relink: bool = False,
+    allowed_token_statuses: tuple[str, ...] = ("active",),
 ) -> MessengerLinkResult:
-    bot_link_token = await get_active_bot_link_token(session, token)
+    bot_link_token = await get_bot_link_token(
+        session,
+        token,
+        allowed_statuses=allowed_token_statuses,
+    )
     if bot_link_token is None:
         raise ValueError("Bot link token is invalid or expired.")
 
@@ -112,10 +117,19 @@ async def get_active_bot_link_token(
     session: AsyncSession,
     token: str,
 ) -> BotLinkToken | None:
+    return await get_bot_link_token(session, token, allowed_statuses=("active",))
+
+
+async def get_bot_link_token(
+    session: AsyncSession,
+    token: str,
+    *,
+    allowed_statuses: tuple[str, ...],
+) -> BotLinkToken | None:
     bot_link_token = await session.scalar(
         select(BotLinkToken).where(
             BotLinkToken.token == token,
-            BotLinkToken.status == "active",
+            BotLinkToken.status.in_(allowed_statuses),
         )
     )
     if bot_link_token is None:
@@ -137,6 +151,15 @@ def build_telegram_deep_link(settings: Settings, token: str) -> str | None:
     if not settings.telegram_bot_username:
         return None
     username = settings.telegram_bot_username.strip().lstrip("@")
+    if not username:
+        return None
+    return f"https://t.me/{username}?start={token}"
+
+
+def build_most_telegram_deep_link(settings: Settings, token: str) -> str | None:
+    if not settings.most_telegram_bot_username:
+        return None
+    username = settings.most_telegram_bot_username.strip().lstrip("@")
     if not username:
         return None
     return f"https://t.me/{username}?start={token}"

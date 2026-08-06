@@ -50,3 +50,7 @@ packages = ["funnelhub"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+# The async SQLAlchemy engine is module-global. Reusing one event loop avoids
+# leaving pooled asyncpg connections bound to a loop pytest has already closed.
+asyncio_default_test_loop_scope = "session"
+asyncio_default_fixture_loop_scope = "session"

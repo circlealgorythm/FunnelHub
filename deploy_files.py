@@ -9,7 +9,7 @@ import paramiko
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 REMOTE_ROOT = "/opt/funnelhub"
-UPLOAD_DIRS = ("src", "migrations", "tests", "inbox-app/dist")
+UPLOAD_DIRS = ("src", "migrations", "content", "tests", "inbox-app/dist")
 UPLOAD_FILES = ("Dockerfile", "docker-compose.prod.yml", "pyproject.toml", "alembic.ini")
 CLEAN_REMOTE_DIRS = {"inbox-app/dist"}
 SKIP_DIRS = {"__pycache__", ".venv", ".pytest_cache", "node_modules"}
@@ -87,11 +87,17 @@ def main() -> None:
     load_local_env()
     ssh_host = required_env("SSH_HOST")
     ssh_user = required_env("SSH_USER")
-    ssh_password = required_env("SSH_PASSWORD")
+    ssh_key_path = required_env("SSH_KEY_PATH")
 
     ssh = paramiko.SSHClient()
     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    ssh.connect(ssh_host, username=ssh_user, password=ssh_password)
+    ssh.connect(
+        ssh_host,
+        username=ssh_user,
+        key_filename=ssh_key_path,
+        allow_agent=False,
+        look_for_keys=False,
+    )
 
     try:
         sftp = ssh.open_sftp()
@@ -110,9 +116,11 @@ def main() -> None:
 
         command = (
             f"cd {REMOTE_ROOT} && "
-            "docker compose -f docker-compose.prod.yml build app funnel-worker telegram-bot && "
+            "docker compose -f docker-compose.prod.yml build app funnel-worker telegram-bot "
+            "most-telegram-bot most-funnel-worker && "
             "docker compose -f docker-compose.prod.yml run --rm app alembic upgrade head && "
-            "docker compose -f docker-compose.prod.yml up -d app funnel-worker telegram-bot"
+            "docker compose -f docker-compose.prod.yml up -d app funnel-worker telegram-bot "
+            "most-telegram-bot most-funnel-worker"
         )
         _, stdout, stderr = ssh.exec_command(command)
         out = stdout.read().decode("utf-8", errors="replace")

@@ -76,6 +76,7 @@ async def main() -> None:
             async with async_session_maker() as session:
                 clients = ApiInboxSendClients(
                     telegram_bot=bot,
+                    most_telegram_bot=None,
                     vk_client=vk_client,
                     email_client=email_client,
                     email_subject=settings.email_default_subject,

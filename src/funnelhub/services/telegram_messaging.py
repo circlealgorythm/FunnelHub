@@ -35,6 +35,7 @@ class TelegramUrlButton:
 @dataclass(frozen=True)
 class TelegramTextButton:
     text: str
+    callback_data: str | None = None
 
 
 TelegramButton = TelegramUrlButton | TelegramTextButton
@@ -54,22 +55,23 @@ async def send_telegram_text_message(
     lead_id: uuid.UUID,
     text: str,
     url_buttons: Sequence[TelegramButton] | None = None,
+    channel: str = "telegram",
 ) -> TelegramSendResult:
-    identity = await get_subscribed_telegram_identity(session, lead_id)
+    identity = await get_subscribed_telegram_identity(session, lead_id, channel=channel)
     if identity is None:
         raise ValueError("Lead has no subscribed Telegram identity.")
 
     now = datetime.now(UTC)
     reply_markup = build_url_keyboard(url_buttons)
     metadata = build_message_metadata(url_buttons)
-    conversation = await get_latest_telegram_conversation(session, lead_id)
+    conversation = await get_latest_telegram_conversation(session, lead_id, channel=channel)
     if conversation is not None:
         conversation.last_message_at = now
     message = Message(
         id=uuid.uuid4(),
         lead_id=lead_id,
         conversation_id=conversation.id if conversation is not None else None,
-        channel="telegram",
+        channel=channel,
         direction="outbound",
         message_type="text",
         body=text,
@@ -105,12 +107,14 @@ async def send_telegram_text_message(
 async def get_subscribed_telegram_identity(
     session: AsyncSession,
     lead_id: uuid.UUID,
+    *,
+    channel: str = "telegram",
 ) -> MessengerIdentity | None:
     identity = await session.scalar(
         select(MessengerIdentity)
         .where(
             MessengerIdentity.lead_id == lead_id,
-            MessengerIdentity.channel == "telegram",
+            MessengerIdentity.channel == channel,
             MessengerIdentity.is_subscribed.is_(True),
         )
         .order_by(MessengerIdentity.created_at.desc())
@@ -121,10 +125,12 @@ async def get_subscribed_telegram_identity(
 async def get_telegram_identity_by_user_id(
     session: AsyncSession,
     external_user_id: str,
+    *,
+    channel: str = "telegram",
 ) -> MessengerIdentity | None:
     identity = await session.scalar(
         select(MessengerIdentity).where(
-            MessengerIdentity.channel == "telegram",
+            MessengerIdentity.channel == channel,
             MessengerIdentity.external_user_id == external_user_id,
         )
     )
@@ -134,6 +140,8 @@ async def get_telegram_identity_by_user_id(
 async def get_latest_telegram_conversation(
     session: AsyncSession,
     lead_id: uuid.UUID,
+    *,
+    channel: str = "telegram",
 ) -> Conversation | None:
     return cast(
         Conversation | None,
@@ -141,18 +149,24 @@ async def get_latest_telegram_conversation(
             select(Conversation)
             .where(
                 Conversation.lead_id == lead_id,
-                Conversation.channel == "telegram",
+                Conversation.channel == channel,
             )
             .order_by(Conversation.updated_at.desc())
-        )
+        ),
     )
 
 
 async def unsubscribe_telegram_identity(
     session: AsyncSession,
     external_user_id: str,
+    *,
+    channel: str = "telegram",
 ) -> bool:
-    identity = await get_telegram_identity_by_user_id(session, external_user_id)
+    identity = await get_telegram_identity_by_user_id(
+        session,
+        external_user_id,
+        channel=channel,
+    )
     if identity is None:
         return False
 
@@ -174,7 +188,7 @@ def build_url_keyboard(
             inline_keyboard.append([InlineKeyboardButton(text=button.text, url=button.url)])
             continue
 
-        callback_data = build_text_callback_data(button.text)
+        callback_data = build_text_callback_data(button.callback_data or button.text)
         if callback_data is None:
             return None
         inline_keyboard.append(

@@ -2,6 +2,65 @@
 
 ## Current State
 
+- 2026-07-23 removed and deployed the cancelled legacy Telegram/VK migration. The Inbox tabs
+  “Миграция TG + VK” and “Миграция — кто не купил” and their API routes are no longer available.
+  Alembic `20260723_02` removed the migration tables, campaign-specific bot tokens and custom
+  fields. It deleted 672 leads created solely by that import and with no Inbox activity. Five
+  pre-existing leads that already had messenger/funnel/conversation history were intentionally
+  retained unchanged. No GetCourse field was written and no message or VK funnel was started.
+  Production checks: migration tables absent, migration tokens/custom fields count zero, route
+  returns 404, health is OK, and all services are running.
+
+- Decision (2026-07-23): when cleaning up a cancelled bulk import, preserve any lead that existed
+  before the import or has independent Inbox activity. Delete only records provably created by
+  that import and otherwise untouched.
+
+- 2026-07-23 added and deployed the separate Inbox tab “Миграция — кто не купил”. It is a
+  paginated/searchable read-only registry with lead name, GetCourse ID, contacts, TG/VK channel
+  and VK-ID; it intentionally does not display preparation or delivery statuses. The supplied
+  two nonbuyer exports were imported as a durable draft with 677 unique FunnelHub leads (475 TG,
+  202 VK). Two source-row pairs merged by existing contact deduplication. Production verification
+  confirmed zero recipients have a queued migration stage or a GetCourse sync action; no user
+  message, GetCourse write, or VK funnel start was performed. Production-container migration
+  tests passed (5 passed), health is OK and services are Up.
+
+- 2026-07-23 completed and deployed the revised `legacy-tg-migration` workflow for nonbuyers
+  only. Inbox “Миграция TG + VK” now accepts two exports: Telegram nonbuyers and VK nonbuyers.
+  The real supplied files produce 679 unique recipients: 477 Telegram and 202 VK; 14 overlaps
+  are automatically routed to VK, and no buyer is included. Telegram receives a personal link
+  written to the existing GetCourse custom field; VK immediately starts the current VK funnel.
+  The campaign first tests exactly one recipient per channel, then clears the Telegram test link
+  before preparing the rest. Production deploy applied Alembic `20260723_01`; app, worker and
+  Telegram bot are running; health is OK and the campaign table contains zero rows. Verification:
+  production-container `pytest tests/test_legacy_tg_migration.py -q` passed (4 passed), frontend
+  build passed, ruff/mypy passed, and no GetCourse write or user message was sent.
+
+- 2026-07-21 started the next `legacy-tg-migration` slice: the local Inbox UI now presents four
+  explicit input segments — TG buyers, TG nonbuyers, VK buyers, and VK nonbuyers — with per-card
+  expected routing, selected-file feedback, and responsive mobile layout. The action is deliberately
+  disabled until the new four-file backend contract is implemented from the real source exports;
+  the existing production endpoint accepts the old three-file contract and must not be called with
+  misleading data. Frontend verification: `npm run build` passed and `git diff --check` passed.
+
+- 2026-07-20 implemented and deployed `legacy-tg-migration`. Inbox now has a dedicated
+  “Миграция TG” workspace that accepts buyer, nonbuyer, and legacy-bot audience CSV/XLSX exports;
+  it calculates the eligible Telegram audience, excludes every row with a valid VK-ID, imports
+  source leads, and creates personal 90-day Telegram deep links. One active campaign is allowed.
+  The first test synchronizes exactly 2 buyers and 3 nonbuyers into the existing GetCourse custom
+  field `FunnelHub — ссылка перехода в новый Telegram-бот`; full preparation clears those test
+  values and then syncs the remaining recipients, preventing duplicate sends in the GetCourse
+  segment. The actual legacy-bot message remains a manually approved GetCourse broadcast.
+- Decision (2026-07-20): each migration link uses the pre-existing `active` bot-token status,
+  with its durable migration-recipient relation as the discriminator. This preserves the
+  production token-status database constraint while keeping migration activation idempotent.
+  Buyers who activate the new bot skip the main funnel and enter Telegram follow-up eligibility;
+  nonbuyers restart the normal current Telegram funnel, so their follow-ups start only after its
+  completion.
+- 2026-07-20 production deploy completed. Alembic is `20260720_01 (head)`; `app`,
+  `funnel-worker`, and `telegram-bot` are running; GetCourse API URL/key are configured in the
+  server-only `.env`; public `/health` returned OK. No migration campaign, GetCourse field update,
+  or user message was sent during deployment.
+
 - 2026-07-02 added Inbox database pagination UI. The database lead list now requests
   `/api/inbox/database/leads` with the selected `limit` and `offset`, supports 20/50 leads per
   page, shows the visible range out of total leads, and provides previous/next page controls.
@@ -314,7 +373,7 @@
 - VK integration uses VK Callback API for inbound `confirmation` and `message_new` events, and VK `messages.send` for outbound messages.
 - VK credentials and callback secret/confirmation values must stay in environment variables, not repository files.
 - Production callback host `bot.aisukam.ru` points to the VPS and Caddy proxies HTTPS traffic to the production FunnelHub app on `127.0.0.1:8000`.
-- Production SSH deploy access is stored locally in the git-ignored `.env` as `SSH_HOST`, `SSH_USER`, and `SSH_PASSWORD`. Do not search for SSH users/keys or commit secrets; use those env variables, preferably through a non-printing `paramiko` helper, for `/opt/funnelhub` deploys.
+- Production SSH deploy access uses a local private key outside the repository. The git-ignored `.env` stores `SSH_HOST`, `SSH_USER`, and `SSH_KEY_PATH`; do not commit keys or use the old SSH password in deploy tooling. Use those values, preferably through a non-printing `paramiko` helper, for `/opt/funnelhub` deploys.
 - GetCourse form redirect can use `/join/getcourse` as a no-process fallback: FunnelHub ingests lead query params during redirect, generates/reuses a bot link token, and renders the bot-choice thank-you page.
 - GetCourse redirect placeholder values such as `{email}`, `{phone}`, and `{name}` are ignored so a misconfigured redirect does not create placeholder contacts.
 - GetCourse ingestion protection uses an optional shared secret and an in-memory per-IP rate limit for both `/webhooks/getcourse` and `/join/getcourse`. `GETCOURSE_WEBHOOK_SECRET_REQUIRED=false` keeps the current live flow compatible until production GetCourse/site settings are updated; supported query/form secret fields are stripped before `raw_getcourse_data` persistence.
@@ -953,3 +1012,20 @@
   `AUTOPOST_VK_PERSONAL_*` keys, services were restarted, and the one remaining active
   `vk_personal` publication was cancelled so the worker stops retrying it. VK image attachments
   remain for VK group wall posts; Telegram remains text-only.
+
+- 2026-08-06 implemented the local vertical slice for «Мост ценностей» Telegram. The landing
+  webhook now returns a per-lead Telegram deep link, creates a separate `заявка с сайта` tag,
+  and preserves the isolated Inbox source. A dedicated `telegram_most` channel, bot service, and
+  funnel worker keep this campaign separate from the existing Telegram bot while sharing Inbox
+  and the lead database. Added durable `lead_tags`, tag-notification tasks, a five-question
+  result flow, seven-day funnel content, manual Inbox replies through the right bot, and a site
+  handoff that keeps the personal link only in browser session storage. Local verification passed:
+  `ruff check .`, `mypy src`, `pytest tests/test_most_telegram_bot.py -q` (4 passed), Alembic
+  head `20260806_01`, server/site `git diff --check`, and a direct Sites build. Full database
+  tests could not run because Docker Desktop was unavailable. Deployment is intentionally pending:
+  both project worktrees already contain unrelated uncommitted changes, so the existing upload
+  and Sites workflows would publish more than this feature without explicit approval.
+
+- Decision (2026-08-06): campaign isolation is modelled as the `telegram_most` messenger channel
+  plus two dedicated Compose services, rather than a second copy of the database. This prevents
+  messages from crossing into the existing bot while preserving a unified lead history and Inbox.

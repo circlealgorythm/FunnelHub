@@ -13,12 +13,16 @@ from funnelhub.config import Settings
 from funnelhub.db.models import LeadPostSubmitTask
 from funnelhub.services.email_messaging import EmailProviderClient
 from funnelhub.services.getcourse_api import enrich_lead_from_getcourse_api
-from funnelhub.services.lead_notifications import send_lead_application_notification
+from funnelhub.services.lead_notifications import (
+    send_lead_application_notification,
+    send_lead_tag_notification,
+)
 
 logger = logging.getLogger(__name__)
 
 TASK_GETCOURSE_PROFILE_ENRICHMENT = "getcourse_profile_enrichment"
 TASK_LEAD_APPLICATION_NOTIFICATION = "lead_application_notification"
+TASK_LEAD_TAG_NOTIFICATION = "lead_tag_notification"
 
 
 @dataclass(frozen=True)
@@ -94,6 +98,25 @@ async def enqueue_lead_post_submit_task(
     session.add(task)
     await session.flush()
     return task
+
+
+async def enqueue_lead_tag_notification(
+    *,
+    session: AsyncSession,
+    settings: Settings,
+    lead_id: uuid.UUID,
+    tag: str,
+) -> None:
+    if not settings.lead_notification_email_to:
+        return
+    await enqueue_lead_post_submit_task(
+        session=session,
+        lead_id=lead_id,
+        task_type=TASK_LEAD_TAG_NOTIFICATION,
+        payload={"tag": tag, "source": "most-tsennostey"},
+        dedupe_key=f"{TASK_LEAD_TAG_NOTIFICATION}:{lead_id}:{tag}",
+        max_attempts=3,
+    )
 
 
 async def run_due_lead_post_submit_tasks_once(
@@ -176,10 +199,15 @@ async def process_lead_post_submit_task(
             settings=settings,
             lead_id=task.lead_id,
         )
-        if result.updated or not result.attempted or result.reason in {
-            "lead_not_found",
-            "no_supported_filter",
-        }:
+        if (
+            result.updated
+            or not result.attempted
+            or result.reason
+            in {
+                "lead_not_found",
+                "no_supported_filter",
+            }
+        ):
             return
         raise RuntimeError(result.reason or "getcourse_profile_enrichment_failed")
 
@@ -189,6 +217,20 @@ async def process_lead_post_submit_task(
             settings=settings,
             lead_id=task.lead_id,
             created=bool(task.payload.get("created")),
+            source=str(task.payload.get("source") or "post_submit_task"),
+            client=email_client,
+        )
+        return
+
+    if task.task_type == TASK_LEAD_TAG_NOTIFICATION:
+        tag = str(task.payload.get("tag") or "").strip()
+        if not tag:
+            raise ValueError("Lead tag notification task has no tag.")
+        await send_lead_tag_notification(
+            session=session,
+            settings=settings,
+            lead_id=task.lead_id,
+            tag=tag,
             source=str(task.payload.get("source") or "post_submit_task"),
             client=email_client,
         )

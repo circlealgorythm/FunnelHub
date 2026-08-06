@@ -128,6 +128,16 @@ class LeadConsent(Base, TimestampMixin):
     )
 
 
+class LeadTag(Base, TimestampMixin):
+    __tablename__ = "lead_tags"
+    __table_args__ = (UniqueConstraint("lead_id", "tag"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    lead_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("leads.id", ondelete="CASCADE"))
+    tag: Mapped[str] = mapped_column(String(255), nullable=False)
+    source: Mapped[str] = mapped_column(String(64), default="funnelhub", nullable=False)
+
+
 class MessengerIdentity(Base, TimestampMixin):
     __tablename__ = "messenger_identities"
     __table_args__ = (UniqueConstraint("channel", "external_user_id"),)
