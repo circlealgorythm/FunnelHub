@@ -752,6 +752,10 @@ h2 {
   padding: 18px 20px 20px;
 }
 
+.database-source-tabs {
+  margin: 0 0 14px;
+}
+
 .database-search {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;

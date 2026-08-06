@@ -26,6 +26,7 @@ import type { ReactNode } from "react";
 type ConversationStatus = "open" | "needs_reply" | "replied" | "closed";
 type ReplyChannel = "telegram" | "vk" | "email";
 type InboxSegment = "main" | "most-tsennostey";
+type DatabaseSegment = "main" | "most-tsennostey";
 
 type Conversation = {
   id: string;
@@ -335,6 +336,11 @@ const inboxSegments: Array<{ value: InboxSegment; label: string }> = [
   { value: "most-tsennostey", label: "Мост ценностей" },
 ];
 
+const databaseSegments: Array<{ value: DatabaseSegment; label: string }> = [
+  { value: "main", label: "Общая база" },
+  { value: "most-tsennostey", label: "Мост ценностей" },
+];
+
 export function App() {
   const [authState, setAuthState] = useState<AuthState>("checking");
   const [adminName, setAdminName] = useState<string | null>(null);
@@ -351,6 +357,7 @@ export function App() {
   const [detailState, setDetailState] = useState<LoadState>("idle");
   const [replyState, setReplyState] = useState<LoadState>("idle");
   const [databaseQuery, setDatabaseQuery] = useState("");
+  const [databaseSegment, setDatabaseSegment] = useState<DatabaseSegment>("main");
   const [databaseList, setDatabaseList] = useState<DatabaseLeadList | null>(null);
   const [databasePageSize, setDatabasePageSize] = useState<DatabasePageSize>(20);
   const [databaseOffset, setDatabaseOffset] = useState(0);
@@ -487,6 +494,11 @@ export function App() {
       if (databaseQuery.trim()) {
         params.set("q", databaseQuery.trim());
       }
+      if (databaseSegment === "most-tsennostey") {
+        params.set("source", "most-tsennostey");
+      } else {
+        params.set("exclude_source", "most-tsennostey");
+      }
       const response = await fetch(`${API_BASE_URL}/api/inbox/database/leads?${params}`, {
         credentials: "include",
       });
@@ -521,7 +533,7 @@ export function App() {
       setDatabaseState("error");
       setError(formatError(caught));
     }
-  }, [databaseOffset, databasePageSize, databaseQuery]);
+  }, [databaseOffset, databasePageSize, databaseQuery, databaseSegment]);
 
   const loadDatabaseLeadDetail = useCallback(async (leadId: string) => {
     setDatabaseDetailState("loading");
@@ -694,6 +706,11 @@ export function App() {
       if (databaseQuery.trim()) {
         params.set("q", databaseQuery.trim());
       }
+      if (databaseSegment === "most-tsennostey") {
+        params.set("source", "most-tsennostey");
+      } else {
+        params.set("exclude_source", "most-tsennostey");
+      }
       const suffix = params.toString() ? `?${params}` : "";
       const response = await fetch(
         `${API_BASE_URL}/api/inbox/database/leads/export.xlsx${suffix}`,
@@ -828,6 +845,7 @@ export function App() {
           databaseList={databaseList}
           databasePageSize={databasePageSize}
           databaseQuery={databaseQuery}
+          databaseSegment={databaseSegment}
           databaseState={databaseState}
           onChangePage={changeDatabasePage}
           onChangePageSize={changeDatabasePageSize}
@@ -836,6 +854,11 @@ export function App() {
           onOpenHistory={() => setShowImportHistory(true)}
           onLogout={() => void logout()}
           onQueryChange={setDatabaseQuery}
+          onSegmentChange={(segment) => {
+            setDatabaseOffset(0);
+            setSelectedLeadId(null);
+            setDatabaseSegment(segment);
+          }}
           onRefresh={loadDatabaseLeads}
           onSaveLeadVkId={(leadId, vkId) => saveLeadVkId(leadId, vkId)}
           onDeleteLead={deleteDatabaseLead}
@@ -1244,6 +1267,7 @@ function DatabaseWorkspace({
   databaseList,
   databasePageSize,
   databaseQuery,
+  databaseSegment,
   databaseState,
   onChangePage,
   onChangePageSize,
@@ -1252,6 +1276,7 @@ function DatabaseWorkspace({
   onOpenHistory,
   onLogout,
   onQueryChange,
+  onSegmentChange,
   onRefresh,
   onSaveLeadVkId,
   onSearch,
@@ -1268,6 +1293,7 @@ function DatabaseWorkspace({
   databaseList: DatabaseLeadList | null;
   databasePageSize: DatabasePageSize;
   databaseQuery: string;
+  databaseSegment: DatabaseSegment;
   databaseState: LoadState;
   onChangePage: (offset: number) => void;
   onChangePageSize: (size: DatabasePageSize) => void;
@@ -1276,6 +1302,7 @@ function DatabaseWorkspace({
   onOpenHistory: () => void;
   onLogout: () => void;
   onQueryChange: (query: string) => void;
+  onSegmentChange: (segment: DatabaseSegment) => void;
   onRefresh: () => void;
   onSaveLeadVkId: (leadId: string, vkId: string) => Promise<void>;
   onSearch: (event: FormEvent<HTMLFormElement>) => void;
@@ -1331,6 +1358,18 @@ function DatabaseWorkspace({
 
       <section className="database-grid">
         <div className="database-list-panel">
+          <nav className="view-switch database-source-tabs" aria-label="Разделы базы">
+            {databaseSegments.map((segment) => (
+              <button
+                className={databaseSegment === segment.value ? "view-tab is-active" : "view-tab"}
+                key={segment.value}
+                onClick={() => onSegmentChange(segment.value)}
+                type="button"
+              >
+                {segment.label}
+              </button>
+            ))}
+          </nav>
           <form className="database-search" onSubmit={onSearch}>
             <Search aria-hidden="true" size={18} />
             <input

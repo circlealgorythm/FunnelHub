@@ -360,6 +360,8 @@ async def patch_conversation_status(
 async def get_database_leads(
     session: SessionDep,
     q: str | None = None,
+    source: Literal["most-tsennostey"] | None = None,
+    exclude_source: Literal["most-tsennostey"] | None = None,
     limit: int = 50,
     offset: int = 0,
 ) -> DatabaseLeadListResponse:
@@ -367,7 +369,14 @@ async def get_database_leads(
         raise HTTPException(status_code=422, detail="Limit must be between 1 and 200.")
     if offset < 0:
         raise HTTPException(status_code=422, detail="Offset must be non-negative.")
-    lead_list = await list_database_leads(session, query=q, limit=limit, offset=offset)
+    lead_list = await list_database_leads(
+        session,
+        query=q,
+        source=source,
+        exclude_source=exclude_source,
+        limit=limit,
+        offset=offset,
+    )
     return database_lead_list_response(lead_list)
 
 
@@ -375,8 +384,15 @@ async def get_database_leads(
 async def export_database_leads(
     session: SessionDep,
     q: str | None = None,
+    source: Literal["most-tsennostey"] | None = None,
+    exclude_source: Literal["most-tsennostey"] | None = None,
 ) -> Response:
-    content = await export_database_leads_csv(session, query=q)
+    content = await export_database_leads_csv(
+        session,
+        query=q,
+        source=source,
+        exclude_source=exclude_source,
+    )
     file_name = f"funnelhub-leads-{datetime.now().date().isoformat()}.csv"
     return Response(
         content=content.encode("utf-8-sig"),
@@ -389,8 +405,15 @@ async def export_database_leads(
 async def export_database_leads_as_xlsx(
     session: SessionDep,
     q: str | None = None,
+    source: Literal["most-tsennostey"] | None = None,
+    exclude_source: Literal["most-tsennostey"] | None = None,
 ) -> Response:
-    content = await export_database_leads_xlsx(session, query=q)
+    content = await export_database_leads_xlsx(
+        session,
+        query=q,
+        source=source,
+        exclude_source=exclude_source,
+    )
     file_name = f"funnelhub-leads-{datetime.now().date().isoformat()}.xlsx"
     return Response(
         content=content,
