@@ -2,6 +2,7 @@ from funnelhub.config import Settings
 from funnelhub.most_telegram_bot import (
     MOST_FUNNEL_KEY,
     QUIZ,
+    can_start_most_quiz,
     load_most_vk_definition,
     quiz_result,
     resolve_funnel_button_value,
@@ -27,9 +28,16 @@ def test_most_funnel_definition_is_valid() -> None:
     assert definition.steps[1].delay == "1m"
     assert "Это не марафон исполнения желаний" in definition.steps[1].text
     assert definition.steps[definition.step_index("lesson")].delay == "1h"
-    assert "Пройти тест" in [
-        button.text for button in definition.steps[definition.step_index("reflection")].buttons
-    ]
+    assert [
+        button.text
+        for step in definition.steps
+        for button in step.buttons
+        if button.text == "Пройти тест"
+    ] == ["Пройти тест"]
+    assert [
+        button.text
+        for button in definition.steps[definition.step_index("quiz_invite")].buttons
+    ] == ["Пройти тест"]
     polarities_step = definition.steps[definition.step_index("day_3_polarities")]
     assert "Готово" in [button.text for button in polarities_step.buttons]
 
@@ -89,3 +97,8 @@ def test_most_vk_text_buttons_resolve_to_the_same_actions_as_telegram_callbacks(
 
     assert resolve_funnel_button_value(definition, price_text) == "price"
     assert resolve_quiz_option_value(QUIZ[0].options[2].text, 0) == "q0-2"
+
+
+def test_completed_quiz_cannot_be_started_again_from_an_old_button() -> None:
+    assert can_start_most_quiz({})
+    assert not can_start_most_quiz({"most_quiz_result": "внешняя безопасность"})

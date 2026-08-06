@@ -94,8 +94,6 @@ steps:
       • как переключить внимание с результата на процесс.
 
       Ссылку на видео добавим сюда отдельно.
-    buttons:
-      - text: Пройти тест
   - key: reflection
     delay: 30m
     channel: telegram_most
@@ -105,7 +103,6 @@ steps:
       - text: Я зацикливаюсь на деньгах
       - text: Мне сложно отпускать контроль
       - text: Я хочу разобрать свою ситуацию глубже
-      - text: Пройти тест
   - key: day_2_practice
     delay: 1d
     channel: telegram_most

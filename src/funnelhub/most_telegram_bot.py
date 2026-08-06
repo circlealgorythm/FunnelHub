@@ -481,6 +481,8 @@ async def handle_button(
     metadata = dict(state.metadata_ or {})
     value = resolve_funnel_button_value(definition, value)
     if value == "Пройти тест":
+        if not can_start_most_quiz(metadata):
+            return True
         metadata["most_quiz_index"] = 0
         metadata["most_quiz_scores"] = {}
         state.metadata_ = metadata
@@ -613,6 +615,10 @@ def resolve_quiz_option_value(value: str, quiz_index: int) -> str:
         if option.text == value:
             return f"q{quiz_index}-{option_index}"
     return value
+
+
+def can_start_most_quiz(metadata: dict[str, Any]) -> bool:
+    return "most_quiz_result" not in metadata
 
 
 async def get_active_state(
