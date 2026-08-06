@@ -8,7 +8,22 @@ def test_most_funnel_definition_is_valid() -> None:
 
     assert definition.key == MOST_FUNNEL_KEY
     assert definition.steps[0].channel == "telegram_most"
-    assert {step.key for step in definition.steps} >= {"quiz_invite", "lesson", "closing"}
+    assert {step.key for step in definition.steps} >= {
+        "quiz_invite",
+        "lesson",
+        "day_2_practice",
+        "day_3_polarities",
+        "day_5_invitation",
+        "closing",
+    }
+    assert definition.steps[1].delay == "1m"
+    assert "Это не марафон исполнения желаний" in definition.steps[1].text
+    assert definition.steps[definition.step_index("lesson")].delay == "1h"
+    assert "Пройти тест" in [
+        button.text for button in definition.steps[definition.step_index("reflection")].buttons
+    ]
+    polarities_step = definition.steps[definition.step_index("day_3_polarities")]
+    assert "Готово" in [button.text for button in polarities_step.buttons]
 
 
 def test_quiz_answers_are_transport_safe_callbacks() -> None:
