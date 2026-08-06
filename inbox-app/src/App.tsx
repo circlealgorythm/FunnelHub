@@ -510,7 +510,7 @@ export function App() {
         return;
       }
       if (!response.ok) {
-        throw new Error(`Database list failed: ${response.status}`);
+        throw new Error(await readApiError(response, `Database list failed: ${response.status}`));
       }
       const payload = (await response.json()) as DatabaseLeadList;
       if (payload.items.length === 0 && payload.total > 0 && payload.offset > 0) {
@@ -2144,6 +2144,19 @@ function formatError(caught: unknown) {
     return caught.message;
   }
   return "Не удалось выполнить действие.";
+}
+
+async function readApiError(response: Response, fallback: string) {
+  const payload = (await response.json().catch(() => null)) as { detail?: unknown } | null;
+  if (typeof payload?.detail === "string") {
+    return payload.detail;
+  }
+  if (Array.isArray(payload?.detail)) {
+    return payload.detail
+      .map((item) => (typeof item === "object" && item ? JSON.stringify(item) : String(item)))
+      .join("; ");
+  }
+  return fallback;
 }
 
 function ImportManagerModal({
