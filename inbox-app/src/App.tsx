@@ -483,7 +483,11 @@ export function App() {
     }
   }, []);
 
-  const loadDatabaseLeads = useCallback(async (nextOffset = databaseOffset) => {
+  const loadDatabaseLeads = useCallback(async (requestedOffset?: number) => {
+    const nextOffset =
+      typeof requestedOffset === "number" && Number.isFinite(requestedOffset)
+        ? requestedOffset
+        : databaseOffset;
     setDatabaseState("loading");
     setError(null);
     try {
@@ -859,7 +863,7 @@ export function App() {
             setSelectedLeadId(null);
             setDatabaseSegment(segment);
           }}
-          onRefresh={loadDatabaseLeads}
+          onRefresh={() => void loadDatabaseLeads()}
           onSaveLeadVkId={(leadId, vkId) => saveLeadVkId(leadId, vkId)}
           onDeleteLead={deleteDatabaseLead}
           onSearch={(event) => void submitDatabaseSearch(event)}
