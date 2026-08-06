@@ -479,6 +479,7 @@ async def handle_button(
     if state is None:
         return False
     metadata = dict(state.metadata_ or {})
+    value = resolve_funnel_button_value(definition, value)
     if value == "Пройти тест":
         metadata["most_quiz_index"] = 0
         metadata["most_quiz_scores"] = {}
@@ -486,6 +487,8 @@ async def handle_button(
         await send_quiz_question(sender, identity.lead_id, 0, channel=channel)
         return True
     quiz_index = metadata.get("most_quiz_index")
+    if isinstance(quiz_index, int):
+        value = resolve_quiz_option_value(value, quiz_index)
     if isinstance(quiz_index, int) and value.startswith("q"):
         return await handle_quiz_answer(
             session=session,
@@ -593,6 +596,23 @@ def quiz_result(scores: dict[str, int]) -> str:
     if len(leaders) > 1 or (len(ranking) > 1 and ranking[0] - ranking[1] <= 1):
         return "несколько внутренних опор"
     return leaders[0]
+
+
+def resolve_funnel_button_value(definition: FunnelDefinition, value: str) -> str:
+    for step in definition.steps:
+        for button in step.buttons:
+            if button.text == value and button.callback_data is not None:
+                return button.callback_data
+    return value
+
+
+def resolve_quiz_option_value(value: str, quiz_index: int) -> str:
+    if not 0 <= quiz_index < len(QUIZ):
+        return value
+    for option_index, option in enumerate(QUIZ[quiz_index].options):
+        if option.text == value:
+            return f"q{quiz_index}-{option_index}"
+    return value
 
 
 async def get_active_state(

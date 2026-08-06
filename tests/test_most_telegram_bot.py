@@ -4,6 +4,8 @@ from funnelhub.most_telegram_bot import (
     QUIZ,
     load_most_vk_definition,
     quiz_result,
+    resolve_funnel_button_value,
+    resolve_quiz_option_value,
 )
 from funnelhub.most_vk_bot import MOST_VK_CHANNEL, MOST_VK_FUNNEL_KEY
 from funnelhub.services.funnel_engine import load_funnel_definition
@@ -74,3 +76,16 @@ def test_most_vk_settings_normalize_the_group_id() -> None:
     settings = Settings(most_vk_group_id="club240711612")
 
     assert settings.most_vk_group_id == 240711612
+
+
+def test_most_vk_text_buttons_resolve_to_the_same_actions_as_telegram_callbacks() -> None:
+    definition = load_most_vk_definition(Settings())
+    price_text = next(
+        button.text
+        for step in definition.steps
+        for button in step.buttons
+        if button.callback_data == "price"
+    )
+
+    assert resolve_funnel_button_value(definition, price_text) == "price"
+    assert resolve_quiz_option_value(QUIZ[0].options[2].text, 0) == "q0-2"
