@@ -122,6 +122,9 @@ class Settings(BaseSettings):
     lead_notification_cooldown_seconds: int = Field(
         default=300, validation_alias="LEAD_NOTIFICATION_COOLDOWN_SECONDS"
     )
+    most_tsennostey_ingest_token: str | None = Field(
+        default=None, validation_alias="MOST_TSENNOSTEY_INGEST_TOKEN"
+    )
     autopost_upload_dir: str = Field(
         default="/app/uploads/autoposts", validation_alias="AUTOPOST_UPLOAD_DIR"
     )

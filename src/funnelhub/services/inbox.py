@@ -192,10 +192,16 @@ async def list_inbox_conversations(
     session: AsyncSession,
     *,
     status: str | None = None,
+    source: str | None = None,
+    exclude_source: str | None = None,
 ) -> list[InboxConversationSummary]:
     statement = build_conversation_summary_query()
     if status:
         statement = statement.where(Conversation.status == status)
+    if source:
+        statement = statement.where(Lead.source == source)
+    if exclude_source:
+        statement = statement.where((Lead.source.is_(None)) | (Lead.source != exclude_source))
     statement = statement.order_by(
         Conversation.last_message_at.desc().nullslast(),
         Conversation.updated_at.desc(),

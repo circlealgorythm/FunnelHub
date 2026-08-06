@@ -219,8 +219,15 @@ class ApiInboxSendClients:
 async def get_conversations(
     session: SessionDep,
     status: ConversationStatus | None = None,
+    source: Literal["most-tsennostey"] | None = None,
+    exclude_source: Literal["most-tsennostey"] | None = None,
 ) -> list[InboxConversationResponse]:
-    summaries = await list_inbox_conversations(session, status=status)
+    summaries = await list_inbox_conversations(
+        session,
+        status=status,
+        source=source,
+        exclude_source=exclude_source,
+    )
     return [conversation_response(summary) for summary in summaries]
 
 

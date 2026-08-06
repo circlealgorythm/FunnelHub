@@ -25,6 +25,7 @@ import type { ReactNode } from "react";
 
 type ConversationStatus = "open" | "needs_reply" | "replied" | "closed";
 type ReplyChannel = "telegram" | "vk" | "email";
+type InboxSegment = "main" | "most-tsennostey";
 
 type Conversation = {
   id: string;
@@ -329,6 +330,11 @@ const filters: Array<{ value: ConversationStatus | "all"; label: string }> = [
   { value: "closed", label: "Закрытые" },
 ];
 
+const inboxSegments: Array<{ value: InboxSegment; label: string }> = [
+  { value: "main", label: "Основной Inbox" },
+  { value: "most-tsennostey", label: "Мост ценностей" },
+];
+
 export function App() {
   const [authState, setAuthState] = useState<AuthState>("checking");
   const [adminName, setAdminName] = useState<string | null>(null);
@@ -337,6 +343,7 @@ export function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<ConversationDetail | null>(null);
   const [filter, setFilter] = useState<ConversationStatus | "all">("all");
+  const [inboxSegment, setInboxSegment] = useState<InboxSegment>("main");
   const [query, setQuery] = useState("");
   const [draft, setDraft] = useState("");
   const [replyChannels, setReplyChannels] = useState<ReplyChannel[]>([]);
@@ -403,8 +410,15 @@ export function App() {
     setListState("loading");
     setError(null);
     try {
-      const statusParam = filter === "all" ? "" : `?status=${filter}`;
-      const response = await fetch(`${API_BASE_URL}/api/inbox/conversations${statusParam}`, {
+      const params = new URLSearchParams();
+      if (filter !== "all") params.set("status", filter);
+      if (inboxSegment === "most-tsennostey") {
+        params.set("source", "most-tsennostey");
+      } else {
+        params.set("exclude_source", "most-tsennostey");
+      }
+      const queryString = params.toString();
+      const response = await fetch(`${API_BASE_URL}/api/inbox/conversations${queryString ? `?${queryString}` : ""}`, {
         credentials: "include",
       });
       if (response.status === 401) {
@@ -434,7 +448,7 @@ export function App() {
       setListState("error");
       setError(formatError(caught));
     }
-  }, [filter]);
+  }, [filter, inboxSegment]);
 
   const loadDetail = useCallback(async (conversationId: string) => {
     setDetailState("loading");
@@ -939,6 +953,22 @@ export function App() {
             placeholder="Имя, контакт, сообщение"
           />
         </div>
+
+        <nav className="view-switch inbox-source-tabs" aria-label="Разделы Inbox">
+          {inboxSegments.map((segment) => (
+            <button
+              className={inboxSegment === segment.value ? "view-tab is-active" : "view-tab"}
+              key={segment.value}
+              onClick={() => {
+                setSelectedId(null);
+                setInboxSegment(segment.value);
+              }}
+              type="button"
+            >
+              {segment.label}
+            </button>
+          ))}
+        </nav>
 
         <div className="filter-row" aria-label="Фильтр диалогов">
           {filters.map((item) => (

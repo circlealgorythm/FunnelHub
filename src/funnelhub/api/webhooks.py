@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import logging
+import secrets
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from funnelhub.config import Settings, get_settings
@@ -21,6 +22,7 @@ from funnelhub.services.ingestion_guard import (
     enforce_getcourse_ingestion_guard,
     strip_getcourse_webhook_secret_fields,
 )
+from funnelhub.services.landing_applications import ingest_most_tsennostey_application
 from funnelhub.services.lead_post_submit_tasks import enqueue_lead_post_submit_tasks
 from funnelhub.vk_bot import handle_vk_message_allow, handle_vk_message_new
 
@@ -53,6 +55,43 @@ class EmailProviderWebhookResponse(BaseModel):
 
 class EmailProviderWebhookHealthResponse(BaseModel):
     status: str
+
+
+class MostTsennosteyApplicationRequest(BaseModel):
+    name: str = Field(min_length=2, max_length=512)
+    phone: str = Field(min_length=10, max_length=64)
+    email: str = Field(min_length=3, max_length=512)
+
+    @field_validator("name", "phone", "email")
+    @classmethod
+    def trim_required_text(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("Value must not be blank.")
+        return cleaned
+
+    @field_validator("phone")
+    @classmethod
+    def validate_phone(cls, value: str) -> str:
+        digits = "".join(character for character in value if character.isdigit())
+        if not 10 <= len(digits) <= 15:
+            raise ValueError("Phone must contain from 10 to 15 digits.")
+        return value
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, value: str) -> str:
+        local_part, separator, domain = value.partition("@")
+        if not local_part or not separator or "." not in domain or domain.startswith("."):
+            raise ValueError("Email is invalid.")
+        return value
+
+
+class MostTsennosteyApplicationResponse(BaseModel):
+    status: str
+    lead_id: str
+    conversation_id: str
+    created: bool
 
 
 @router.api_route(
@@ -108,6 +147,52 @@ async def getcourse_webhook(
         created=result.created,
         bot_link_token=result.bot_link_token,
         join_url=build_join_url(settings, result.bot_link_token),
+    )
+
+
+@router.post(
+    "/landing-applications/most-tsennostey",
+    status_code=status.HTTP_201_CREATED,
+    response_model=MostTsennosteyApplicationResponse,
+)
+async def most_tsennostey_application(
+    application: MostTsennosteyApplicationRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    authorization: Annotated[str | None, Header()] = None,
+) -> MostTsennosteyApplicationResponse:
+    expected_token = settings.most_tsennostey_ingest_token
+    received_token = authorization.removeprefix("Bearer ") if authorization else ""
+    if not expected_token:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Most tsennostey application ingestion is not configured.",
+        )
+    if not secrets.compare_digest(received_token, expected_token):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid landing application token.",
+        )
+
+    try:
+        result = await ingest_most_tsennostey_application(
+            session=session,
+            name=application.name,
+            phone=application.phone,
+            email=application.email,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(exc),
+        ) from exc
+
+    await session.commit()
+    return MostTsennosteyApplicationResponse(
+        status="ok",
+        lead_id=str(result.lead_id),
+        conversation_id=str(result.conversation_id),
+        created=result.created,
     )
 
 
