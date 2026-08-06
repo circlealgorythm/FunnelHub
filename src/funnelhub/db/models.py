@@ -7,6 +7,7 @@ from typing import Any
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Integer,
@@ -140,7 +141,13 @@ class LeadTag(Base, TimestampMixin):
 
 class MessengerIdentity(Base, TimestampMixin):
     __tablename__ = "messenger_identities"
-    __table_args__ = (UniqueConstraint("channel", "external_user_id"),)
+    __table_args__ = (
+        CheckConstraint(
+            "channel IN ('telegram', 'telegram_most', 'vk', 'max')",
+            name="ck_messenger_identities_channel",
+        ),
+        UniqueConstraint("channel", "external_user_id"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
     lead_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("leads.id", ondelete="CASCADE"))
