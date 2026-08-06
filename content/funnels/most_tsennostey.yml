@@ -100,9 +100,13 @@ steps:
     text: Что откликнулось вам сильнее всего?
     buttons:
       - text: Я завишу от реакции людей
+        callback_data: reflection_people
       - text: Я зацикливаюсь на деньгах
+        callback_data: reflection_money
       - text: Мне сложно отпускать контроль
+        callback_data: reflection_control
       - text: Я хочу разобрать свою ситуацию глубже
+        callback_data: reflection_deeper
   - key: day_2_practice
     delay: 1d
     channel: telegram_most

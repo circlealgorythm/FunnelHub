@@ -328,6 +328,13 @@ BUTTON_REPLIES: dict[str, tuple[str | None, str, list[FunnelButton]]] = {
     ),
 }
 
+BUTTON_REPLY_ALIASES = {
+    "reflection_people": "Я завишу от реакции людей",
+    "reflection_money": "Я зацикливаюсь на деньгах",
+    "reflection_control": "Мне сложно отпускать контроль",
+    "reflection_deeper": "Я хочу разобрать свою ситуацию глубже",
+}
+
 
 @router.message(CommandStart())
 async def handle_start(message: Message, command: CommandObject) -> None:
@@ -502,7 +509,7 @@ async def handle_button(
             quiz_index=quiz_index,
             channel=channel,
         )
-    reply = BUTTON_REPLIES.get(value)
+    reply = BUTTON_REPLIES.get(BUTTON_REPLY_ALIASES.get(value, value))
     if reply is None:
         return False
     tag, text, buttons = reply

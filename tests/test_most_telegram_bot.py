@@ -47,6 +47,16 @@ def test_quiz_answers_are_transport_safe_callbacks() -> None:
     assert all(len(f"fh_answer:q{index}-0".encode()) <= 64 for index in range(len(QUIZ)))
 
 
+def test_most_funnel_buttons_are_transport_safe_callbacks() -> None:
+    definition = load_funnel_definition("content/funnels/most_tsennostey.yml")
+
+    assert all(
+        len(f"fh_answer:{button.callback_data or button.text}".encode()) <= 64
+        for step in definition.steps
+        for button in step.buttons
+    )
+
+
 def test_quiz_result_returns_single_and_mixed_outcomes() -> None:
     assert quiz_result({"внешняя безопасность": 5, "контроль и результат": 2}) == (
         "внешняя безопасность"
@@ -97,6 +107,10 @@ def test_most_vk_text_buttons_resolve_to_the_same_actions_as_telegram_callbacks(
 
     assert resolve_funnel_button_value(definition, price_text) == "price"
     assert resolve_quiz_option_value(QUIZ[0].options[2].text, 0) == "q0-2"
+    assert (
+        resolve_funnel_button_value(definition, "Я зацикливаюсь на деньгах")
+        == "reflection_money"
+    )
 
 
 def test_completed_quiz_cannot_be_started_again_from_an_old_button() -> None:
