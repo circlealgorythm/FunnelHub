@@ -174,6 +174,15 @@ def build_vk_deep_link(settings: Settings, token: str) -> str | None:
     return f"https://vk.me/{screen_name}?ref={token}"
 
 
+def build_most_vk_deep_link(settings: Settings, token: str) -> str | None:
+    if not settings.most_vk_group_screen_name:
+        return None
+    screen_name = settings.most_vk_group_screen_name.strip().lstrip("@")
+    if not screen_name:
+        return None
+    return f"https://vk.me/{screen_name}?ref={token}"
+
+
 def build_vk_launch_link(settings: Settings, token: str) -> str | None:
     if build_vk_deep_link(settings, token) is None:
         return None

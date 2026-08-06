@@ -20,8 +20,14 @@ from funnelhub.services.email_messaging import EmailProviderClient, send_email_t
 from funnelhub.services.telegram_messaging import TelegramMessageClient, send_telegram_text_message
 from funnelhub.services.vk_messaging import VkMessageClient, send_vk_text_message
 
-ReplyChannel = Literal["telegram", "telegram_most", "vk", "email"]
-SUPPORTED_REPLY_CHANNELS: tuple[ReplyChannel, ...] = ("telegram", "telegram_most", "vk", "email")
+ReplyChannel = Literal["telegram", "telegram_most", "vk", "vk_most", "email"]
+SUPPORTED_REPLY_CHANNELS: tuple[ReplyChannel, ...] = (
+    "telegram",
+    "telegram_most",
+    "vk",
+    "vk_most",
+    "email",
+)
 MOST_TSENNOSTEY_SOURCE = "most-tsennostey"
 
 
@@ -29,6 +35,7 @@ class InboxSendClients(Protocol):
     telegram_bot: TelegramMessageClient | None
     most_telegram_bot: TelegramMessageClient | None
     vk_client: VkMessageClient | None
+    most_vk_client: VkMessageClient | None
     email_client: EmailProviderClient | None
     email_subject: str
     public_base_url: str
@@ -103,7 +110,7 @@ async def record_inbound_messenger_message(
         session=session,
         lead_id=identity.lead_id,
         channel=channel,
-        source=MOST_TSENNOSTEY_SOURCE if channel == "telegram_most" else None,
+        source=MOST_TSENNOSTEY_SOURCE if channel in {"telegram_most", "vk_most"} else None,
     )
     conversation.last_message_at = now
     if needs_reply:
@@ -283,14 +290,16 @@ async def send_reply_to_channel(
             channel=channel,
         )
         message_id = telegram_result.message_id
-    elif channel == "vk":
-        if clients.vk_client is None:
+    elif channel in {"vk", "vk_most"}:
+        vk_client = clients.vk_client if channel == "vk" else clients.most_vk_client
+        if vk_client is None:
             raise ValueError("VK client is not configured.")
         vk_result = await send_vk_text_message(
             session=session,
-            client=clients.vk_client,
+            client=vk_client,
             lead_id=conversation.lead_id,
             text=text,
+            channel=channel,
         )
         message_id = vk_result.message_id
     else:
@@ -347,7 +356,7 @@ async def get_available_reply_channels(
             select(MessengerIdentity)
             .where(
                 MessengerIdentity.lead_id == lead_id,
-                MessengerIdentity.channel.in_(("telegram", "telegram_most", "vk")),
+                MessengerIdentity.channel.in_(("telegram", "telegram_most", "vk", "vk_most")),
                 MessengerIdentity.is_subscribed.is_(True),
             )
             .order_by(MessengerIdentity.created_at.desc())
@@ -429,6 +438,7 @@ def channel_label(channel: ReplyChannel) -> str:
         "telegram": "Telegram",
         "telegram_most": "Telegram — Мост ценностей",
         "vk": "VK",
+        "vk_most": "ВКонтакте — Мост ценностей",
         "email": "Email",
     }[channel]
 

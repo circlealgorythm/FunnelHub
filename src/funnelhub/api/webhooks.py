@@ -10,7 +10,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from funnelhub.config import Settings, get_settings
 from funnelhub.db.session import get_session
-from funnelhub.services.bot_linking import build_join_url, build_most_telegram_deep_link
+from funnelhub.most_vk_bot import handle_most_vk_message_allow, handle_most_vk_message_new
+from funnelhub.services.bot_linking import (
+    build_join_url,
+    build_most_telegram_deep_link,
+    build_most_vk_deep_link,
+)
 from funnelhub.services.email_provider_webhooks import (
     load_unisender_go_webhook_payload,
     process_unisender_go_webhook,
@@ -96,6 +101,7 @@ class MostTsennosteyApplicationResponse(BaseModel):
     conversation_id: str
     created: bool
     telegram_url: str
+    vk_url: str | None = None
 
 
 @router.api_route(
@@ -197,6 +203,7 @@ async def most_tsennostey_application(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Most tsennostey Telegram bot is not configured.",
         )
+    vk_url = build_most_vk_deep_link(settings, result.bot_link_token)
 
     await enqueue_lead_post_submit_tasks(
         session=session,
@@ -219,6 +226,7 @@ async def most_tsennostey_application(
         conversation_id=str(result.conversation_id),
         created=result.created,
         telegram_url=telegram_url,
+        vk_url=vk_url,
     )
 
 
@@ -326,6 +334,56 @@ async def vk_callback_webhook(
         await session.commit()
         return Response(content="ok", media_type="text/plain")
 
+    return Response(content="ok", media_type="text/plain")
+
+
+@router.post("/most-vk", status_code=status.HTTP_200_OK)
+async def most_vk_callback_webhook(
+    event: VkCallbackEvent,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> Response:
+    if not settings.most_vk_group_id:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="MOST_VK_GROUP_ID is not configured.",
+        )
+    if event.group_id != settings.most_vk_group_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Unexpected VK group.")
+    if event.type == "confirmation":
+        if not settings.most_vk_confirmation_code:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="MOST_VK_CONFIRMATION_CODE is not configured.",
+            )
+        return Response(content=settings.most_vk_confirmation_code, media_type="text/plain")
+    if not settings.most_vk_callback_secret:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="MOST_VK_CALLBACK_SECRET is not configured.",
+        )
+    if event.secret != settings.most_vk_callback_secret:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid VK secret.")
+    log_vk_callback_event(event)
+    if event.type in {"message_new", "message_allow"}:
+        try:
+            event_payload = event.model_dump()
+            if event.type == "message_allow":
+                await handle_most_vk_message_allow(
+                    session=session,
+                    settings=settings,
+                    event=event_payload,
+                )
+            else:
+                await handle_most_vk_message_new(
+                    session=session,
+                    settings=settings,
+                    event=event_payload,
+                )
+        except ValueError:
+            await session.rollback()
+            return Response(content="ok", media_type="text/plain")
+        await session.commit()
     return Response(content="ok", media_type="text/plain")
 
 

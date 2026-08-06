@@ -24,7 +24,7 @@ import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useState } fro
 import type { ReactNode } from "react";
 
 type ConversationStatus = "open" | "needs_reply" | "replied" | "closed";
-type ReplyChannel = "telegram" | "telegram_most" | "vk" | "email";
+type ReplyChannel = "telegram" | "telegram_most" | "vk" | "vk_most" | "email";
 type InboxSegment = "main" | "most-tsennostey";
 type DatabaseSegment = "main" | "most-tsennostey";
 
@@ -357,6 +357,7 @@ const statusLabels: Record<ConversationStatus, string> = {
 const channelLabels: Record<string, string> = {
   telegram: "Telegram",
   telegram_most: "Telegram — Мост ценностей",
+  vk_most: "ВКонтакте — Мост ценностей",
   vk: "VK",
   email: "Email",
 };

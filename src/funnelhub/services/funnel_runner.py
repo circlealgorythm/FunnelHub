@@ -77,6 +77,7 @@ class MessengerFunnelStepSender:
         email_default_subject: str = "Сообщение от Aisu Kam",
         settings: Settings | None = None,
         telegram_channel: str = "telegram",
+        vk_channel: str = "vk",
     ) -> None:
         self._session = session
         self._telegram_bot = telegram_bot
@@ -89,6 +90,7 @@ class MessengerFunnelStepSender:
         self._email_default_subject = email_default_subject
         self._settings = settings
         self._telegram_channel = telegram_channel
+        self._vk_channel = vk_channel
 
     async def send(self, payload: FunnelStepSend) -> None:
         step = payload.step
@@ -98,8 +100,8 @@ class MessengerFunnelStepSender:
         if step.channel in {"telegram", "telegram_most"}:
             await self._send_telegram(payload, channel=step.channel)
             return
-        if step.channel == "vk":
-            await self._send_vk(payload)
+        if step.channel in {"vk", "vk_most"}:
+            await self._send_vk(payload, channel=step.channel)
             return
         if step.channel == "messenger":
             identity = await self._get_supported_identity(
@@ -111,8 +113,8 @@ class MessengerFunnelStepSender:
             if identity.channel in {"telegram", "telegram_most"}:
                 await self._send_telegram(payload, channel=identity.channel)
                 return
-            if identity.channel == "vk":
-                await self._send_vk(payload)
+            if identity.channel in {"vk", "vk_most"}:
+                await self._send_vk(payload, channel=identity.channel)
                 return
 
         raise ValueError(f"Unsupported funnel step channel: {step.channel}")
@@ -152,10 +154,10 @@ class MessengerFunnelStepSender:
             buttons=payload.step.buttons,
         )
 
-    async def _send_vk(self, payload: FunnelStepSend) -> None:
+    async def _send_vk(self, payload: FunnelStepSend, *, channel: str) -> None:
         await self.send_text(
             lead_id=payload.lead_id,
-            channel="vk",
+            channel=channel,
             text=payload.step.text,
             buttons=payload.step.buttons,
         )
@@ -175,8 +177,13 @@ class MessengerFunnelStepSender:
                 channel=channel,
             )
             return
-        if channel == "vk":
-            await self._send_vk_text(lead_id=lead_id, text=text, buttons=buttons or [])
+        if channel == self._vk_channel:
+            await self._send_vk_text(
+                lead_id=lead_id,
+                text=text,
+                buttons=buttons or [],
+                channel=channel,
+            )
             return
         raise ValueError(f"Unsupported messenger channel: {channel}")
 
@@ -204,6 +211,7 @@ class MessengerFunnelStepSender:
         lead_id: uuid.UUID,
         text: str,
         buttons: list[FunnelButton],
+        channel: str,
     ) -> None:
         if self._vk_client is None:
             raise ValueError("VK client is not configured.")
@@ -214,6 +222,7 @@ class MessengerFunnelStepSender:
             lead_id=lead_id,
             text=text,
             url_buttons=build_vk_buttons(buttons),
+            channel=channel,
         )
 
     async def _get_supported_identity(
@@ -254,7 +263,7 @@ class MessengerFunnelStepSender:
         if self._telegram_bot is not None:
             channels.append(self._telegram_channel)
         if self._vk_client is not None:
-            channels.append("vk")
+            channels.append(self._vk_channel)
         return channels
 
 
@@ -271,6 +280,7 @@ async def run_due_funnel_once(
     email_default_subject: str = "Сообщение от Aisu Kam",
     settings: Settings | None = None,
     telegram_channel: str = "telegram",
+    vk_channel: str = "vk",
     now: datetime | None = None,
     limit: int = 100,
 ) -> FunnelRunnerStats:
@@ -292,6 +302,7 @@ async def run_due_funnel_once(
         email_default_subject=email_default_subject,
         settings=settings,
         telegram_channel=telegram_channel,
+        vk_channel=vk_channel,
     )
     sent = 0
     skipped = 0

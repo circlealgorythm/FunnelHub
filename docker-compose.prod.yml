@@ -71,6 +71,22 @@ services:
       - redis
     restart: unless-stopped
 
+  most-vk-funnel-worker:
+    build: .
+    command: python -m funnelhub.most_vk_funnel_worker
+    env_file:
+      - .env
+    environment:
+      APP_ENV: production
+      APP_DEBUG: "false"
+      DATABASE_URL: postgresql+asyncpg://funnelhub:funnelhub@postgres:5432/funnelhub
+      REDIS_URL: redis://redis:6379/0
+      PUBLIC_BASE_URL: https://bot.aisukam.ru
+    depends_on:
+      - postgres
+      - redis
+    restart: unless-stopped
+
   funnel-worker:
     build: .
     command: python -m funnelhub.funnel_worker

@@ -143,7 +143,7 @@ class MessengerIdentity(Base, TimestampMixin):
     __tablename__ = "messenger_identities"
     __table_args__ = (
         CheckConstraint(
-            "channel IN ('telegram', 'telegram_most', 'vk', 'max')",
+            "channel IN ('telegram', 'telegram_most', 'vk', 'vk_most', 'max')",
             name="ck_messenger_identities_channel",
         ),
         UniqueConstraint("channel", "external_user_id"),
@@ -212,7 +212,7 @@ class Conversation(Base, TimestampMixin):
     __tablename__ = "conversations"
     __table_args__ = (
         CheckConstraint(
-            "channel IN ('telegram', 'telegram_most', 'vk', 'max', 'email')",
+            "channel IN ('telegram', 'telegram_most', 'vk', 'vk_most', 'max', 'email')",
             name="ck_conversations_channel",
         ),
     )
@@ -229,7 +229,7 @@ class Message(Base, TimestampMixin):
     __tablename__ = "messages"
     __table_args__ = (
         CheckConstraint(
-            "channel IN ('telegram', 'telegram_most', 'vk', 'max', 'email')",
+            "channel IN ('telegram', 'telegram_most', 'vk', 'vk_most', 'max', 'email')",
             name="ck_messages_channel",
         ),
     )

@@ -117,10 +117,10 @@ def main() -> None:
         command = (
             f"cd {REMOTE_ROOT} && "
             "docker compose -f docker-compose.prod.yml build app funnel-worker telegram-bot "
-            "most-telegram-bot most-funnel-worker && "
+            "most-telegram-bot most-funnel-worker most-vk-funnel-worker && "
             "docker compose -f docker-compose.prod.yml run --rm app alembic upgrade head && "
             "docker compose -f docker-compose.prod.yml up -d app funnel-worker telegram-bot "
-            "most-telegram-bot most-funnel-worker"
+            "most-telegram-bot most-funnel-worker most-vk-funnel-worker"
         )
         _, stdout, stderr = ssh.exec_command(command)
         out = stdout.read().decode("utf-8", errors="replace")

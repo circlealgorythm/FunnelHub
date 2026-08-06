@@ -78,6 +78,7 @@ async def main() -> None:
                     telegram_bot=bot,
                     most_telegram_bot=None,
                     vk_client=vk_client,
+                    most_vk_client=None,
                     email_client=email_client,
                     email_subject=settings.email_default_subject,
                     public_base_url=settings.public_base_url,

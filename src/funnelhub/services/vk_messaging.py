@@ -202,22 +202,23 @@ async def send_vk_text_message(
     lead_id: uuid.UUID,
     text: str,
     url_buttons: Sequence[VkButton] | None = None,
+    channel: str = "vk",
 ) -> VkSendResult:
-    identity = await get_subscribed_vk_identity(session, lead_id)
+    identity = await get_subscribed_vk_identity(session, lead_id, channel=channel)
     if identity is None:
         raise ValueError("Lead has no subscribed VK identity.")
 
     now = datetime.now(UTC)
     keyboard = build_url_keyboard(url_buttons)
     metadata = build_message_metadata(url_buttons)
-    conversation = await get_latest_vk_conversation(session, lead_id)
+    conversation = await get_latest_vk_conversation(session, lead_id, channel=channel)
     if conversation is not None:
         conversation.last_message_at = now
     message = Message(
         id=uuid.uuid4(),
         lead_id=lead_id,
         conversation_id=conversation.id if conversation is not None else None,
-        channel="vk",
+        channel=channel,
         direction="outbound",
         message_type="text",
         body=text,
@@ -253,12 +254,14 @@ async def send_vk_text_message(
 async def get_subscribed_vk_identity(
     session: AsyncSession,
     lead_id: uuid.UUID,
+    *,
+    channel: str = "vk",
 ) -> MessengerIdentity | None:
     identity = await session.scalar(
         select(MessengerIdentity)
         .where(
             MessengerIdentity.lead_id == lead_id,
-            MessengerIdentity.channel == "vk",
+            MessengerIdentity.channel == channel,
             MessengerIdentity.is_subscribed.is_(True),
         )
         .order_by(MessengerIdentity.created_at.desc())
@@ -269,10 +272,12 @@ async def get_subscribed_vk_identity(
 async def get_vk_identity_by_user_id(
     session: AsyncSession,
     external_user_id: str,
+    *,
+    channel: str = "vk",
 ) -> MessengerIdentity | None:
     identity = await session.scalar(
         select(MessengerIdentity).where(
-            MessengerIdentity.channel == "vk",
+            MessengerIdentity.channel == channel,
             MessengerIdentity.external_user_id == external_user_id,
         )
     )
@@ -282,6 +287,8 @@ async def get_vk_identity_by_user_id(
 async def get_latest_vk_conversation(
     session: AsyncSession,
     lead_id: uuid.UUID,
+    *,
+    channel: str = "vk",
 ) -> Conversation | None:
     return cast(
         Conversation | None,
@@ -289,7 +296,7 @@ async def get_latest_vk_conversation(
             select(Conversation)
             .where(
                 Conversation.lead_id == lead_id,
-                Conversation.channel == "vk",
+                Conversation.channel == channel,
             )
             .order_by(Conversation.updated_at.desc())
         )
@@ -299,8 +306,10 @@ async def get_latest_vk_conversation(
 async def unsubscribe_vk_identity(
     session: AsyncSession,
     external_user_id: str,
+    *,
+    channel: str = "vk",
 ) -> bool:
-    identity = await get_vk_identity_by_user_id(session, external_user_id)
+    identity = await get_vk_identity_by_user_id(session, external_user_id, channel=channel)
     if identity is None:
         return False
 

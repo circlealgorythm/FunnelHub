@@ -62,6 +62,19 @@ class Settings(BaseSettings):
     vk_confirmation_code: str | None = Field(
         default=None, validation_alias="VK_CONFIRMATION_CODE"
     )
+    most_vk_group_screen_name: str | None = Field(
+        default=None, validation_alias="MOST_VK_GROUP_SCREEN_NAME"
+    )
+    most_vk_group_access_token: str | None = Field(
+        default=None, validation_alias="MOST_VK_GROUP_ACCESS_TOKEN"
+    )
+    most_vk_group_id: int | None = Field(default=None, validation_alias="MOST_VK_GROUP_ID")
+    most_vk_callback_secret: str | None = Field(
+        default=None, validation_alias="MOST_VK_CALLBACK_SECRET"
+    )
+    most_vk_confirmation_code: str | None = Field(
+        default=None, validation_alias="MOST_VK_CONFIRMATION_CODE"
+    )
     vk_api_version: str = Field(default="5.199", validation_alias="VK_API_VERSION")
     vk_oauth_client_id: str | None = Field(default=None, validation_alias="VK_OAUTH_CLIENT_ID")
     vk_oauth_client_secret: str | None = Field(
@@ -159,7 +172,7 @@ class Settings(BaseSettings):
             return None
         return value
 
-    @field_validator("vk_group_id", mode="before")
+    @field_validator("vk_group_id", "most_vk_group_id", mode="before")
     @classmethod
     def normalize_vk_group_id(cls, value: Any) -> Any:
         if isinstance(value, str):

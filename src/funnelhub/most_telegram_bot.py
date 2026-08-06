@@ -28,6 +28,7 @@ from funnelhub.services.funnel_engine import (
 )
 from funnelhub.services.funnel_runner import MessengerFunnelStepSender
 from funnelhub.services.inbox import (
+    get_identity,
     mark_conversation_auto_handled,
     record_inbound_messenger_message,
 )
@@ -462,12 +463,19 @@ async def handle_button(
     user_id: str,
     value: str,
     sender: MessengerFunnelStepSender,
+    channel: str = MOST_CHANNEL,
+    funnel_key: str = MOST_FUNNEL_KEY,
 ) -> bool:
-    identity = await get_telegram_identity_by_user_id(session, user_id, channel=MOST_CHANNEL)
+    identity = await get_identity(session, channel=channel, external_user_id=user_id)
     if identity is None:
         return False
     definition = load_most_definition(settings)
-    state = await get_active_state(session, identity.lead_id)
+    state = await get_active_state(
+        session,
+        identity.lead_id,
+        funnel_key=funnel_key,
+        channel=channel,
+    )
     if state is None:
         return False
     metadata = dict(state.metadata_ or {})
@@ -475,7 +483,7 @@ async def handle_button(
         metadata["most_quiz_index"] = 0
         metadata["most_quiz_scores"] = {}
         state.metadata_ = metadata
-        await send_quiz_question(sender, identity.lead_id, 0)
+        await send_quiz_question(sender, identity.lead_id, 0, channel=channel)
         return True
     quiz_index = metadata.get("most_quiz_index")
     if isinstance(quiz_index, int) and value.startswith("q"):
@@ -487,6 +495,7 @@ async def handle_button(
             sender=sender,
             value=value,
             quiz_index=quiz_index,
+            channel=channel,
         )
     reply = BUTTON_REPLIES.get(value)
     if reply is None:
@@ -502,7 +511,7 @@ async def handle_button(
                 tag=tag,
             )
     await sender.send_text(
-        lead_id=identity.lead_id, channel=MOST_CHANNEL, text=text, buttons=buttons
+        lead_id=identity.lead_id, channel=channel, text=text, buttons=buttons
     )
     return True
 
@@ -516,6 +525,7 @@ async def handle_quiz_answer(
     sender: MessengerFunnelStepSender,
     value: str,
     quiz_index: int,
+    channel: str = MOST_CHANNEL,
 ) -> bool:
     try:
         question_index, option_index = (int(part) for part in value[1:].split("-", maxsplit=1))
@@ -532,7 +542,7 @@ async def handle_quiz_answer(
     if next_index < len(QUIZ):
         metadata["most_quiz_index"] = next_index
         state.metadata_ = metadata
-        await send_quiz_question(sender, state.lead_id, next_index)
+        await send_quiz_question(sender, state.lead_id, next_index, channel=channel)
         return True
     result = quiz_result(scores)
     metadata.pop("most_quiz_index", None)
@@ -554,7 +564,7 @@ async def handle_quiz_answer(
             lead_id=state.lead_id,
             tag=f"результат теста: {result}",
         )
-    await sender.send_text(lead_id=state.lead_id, channel=MOST_CHANNEL, text=RESULT_TEXTS[result])
+    await sender.send_text(lead_id=state.lead_id, channel=channel, text=RESULT_TEXTS[result])
     return True
 
 
@@ -562,6 +572,8 @@ async def send_quiz_question(
     sender: MessengerFunnelStepSender,
     lead_id: uuid.UUID,
     question_index: int,
+    *,
+    channel: str = MOST_CHANNEL,
 ) -> None:
     question = QUIZ[question_index]
     buttons = [
@@ -569,7 +581,7 @@ async def send_quiz_question(
         for option_index, option in enumerate(question.options)
     ]
     await sender.send_text(
-        lead_id=lead_id, channel=MOST_CHANNEL, text=question.text, buttons=buttons
+        lead_id=lead_id, channel=channel, text=question.text, buttons=buttons
     )
 
 
@@ -583,14 +595,20 @@ def quiz_result(scores: dict[str, int]) -> str:
     return leaders[0]
 
 
-async def get_active_state(session: AsyncSession, lead_id: uuid.UUID) -> FunnelState | None:
+async def get_active_state(
+    session: AsyncSession,
+    lead_id: uuid.UUID,
+    *,
+    funnel_key: str = MOST_FUNNEL_KEY,
+    channel: str = MOST_CHANNEL,
+) -> FunnelState | None:
     return cast(
         FunnelState | None,
         await session.scalar(
             select(FunnelState).where(
                 FunnelState.lead_id == lead_id,
-                FunnelState.funnel_key == MOST_FUNNEL_KEY,
-                FunnelState.channel == MOST_CHANNEL,
+                FunnelState.funnel_key == funnel_key,
+                FunnelState.channel == channel,
                 FunnelState.status == "active",
             )
         ),
@@ -602,6 +620,19 @@ def load_most_definition(settings: Settings) -> FunnelDefinition:
     if definition.key != MOST_FUNNEL_KEY:
         raise ValueError("Most Telegram funnel has an unexpected key.")
     return definition
+
+
+def load_most_vk_definition(settings: Settings) -> FunnelDefinition:
+    definition = load_most_definition(settings)
+    return definition.model_copy(
+        update={
+            "key": "most_tsennostey_vk",
+            "title": "Мост ценностей — ВКонтакте",
+            "steps": [
+                step.model_copy(update={"channel": "messenger"}) for step in definition.steps
+            ],
+        }
+    )
 
 
 def build_sender(session: AsyncSession, bot: Bot) -> MessengerFunnelStepSender:

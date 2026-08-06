@@ -17,6 +17,7 @@ from funnelhub.db.session import get_session
 from funnelhub.services.auth import require_admin_session
 from funnelhub.services.bot_linking import (
     build_most_telegram_deep_link,
+    build_most_vk_deep_link,
     build_telegram_deep_link,
     build_vk_launch_link,
     create_or_get_active_bot_link_token,
@@ -210,6 +211,7 @@ class ApiInboxSendClients:
     telegram_bot: TelegramMessageClient | None
     most_telegram_bot: TelegramMessageClient | None
     vk_client: VkMessageClient | None
+    most_vk_client: VkMessageClient | None
     email_client: EmailProviderClient | None
     email_subject: str
     public_base_url: str
@@ -268,10 +270,11 @@ async def post_conversation_reply(
         telegram_client: TelegramMessageClient | None = None
         most_telegram_client: TelegramMessageClient | None = None
         vk_client: VkMessageClient | None = None
+        most_vk_client: VkMessageClient | None = None
         email_client = None
         selected_channels = request.channels or []
         if not selected_channels:
-            if conversation.channel not in ("telegram", "telegram_most", "vk", "email"):
+            if conversation.channel not in ("telegram", "telegram_most", "vk", "vk_most", "email"):
                 raise HTTPException(
                     status_code=422,
                     detail=f"Unsupported inbox channel: {conversation.channel}",
@@ -297,6 +300,13 @@ async def post_conversation_reply(
                 access_token=settings.vk_group_access_token,
                 api_version=settings.vk_api_version,
             )
+        if "vk_most" in selected_channels:
+            if not settings.most_vk_group_access_token:
+                raise HTTPException(status_code=503, detail="Most VK client is not configured.")
+            most_vk_client = HttpVkMessageClient(
+                access_token=settings.most_vk_group_access_token,
+                api_version=settings.vk_api_version,
+            )
         if "email" in selected_channels:
             try:
                 email_client = build_email_provider_client(settings)
@@ -314,6 +324,7 @@ async def post_conversation_reply(
                 telegram_bot=telegram_client,
                 most_telegram_bot=most_telegram_client,
                 vk_client=vk_client,
+                most_vk_client=most_vk_client,
                 email_client=email_client,
                 email_subject=settings.email_default_subject,
                 public_base_url=settings.public_base_url,
@@ -720,12 +731,16 @@ def database_bot_link_responses(
                 expires_at=expires_at,
             )
         )
-    vk_link = build_vk_launch_link(settings, token)
+    vk_link = (
+        build_most_vk_deep_link(settings, token)
+        if is_most_lead
+        else build_vk_launch_link(settings, token)
+    )
     if vk_link:
         links.append(
             DatabaseBotLinkResponse(
                 channel="vk",
-                label="ВКонтакте",
+                label="ВКонтакте — Мост ценностей" if is_most_lead else "ВКонтакте",
                 url=vk_link,
                 token=token,
                 expires_at=expires_at,

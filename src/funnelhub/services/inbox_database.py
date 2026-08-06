@@ -821,7 +821,7 @@ def build_lead_summary_query() -> Select[tuple[Any, ...]]:
     # be presented as Telegram in the database list rather than as an empty
     # messenger column.
     telegram = messenger_identity_subquery("telegram", "telegram_most")
-    vk = messenger_identity_subquery("vk")
+    vk = messenger_identity_subquery("vk", "vk_most")
     conversations_count = (
         select(func.count(Conversation.id))
         .where(Conversation.lead_id == Lead.id)

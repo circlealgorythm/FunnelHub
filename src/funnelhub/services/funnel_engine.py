@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from funnelhub.db.models import FunnelState
 
-SUPPORTED_CHANNELS = {"messenger", "telegram", "telegram_most", "vk", "email"}
+SUPPORTED_CHANNELS = {"messenger", "telegram", "telegram_most", "vk", "vk_most", "email"}
 FUNNEL_LOCAL_TIMEZONE = timezone(timedelta(hours=3), name="Europe/Moscow")
 DAILY_FUNNEL_SEND_TIME = time(hour=9)
 
@@ -52,7 +52,7 @@ class FunnelQuestionnaire(BaseModel):
 class FunnelStep(BaseModel):
     key: str = Field(min_length=1, max_length=255)
     delay: str = Field(default="0m")
-    channel: Literal["messenger", "telegram", "telegram_most", "vk", "email"]
+    channel: Literal["messenger", "telegram", "telegram_most", "vk", "vk_most", "email"]
     kind: Literal["message", "question"] = "message"
     question_key: str | None = Field(default=None, min_length=1, max_length=255)
     subject: str | None = Field(default=None, min_length=1, max_length=255)
