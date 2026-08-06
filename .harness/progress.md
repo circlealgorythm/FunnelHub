@@ -1037,3 +1037,11 @@
   published as `9110d76`. The live site did not update because its stored Sites project is no
   longer available; its deployment integration must be restored before the runtime secrets can
   be set and the application-to-bot handoff can go live.
+- 2026-08-06 corrected the hosting assumption: the active target is Reg.ru, not OpenAI Sites.
+  Published the generated PHP version over FTPS to `31.31.197.49`, preserving the existing host
+  directories. The PHP handler passes applications to FunnelHub and uses its personal Telegram
+  link for the post-application page; it no longer duplicates mail delivery because FunnelHub
+  sends the durable tag notification. Direct Reg.ru checks passed for static pages, PHP 405, and
+  PHP validation 422. Public DNS still resolves `most.aisukam.ru` to the old
+  `custom-domains.chatgpt.site` target, so the final action is changing the domain A/AAAA record
+  to the Reg.ru host (and confirming its TLS certificate) before doing a production form test.

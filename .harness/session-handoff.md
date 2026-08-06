@@ -566,3 +566,18 @@
   connector reports the project referenced by `.openai/hosting.json` as missing, so the runtime
   environment cannot yet receive `FUNNELHUB_APPLICATION_URL` and the matching ingest token. Restore
   or supply a replacement deployment project, then configure these values and publish the site.
+
+## Reg.ru site deployment update — 2026-08-06
+
+- User clarified that Reg.ru is the intended site host and supplied an FTP account plus server IP.
+  The prior OpenAI Sites integration is obsolete.
+- Built the PHP-hosting package and published 72 files over FTPS to Reg.ru. The remote `config.php`
+  uses the production FunnelHub ingest secret without placing it in Git. Direct virtual-host checks
+  against the Reg.ru IP passed for `/`, `/posle-zayavki/`, PHP 405 and validation 422.
+- Changed the PHP application handler to rely on FunnelHub for the durable tag-notification email
+  and retrieve the safe personal Telegram URL. It sets a short-lived secure cookie consumed by the
+  static post-application page to replace its Telegram card with the personal deep link. Commit
+  `102af8c` is pushed to `Landing-page-Most_cennostei/main`.
+- Current blocker: public DNS for `most.aisukam.ru` still resolves to
+  `custom-domains.chatgpt.site` rather than `31.31.197.49`. Change the relevant DNS record(s),
+  wait for propagation, then perform a real form smoke test.
