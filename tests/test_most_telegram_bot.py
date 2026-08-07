@@ -1,5 +1,6 @@
 from funnelhub.config import Settings
 from funnelhub.most_telegram_bot import (
+    BUTTON_REPLIES,
     MOST_FUNNEL_KEY,
     QUIZ,
     can_start_most_quiz,
@@ -42,6 +43,8 @@ def test_most_funnel_definition_is_valid() -> None:
     ] == ["Пройти тест"]
     polarities_step = definition.steps[definition.step_index("day_3_polarities")]
     assert "Готово" in [button.text for button in polarities_step.buttons]
+    practice_step = definition.steps[definition.step_index("day_2_practice")]
+    assert "Запишите письменно на листочке (в боте писать не надо)" in practice_step.text
 
 
 def test_quiz_answers_are_transport_safe_callbacks() -> None:
@@ -126,3 +129,10 @@ def test_only_application_choice_tags_notify_by_email() -> None:
     assert should_notify_about_tag_by_email("онлайн-формат")
     assert not should_notify_about_tag_by_email("результат теста: внешняя безопасность")
     assert not should_notify_about_tag_by_email("зависимость от реакции людей")
+
+
+def test_practice_completion_mentions_tomorrows_resource_topic() -> None:
+    reply_text = BUTTON_REPLIES["Я заполнил(а) практику"][1]
+
+    assert "следующий раз я замечу ______ и перед действием сделаю ______»" in reply_text
+    assert "Завтра мы разберем, какие внутренние ресурсы" in reply_text
