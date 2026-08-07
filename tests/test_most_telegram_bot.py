@@ -17,6 +17,7 @@ def test_most_funnel_definition_is_valid() -> None:
     definition = load_funnel_definition("content/funnels/most_tsennostey.yml")
 
     assert definition.key == MOST_FUNNEL_KEY
+    assert definition.calendar_day_schedule is True
     assert definition.steps[0].channel == "telegram_most"
     assert {step.key for step in definition.steps} >= {
         "quiz_invite",

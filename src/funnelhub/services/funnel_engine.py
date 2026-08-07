@@ -18,6 +18,8 @@ from funnelhub.db.models import FunnelState
 SUPPORTED_CHANNELS = {"messenger", "telegram", "telegram_most", "vk", "vk_most", "email"}
 FUNNEL_LOCAL_TIMEZONE = timezone(timedelta(hours=3), name="Europe/Moscow")
 DAILY_FUNNEL_SEND_TIME = time(hour=9)
+FUNNEL_STARTED_AT_METADATA_KEY = "funnel_started_at"
+CALENDAR_DAY_OFFSET_METADATA_KEY = "calendar_day_offset"
 
 
 class FunnelButton(BaseModel):
@@ -70,6 +72,7 @@ class FunnelDefinition(BaseModel):
     key: str = Field(min_length=1, max_length=255)
     version: int = Field(default=1, ge=1)
     title: str | None = Field(default=None, max_length=512)
+    calendar_day_schedule: bool = False
     questionnaire: FunnelQuestionnaire | None = None
     steps: list[FunnelStep] = Field(min_length=1)
 
@@ -161,7 +164,11 @@ async def start_funnel_for_lead(
         status="active",
         current_step_key=first_step.key,
         next_run_at=schedule_after_delay(current_time, first_step.delay),
-        metadata_=build_state_metadata(definition=definition, step_index=0),
+        metadata_={
+            **build_state_metadata(definition=definition, step_index=0),
+            FUNNEL_STARTED_AT_METADATA_KEY: current_time.isoformat(),
+            CALENDAR_DAY_OFFSET_METADATA_KEY: 0,
+        },
     )
     session.add(state)
     await session.flush()
@@ -256,7 +263,12 @@ async def run_due_funnel_step(
             next_delay = question.reminder_delay
             metadata["questionnaire_waiting_for_step_key"] = next_step.key
 
-    state.next_run_at = schedule_after_delay(current_time, next_delay)
+    state.next_run_at = schedule_next_funnel_step(
+        definition=definition,
+        metadata=metadata,
+        current_time=current_time,
+        delay=next_delay,
+    )
     state.metadata_ = build_state_metadata(
         definition=definition,
         step_index=next_index,
@@ -348,6 +360,44 @@ def schedule_after_delay(current_time: datetime, delay: str) -> datetime:
         )
         return target_local_time.astimezone(UTC)
     return normalized_time + parsed_delay
+
+
+def schedule_next_funnel_step(
+    *,
+    definition: FunnelDefinition,
+    metadata: dict[str, Any],
+    current_time: datetime,
+    delay: str,
+) -> datetime:
+    """Schedule a step, preserving a fixed calendar rhythm when enabled."""
+    if not definition.calendar_day_schedule or not delay.endswith("d"):
+        return schedule_after_delay(current_time, delay)
+
+    day_offset = int(metadata.get(CALENDAR_DAY_OFFSET_METADATA_KEY, 0)) + int(delay[:-1])
+    metadata[CALENDAR_DAY_OFFSET_METADATA_KEY] = day_offset
+    started_at = funnel_started_at(metadata, fallback=current_time)
+    return schedule_funnel_calendar_day(started_at, day_offset)
+
+
+def funnel_started_at(metadata: dict[str, Any], *, fallback: datetime) -> datetime:
+    raw_value = metadata.get(FUNNEL_STARTED_AT_METADATA_KEY) or metadata.get("restarted_at")
+    if isinstance(raw_value, str):
+        try:
+            return normalize_datetime(datetime.fromisoformat(raw_value))
+        except ValueError:
+            pass
+    return normalize_datetime(fallback)
+
+
+def schedule_funnel_calendar_day(started_at: datetime, day_offset: int) -> datetime:
+    local_started_at = normalize_datetime(started_at).astimezone(FUNNEL_LOCAL_TIMEZONE)
+    target_date = local_started_at.date() + timedelta(days=day_offset)
+    target_local_time = datetime.combine(
+        target_date,
+        DAILY_FUNNEL_SEND_TIME,
+        tzinfo=FUNNEL_LOCAL_TIMEZONE,
+    )
+    return target_local_time.astimezone(UTC)
 
 
 def normalize_datetime(value: datetime | None) -> datetime:

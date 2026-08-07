@@ -9,6 +9,8 @@ from funnelhub.config import Settings
 from funnelhub.db.models import FunnelState
 from funnelhub.services.email_messaging import get_subscribed_email_subscription
 from funnelhub.services.funnel_engine import (
+    CALENDAR_DAY_OFFSET_METADATA_KEY,
+    FUNNEL_STARTED_AT_METADATA_KEY,
     FunnelDefinition,
     build_state_metadata,
     load_funnel_definition,
@@ -37,6 +39,8 @@ async def restart_funnel_for_lead(
     metadata = build_state_metadata(definition=definition, step_index=0)
     metadata["messenger_channel"] = messenger_channel
     metadata["restarted_at"] = current_time.isoformat()
+    metadata[FUNNEL_STARTED_AT_METADATA_KEY] = current_time.isoformat()
+    metadata[CALENDAR_DAY_OFFSET_METADATA_KEY] = 0
     metadata["restart_reason"] = "bot_start"
     state.status = "active"
     state.current_step_key = first_step.key

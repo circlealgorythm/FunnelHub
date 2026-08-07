@@ -19,6 +19,8 @@ from funnelhub.services.funnel_engine import (
     parse_delay,
     run_due_funnel_step,
     schedule_after_delay,
+    schedule_funnel_calendar_day,
+    schedule_next_funnel_step,
     start_funnel_for_lead,
 )
 
@@ -139,6 +141,41 @@ def test_schedule_short_delay_stays_relative() -> None:
 
     assert schedule_after_delay(current_time, "0m") == current_time
     assert schedule_after_delay(current_time, "30m") == current_time + timedelta(minutes=30)
+
+
+def test_calendar_funnel_day_uses_start_date_after_midnight_message() -> None:
+    funnel_started_at = datetime(2026, 8, 6, 20, 0, tzinfo=UTC)
+
+    assert schedule_funnel_calendar_day(funnel_started_at, 1) == datetime(
+        2026, 8, 7, 6, 0, tzinfo=UTC
+    )
+
+
+def test_calendar_funnel_keeps_next_day_at_morning_after_midnight_step() -> None:
+    definition = FunnelDefinition.model_validate(
+        {
+            "key": "calendar_funnel",
+            "calendar_day_schedule": True,
+            "steps": [
+                {"key": "first", "channel": "telegram", "text": "First"},
+            ],
+        }
+    )
+    metadata = {
+        "funnel_started_at": datetime(2026, 8, 6, 20, 0, tzinfo=UTC).isoformat(),
+        "calendar_day_offset": 0,
+    }
+    after_midnight = datetime(2026, 8, 6, 21, 34, tzinfo=UTC)
+
+    next_run_at = schedule_next_funnel_step(
+        definition=definition,
+        metadata=metadata,
+        current_time=after_midnight,
+        delay="1d",
+    )
+
+    assert next_run_at == datetime(2026, 8, 7, 6, 0, tzinfo=UTC)
+    assert metadata["calendar_day_offset"] == 1
 
 
 def test_load_funnel_definition_from_yaml() -> None:

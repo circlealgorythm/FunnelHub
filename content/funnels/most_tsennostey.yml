@@ -1,6 +1,7 @@
 key: most_tsennostey_telegram
 version: 2
 title: Мост ценностей — Telegram
+calendar_day_schedule: true
 steps:
   - key: day_1_welcome
     delay: 0m
