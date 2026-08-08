@@ -47,6 +47,27 @@ def test_most_funnel_definition_is_valid() -> None:
     assert "Запишите письменно на листочке (в боте писать не надо)" in practice_step.text
 
 
+def test_most_funnel_timing_matches_the_scenario() -> None:
+    definition = load_funnel_definition("content/funnels/most_tsennostey.yml")
+
+    assert [(step.key, step.delay) for step in definition.steps] == [
+        ("day_1_welcome", "0m"),
+        ("day_1_about", "1m"),
+        ("day_1_leader", "1m"),
+        ("day_1_context", "1m"),
+        ("quiz_invite", "1m"),
+        ("lesson", "1h"),
+        ("reflection", "30m"),
+        ("day_2_practice", "1d"),
+        ("day_3_polarities", "1d"),
+        ("day_4_values", "1d"),
+        ("day_5_invitation", "1d"),
+        ("day_6_objections", "1d"),
+        ("day_8_reminder", "2d"),
+        ("closing", "1d"),
+    ]
+
+
 def test_quiz_answers_are_transport_safe_callbacks() -> None:
     assert len(QUIZ) == 5
     assert all(len(f"fh_answer:q{index}-0".encode()) <= 64 for index in range(len(QUIZ)))

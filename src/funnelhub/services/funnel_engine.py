@@ -268,6 +268,7 @@ async def run_due_funnel_step(
         metadata=metadata,
         current_time=current_time,
         delay=next_delay,
+        next_step_index=next_index,
     )
     state.metadata_ = build_state_metadata(
         definition=definition,
@@ -368,15 +369,38 @@ def schedule_next_funnel_step(
     metadata: dict[str, Any],
     current_time: datetime,
     delay: str,
+    next_step_index: int | None = None,
 ) -> datetime:
     """Schedule a step, preserving a fixed calendar rhythm when enabled."""
     if not definition.calendar_day_schedule or not delay.endswith("d"):
         return schedule_after_delay(current_time, delay)
 
-    day_offset = int(metadata.get(CALENDAR_DAY_OFFSET_METADATA_KEY, 0)) + int(delay[:-1])
+    if next_step_index is None:
+        day_offset = int(metadata.get(CALENDAR_DAY_OFFSET_METADATA_KEY, 0)) + int(delay[:-1])
+    else:
+        day_offset = calendar_day_offset_for_step(
+            definition,
+            next_step_index,
+            delay=delay,
+        )
     metadata[CALENDAR_DAY_OFFSET_METADATA_KEY] = day_offset
     started_at = funnel_started_at(metadata, fallback=current_time)
     return schedule_funnel_calendar_day(started_at, day_offset)
+
+
+def calendar_day_offset_for_step(
+    definition: FunnelDefinition,
+    step_index: int,
+    *,
+    delay: str,
+) -> int:
+    """Return the scheduled calendar-day offset for a step in the full funnel."""
+    previous_steps_offset = sum(
+        int(step.delay[:-1])
+        for step in definition.steps[:step_index]
+        if step.delay.endswith("d")
+    )
+    return previous_steps_offset + (int(delay[:-1]) if delay.endswith("d") else 0)
 
 
 def funnel_started_at(metadata: dict[str, Any], *, fallback: datetime) -> datetime:

@@ -156,9 +156,10 @@ def test_calendar_funnel_keeps_next_day_at_morning_after_midnight_step() -> None
         {
             "key": "calendar_funnel",
             "calendar_day_schedule": True,
-            "steps": [
-                {"key": "first", "channel": "telegram", "text": "First"},
-            ],
+                "steps": [
+                    {"key": "first", "channel": "telegram", "text": "First"},
+                    {"key": "next", "delay": "1d", "channel": "telegram", "text": "Next"},
+                ],
         }
     )
     metadata = {
@@ -172,10 +173,41 @@ def test_calendar_funnel_keeps_next_day_at_morning_after_midnight_step() -> None
         metadata=metadata,
         current_time=after_midnight,
         delay="1d",
+        next_step_index=1,
     )
 
     assert next_run_at == datetime(2026, 8, 7, 6, 0, tzinfo=UTC)
     assert metadata["calendar_day_offset"] == 1
+
+
+def test_calendar_funnel_uses_step_position_for_later_days() -> None:
+    definition = FunnelDefinition.model_validate(
+        {
+            "key": "calendar_funnel",
+            "calendar_day_schedule": True,
+            "steps": [
+                {"key": "welcome", "delay": "0m", "channel": "telegram", "text": "Welcome"},
+                {"key": "day_2", "delay": "1d", "channel": "telegram", "text": "Day 2"},
+                {"key": "day_3", "delay": "1d", "channel": "telegram", "text": "Day 3"},
+                {"key": "day_4", "delay": "1d", "channel": "telegram", "text": "Day 4"},
+            ],
+        }
+    )
+    metadata = {
+        "funnel_started_at": datetime(2026, 8, 6, 20, 0, tzinfo=UTC).isoformat(),
+        "calendar_day_offset": 1,
+    }
+
+    next_run_at = schedule_next_funnel_step(
+        definition=definition,
+        metadata=metadata,
+        current_time=datetime(2026, 8, 8, 6, 0, tzinfo=UTC),
+        delay="1d",
+        next_step_index=3,
+    )
+
+    assert next_run_at == datetime(2026, 8, 9, 6, 0, tzinfo=UTC)
+    assert metadata["calendar_day_offset"] == 3
 
 
 def test_load_funnel_definition_from_yaml() -> None:
