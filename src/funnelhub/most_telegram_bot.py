@@ -567,10 +567,16 @@ async def handle_quiz_answer(
         existing_metadata=metadata,
     )
     state.current_step_key = "lesson"
-    state.next_run_at = datetime.now(UTC) + timedelta(minutes=1)
-    await assign_lead_tag(
-        session, lead_id=state.lead_id, tag=f"результат теста: {result}"
-    )
+    state.next_run_at = datetime.now(UTC) + timedelta(seconds=30)
+    result_tag = f"результат теста: {result}"
+    assigned = await assign_lead_tag(session, lead_id=state.lead_id, tag=result_tag)
+    if assigned and should_notify_about_tag_by_email(result_tag):
+        await enqueue_lead_tag_notification(
+            session=session,
+            settings=settings,
+            lead_id=state.lead_id,
+            tag=result_tag,
+        )
     await sender.send_text(lead_id=state.lead_id, channel=channel, text=RESULT_TEXTS[result])
     return True
 
@@ -624,7 +630,7 @@ def can_start_most_quiz(metadata: dict[str, Any]) -> bool:
 
 
 def should_notify_about_tag_by_email(tag: str) -> bool:
-    return tag in EMAIL_NOTIFICATION_TAGS
+    return tag in EMAIL_NOTIFICATION_TAGS or tag.startswith("результат теста: ")
 
 
 async def get_active_state(

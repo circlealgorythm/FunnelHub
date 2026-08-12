@@ -28,7 +28,7 @@ def test_most_funnel_definition_is_valid() -> None:
         "day_5_invitation",
         "closing",
     }
-    assert definition.steps[1].delay == "1m"
+    assert definition.steps[1].delay == "30s"
     assert "Это не марафон исполнения желаний" in definition.steps[1].text
     assert definition.steps[definition.step_index("lesson")].delay == "1h"
     assert [
@@ -36,7 +36,7 @@ def test_most_funnel_definition_is_valid() -> None:
         for step in definition.steps
         for button in step.buttons
         if button.text == "Пройти тест"
-    ] == ["Пройти тест"]
+    ] == ["Пройти тест"] * 8
     assert [
         button.text
         for button in definition.steps[definition.step_index("quiz_invite")].buttons
@@ -52,19 +52,26 @@ def test_most_funnel_timing_matches_the_scenario() -> None:
 
     assert [(step.key, step.delay) for step in definition.steps] == [
         ("day_1_welcome", "0m"),
-        ("day_1_about", "1m"),
-        ("day_1_leader", "1m"),
-        ("day_1_context", "1m"),
-        ("quiz_invite", "1m"),
+        ("day_1_about", "30s"),
+        ("day_1_leader", "30s"),
+        ("day_1_context", "30s"),
+        ("quiz_invite", "30s"),
         ("lesson", "1h"),
         ("reflection", "30m"),
         ("day_2_practice", "1d"),
+        ("quiz_invite_after_day_2", "30s"),
         ("day_3_polarities", "1d"),
+        ("quiz_invite_after_day_3", "30s"),
         ("day_4_values", "1d"),
+        ("quiz_invite_after_day_4", "30s"),
         ("day_5_invitation", "1d"),
+        ("quiz_invite_after_day_5", "30s"),
         ("day_6_objections", "1d"),
+        ("quiz_invite_after_day_6", "30s"),
         ("day_8_reminder", "2d"),
+        ("quiz_invite_after_day_8", "30s"),
         ("closing", "1d"),
+        ("quiz_invite_after_closing", "30s"),
     ]
 
 
@@ -144,11 +151,11 @@ def test_completed_quiz_cannot_be_started_again_from_an_old_button() -> None:
     assert not can_start_most_quiz({"most_quiz_result": "внешняя безопасность"})
 
 
-def test_only_application_choice_tags_notify_by_email() -> None:
+def test_application_choice_and_quiz_result_tags_notify_by_email() -> None:
     assert should_notify_about_tag_by_email("заявка")
     assert should_notify_about_tag_by_email("занять место")
     assert should_notify_about_tag_by_email("онлайн-формат")
-    assert not should_notify_about_tag_by_email("результат теста: внешняя безопасность")
+    assert should_notify_about_tag_by_email("результат теста: внешняя безопасность")
     assert not should_notify_about_tag_by_email("зависимость от реакции людей")
 
 

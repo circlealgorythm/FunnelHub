@@ -116,6 +116,7 @@ def build_question_definition() -> FunnelDefinition:
 
 def test_parse_delay() -> None:
     assert parse_delay("0m") == timedelta(minutes=0)
+    assert parse_delay("30s") == timedelta(seconds=30)
     assert parse_delay("15m") == timedelta(minutes=15)
     assert parse_delay("2h") == timedelta(hours=2)
     assert parse_delay("3d") == timedelta(days=3)

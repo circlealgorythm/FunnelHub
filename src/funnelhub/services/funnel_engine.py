@@ -60,6 +60,7 @@ class FunnelStep(BaseModel):
     subject: str | None = Field(default=None, min_length=1, max_length=255)
     text: str = Field(min_length=1)
     buttons: list[FunnelButton] = Field(default_factory=list)
+    skip_if_metadata_key_present: str | None = Field(default=None, min_length=1, max_length=255)
 
     @field_validator("delay")
     @classmethod
@@ -217,6 +218,33 @@ async def run_due_funnel_step(
 
     step_index = definition.step_index(state.current_step_key)
     step = definition.steps[step_index]
+    metadata = dict(state.metadata_ or {})
+    if step.skip_if_metadata_key_present and metadata.get(step.skip_if_metadata_key_present):
+        next_index = step_index + 1
+        if next_index >= len(definition.steps):
+            state.metadata_ = build_state_metadata(
+                definition=definition,
+                step_index=step_index,
+                existing_metadata=metadata,
+            )
+            complete_state(state, current_time)
+        else:
+            next_step = definition.steps[next_index]
+            state.current_step_key = next_step.key
+            state.next_run_at = schedule_next_funnel_step(
+                definition=definition,
+                metadata=metadata,
+                current_time=current_time,
+                delay=next_step.delay,
+                next_step_index=next_index,
+            )
+            state.metadata_ = build_state_metadata(
+                definition=definition,
+                step_index=next_index,
+                existing_metadata=metadata,
+            )
+        await session.flush()
+        return None
     send_step = step_with_question_option_buttons(definition, step)
     await sender.send(
         FunnelStepSend(
@@ -227,7 +255,7 @@ async def run_due_funnel_step(
             state_metadata=dict(state.metadata_ or {}),
         )
     )
-    metadata = dict(state.metadata_ or {})
+    metadata["last_sent_step_key"] = step.key
     if step.kind == "question" and step.question_key is not None:
         metadata["pending_question_key"] = step.question_key
         metadata["last_question_sent_at"] = current_time.isoformat()
@@ -330,7 +358,7 @@ def build_state_metadata(
 
 def parse_delay(value: str) -> timedelta:
     if len(value) < 2:
-        raise ValueError("Delay must look like 10m, 2h, or 1d.")
+        raise ValueError("Delay must look like 30s, 10m, 2h, or 1d.")
 
     amount_text = value[:-1]
     unit = value[-1]
@@ -338,6 +366,8 @@ def parse_delay(value: str) -> timedelta:
         raise ValueError("Delay amount must be a non-negative integer.")
 
     amount = int(amount_text)
+    if unit == "s":
+        return timedelta(seconds=amount)
     if unit == "m":
         return timedelta(minutes=amount)
     if unit == "h":
