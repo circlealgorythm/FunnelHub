@@ -41,6 +41,8 @@ from funnelhub.services.vk_messaging import (
     send_vk_text_message,
 )
 
+MESSENGER_TEXT_LIMIT = 4096
+
 logger = logging.getLogger(__name__)
 BOT_BUTTON_URLS = {
     "funnelhub://bot/telegram": "telegram",
@@ -197,14 +199,16 @@ class MessengerFunnelStepSender:
         if self._telegram_bot is None:
             raise ValueError("Telegram client is not configured.")
 
-        await send_telegram_text_message(
-            session=self._session,
-            bot=self._telegram_bot,
-            lead_id=lead_id,
-            text=text,
-            url_buttons=build_telegram_buttons(buttons),
-            channel=channel,
-        )
+        chunks = split_messenger_text(text)
+        for index, chunk in enumerate(chunks):
+            await send_telegram_text_message(
+                session=self._session,
+                bot=self._telegram_bot,
+                lead_id=lead_id,
+                text=chunk,
+                url_buttons=build_telegram_buttons(buttons) if index == len(chunks) - 1 else [],
+                channel=channel,
+            )
 
     async def _send_vk_text(
         self,
@@ -216,15 +220,16 @@ class MessengerFunnelStepSender:
         if self._vk_client is None:
             raise ValueError("VK client is not configured.")
 
-        await send_vk_text_message(
-            session=self._session,
-            client=self._vk_client,
-            lead_id=lead_id,
-            text=text,
-            url_buttons=build_vk_buttons(buttons),
-            channel=channel,
-        )
-
+        chunks = split_messenger_text(text)
+        for index, chunk in enumerate(chunks):
+            await send_vk_text_message(
+                session=self._session,
+                client=self._vk_client,
+                lead_id=lead_id,
+                text=chunk,
+                url_buttons=build_vk_buttons(buttons) if index == len(chunks) - 1 else [],
+                channel=channel,
+            )
     async def _get_supported_identity(
         self,
         lead_id: uuid.UUID,
@@ -265,6 +270,25 @@ class MessengerFunnelStepSender:
         if self._vk_client is not None:
             channels.append(self._vk_channel)
         return channels
+
+
+def split_messenger_text(text: str, limit: int = MESSENGER_TEXT_LIMIT) -> list[str]:
+    """Split long messages at paragraph/newline boundaries without losing text."""
+    if len(text) <= limit:
+        return [text]
+    chunks: list[str] = []
+    remaining = text.strip()
+    while len(remaining) > limit:
+        boundary = remaining.rfind("\n\n", 0, limit + 1)
+        if boundary < 1:
+            boundary = remaining.rfind("\n", 0, limit + 1)
+        if boundary < 1:
+            boundary = limit
+        chunks.append(remaining[:boundary].rstrip())
+        remaining = remaining[boundary:].lstrip()
+    if remaining:
+        chunks.append(remaining)
+    return chunks
 
 
 async def run_due_funnel_once(

@@ -22,9 +22,19 @@ from funnelhub.db.models import (
 from funnelhub.db.session import async_session_maker, engine
 from funnelhub.services.email_messaging import EmailProviderSendResult
 from funnelhub.services.funnel_engine import FunnelDefinition, start_funnel_for_lead
-from funnelhub.services.funnel_runner import run_due_funnel_once
+from funnelhub.services.funnel_runner import run_due_funnel_once, split_messenger_text
 
 TEST_GC_ID = 987654700
+
+
+def test_split_messenger_text_preserves_long_text_at_boundaries() -> None:
+    text = "Первый абзац.\n\n" + ("Второй абзац. " * 400)
+
+    chunks = split_messenger_text(text, limit=100)
+
+    assert "".join(chunk + "\n\n" for chunk in chunks).replace("\n\n", " ").strip()
+    assert all(len(chunk) <= 100 for chunk in chunks)
+    assert "Второй абзац." in chunks[-1]
 
 
 @dataclass(frozen=True)
