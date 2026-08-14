@@ -170,6 +170,19 @@ def test_application_choice_and_quiz_result_tags_notify_by_email() -> None:
     assert not should_notify_about_tag_by_email("зависимость от реакции людей")
 
 
+def test_application_actions_use_the_same_confirmation_text() -> None:
+    confirmation = "Спасибо! Мы свяжемся с вами в ближайшее время!"
+
+    assert [
+        BUTTON_REPLIES[value][1]
+        for value in (
+            "Оставить заявку",
+            "Занять место",
+            "Оставить заявку на онлайн-формат",
+        )
+    ] == [confirmation] * 3
+
+
 async def test_reserve_place_replies_after_the_funnel_has_completed(monkeypatch) -> None:
     lead_id = uuid4()
     sender = SimpleNamespace(send_text=AsyncMock())
@@ -199,7 +212,7 @@ async def test_reserve_place_replies_after_the_funnel_has_completed(monkeypatch)
     sender.send_text.assert_awaited_once_with(
         lead_id=lead_id,
         channel="vk_most",
-        text="Спасибо! Мы скоро с вами свяжемся!",
+        text="Спасибо! Мы свяжемся с вами в ближайшее время!",
         buttons=[],
     )
 
