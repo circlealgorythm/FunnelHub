@@ -2,6 +2,11 @@
 
 ## Current Status
 
+- 2026-08-14: all three «Мост ценностей» application buttons now use the unified response
+  «Спасибо! Мы свяжемся с вами в ближайшее время!» in Telegram and VK. Commit `ee52b02` is
+  pushed and deployed. Local and in-container focused tests passed (14 passed); services and
+  public health are OK.
+
 - 2026-08-14: fixed the «Занять место» action after the completed «Мост ценностей» funnel.
   Commit `77d1db0` is pushed and deployed. The bot now sends «Спасибо! Мы скоро с вами
   свяжемся!» and assigns the normal tag even when the scheduled funnel state is already

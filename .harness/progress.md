@@ -2,6 +2,11 @@
 
 ## Current State
 
+- 2026-08-14 unified the confirmation for the three «Мост ценностей» application actions:
+  «Оставить заявку», «Занять место», and «Оставить заявку на онлайн-формат» now all reply
+  «Спасибо! Мы свяжемся с вами в ближайшее время!» in Telegram and VK. Focused tests passed
+  locally and in production (14 passed); services are running and `/health` returns OK.
+
 - 2026-08-14 fixed the «Занять место» response for the completed «Мост ценностей» funnel.
   Button replies are now handled after identity lookup, before the active-funnel requirement used
   only by the test flow. This preserves tags and responses for both Telegram and VK after the
