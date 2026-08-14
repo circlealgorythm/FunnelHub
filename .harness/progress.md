@@ -2,6 +2,12 @@
 
 ## Current State
 
+- 2026-08-14 fixed the «Занять место» response for the completed «Мост ценностей» funnel.
+  Button replies are now handled after identity lookup, before the active-funnel requirement used
+  only by the test flow. This preserves tags and responses for both Telegram and VK after the
+  final campaign message. Focused tests passed locally and in production (13 passed); services
+  are running and `/health` returns OK.
+
 - 2026-08-14 updated and deployed the «Мост ценностей» mini-lesson for both Telegram and VK.
   The shared scenario now includes the additional point about avoiding insistence on a result and
   a «Смотреть видео» button linked to the supplied Kinescope lesson. Focused scenario tests

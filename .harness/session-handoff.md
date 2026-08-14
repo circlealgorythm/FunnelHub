@@ -2,6 +2,12 @@
 
 ## Current Status
 
+- 2026-08-14: fixed the «Занять место» action after the completed «Мост ценностей» funnel.
+  Commit `77d1db0` is pushed and deployed. The bot now sends «Спасибо! Мы скоро с вами
+  свяжемся!» and assigns the normal tag even when the scheduled funnel state is already
+  completed; quiz interaction still requires an active state. Local and in-container focused
+  tests passed (13 passed); all services and public health are OK.
+
 - 2026-08-14: the shared «Мост ценностей» lesson now uses the supplied Kinescope video through
   the «Смотреть видео» button in both Telegram and VK. Commit `73e41b3` is pushed and deployed.
   Local and in-container `tests/test_most_telegram_bot.py` both passed (12 passed); `app`,
