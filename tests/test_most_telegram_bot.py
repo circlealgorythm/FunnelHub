@@ -1,9 +1,15 @@
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+from uuid import uuid4
+
+import funnelhub.most_telegram_bot as most_telegram_bot
 from funnelhub.config import Settings
 from funnelhub.most_telegram_bot import (
     BUTTON_REPLIES,
     MOST_FUNNEL_KEY,
     QUIZ,
     can_start_most_quiz,
+    handle_button,
     load_most_vk_definition,
     quiz_result,
     resolve_funnel_button_value,
@@ -162,6 +168,40 @@ def test_application_choice_and_quiz_result_tags_notify_by_email() -> None:
     assert should_notify_about_tag_by_email("онлайн-формат")
     assert should_notify_about_tag_by_email("результат теста: внешняя безопасность")
     assert not should_notify_about_tag_by_email("зависимость от реакции людей")
+
+
+async def test_reserve_place_replies_after_the_funnel_has_completed(monkeypatch) -> None:
+    lead_id = uuid4()
+    sender = SimpleNamespace(send_text=AsyncMock())
+    monkeypatch.setattr(
+        most_telegram_bot,
+        "get_identity",
+        AsyncMock(return_value=SimpleNamespace(lead_id=lead_id)),
+    )
+    monkeypatch.setattr(
+        most_telegram_bot,
+        "get_active_state",
+        AsyncMock(side_effect=AssertionError("A completed funnel has no active state.")),
+    )
+    monkeypatch.setattr(most_telegram_bot, "assign_lead_tag", AsyncMock(return_value=False))
+
+    handled = await handle_button(
+        session=SimpleNamespace(),
+        settings=Settings(),
+        user_id="123",
+        value="Занять место",
+        sender=sender,
+        channel="vk_most",
+        funnel_key="most_tsennostey_vk",
+    )
+
+    assert handled is True
+    sender.send_text.assert_awaited_once_with(
+        lead_id=lead_id,
+        channel="vk_most",
+        text="Спасибо! Мы скоро с вами свяжемся!",
+        buttons=[],
+    )
 
 
 def test_practice_completion_mentions_tomorrows_resource_topic() -> None:

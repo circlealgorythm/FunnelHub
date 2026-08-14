@@ -479,6 +479,24 @@ async def handle_button(
     if identity is None:
         return False
     definition = load_most_definition(settings)
+    value = resolve_funnel_button_value(definition, value)
+    reply = BUTTON_REPLIES.get(BUTTON_REPLY_ALIASES.get(value, value))
+    if reply is not None:
+        tag, text, buttons = reply
+        if tag is not None:
+            assigned = await assign_lead_tag(session, lead_id=identity.lead_id, tag=tag)
+            if assigned and should_notify_about_tag_by_email(tag):
+                await enqueue_lead_tag_notification(
+                    session=session,
+                    settings=settings,
+                    lead_id=identity.lead_id,
+                    tag=tag,
+                )
+        await sender.send_text(
+            lead_id=identity.lead_id, channel=channel, text=text, buttons=buttons
+        )
+        return True
+
     state = await get_active_state(
         session,
         identity.lead_id,
@@ -488,7 +506,6 @@ async def handle_button(
     if state is None:
         return False
     metadata = dict(state.metadata_ or {})
-    value = resolve_funnel_button_value(definition, value)
     if value == "Пройти тест":
         if not can_start_most_quiz(metadata):
             return True
@@ -511,23 +528,7 @@ async def handle_button(
             quiz_index=quiz_index,
             channel=channel,
         )
-    reply = BUTTON_REPLIES.get(BUTTON_REPLY_ALIASES.get(value, value))
-    if reply is None:
-        return False
-    tag, text, buttons = reply
-    if tag is not None:
-        assigned = await assign_lead_tag(session, lead_id=identity.lead_id, tag=tag)
-        if assigned and should_notify_about_tag_by_email(tag):
-            await enqueue_lead_tag_notification(
-                session=session,
-                settings=settings,
-                lead_id=identity.lead_id,
-                tag=tag,
-            )
-    await sender.send_text(
-        lead_id=identity.lead_id, channel=channel, text=text, buttons=buttons
-    )
-    return True
+    return False
 
 
 async def handle_quiz_answer(
