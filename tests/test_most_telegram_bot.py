@@ -30,7 +30,12 @@ def test_most_funnel_definition_is_valid() -> None:
     }
     assert definition.steps[1].delay == "30s"
     assert "Это не марафон исполнения желаний" in definition.steps[1].text
-    assert definition.steps[definition.step_index("lesson")].delay == "1h"
+    lesson_step = definition.steps[definition.step_index("lesson")]
+    assert lesson_step.delay == "1h"
+    assert "как избежать настаивания на результате и не предавать себя" in lesson_step.text
+    assert [(button.text, button.url) for button in lesson_step.buttons] == [
+        ("Смотреть видео", "https://kinescope.io/kKEimwWAS5GYufgQKHr8dF")
+    ]
     assert [
         button.text
         for step in definition.steps
