@@ -2,6 +2,12 @@
 
 ## Current State
 
+- 2026-08-14 updated and deployed the «Мост ценностей» mini-lesson for both Telegram and VK.
+  The shared scenario now includes the additional point about avoiding insistence on a result and
+  a «Смотреть видео» button linked to the supplied Kinescope lesson. Focused scenario tests
+  passed locally and in production (12 passed); all campaign services are running and `/health`
+  returns OK.
+
 - 2026-07-23 removed and deployed the cancelled legacy Telegram/VK migration. The Inbox tabs
   “Миграция TG + VK” and “Миграция — кто не купил” and their API routes are no longer available.
   Alembic `20260723_02` removed the migration tables, campaign-specific bot tokens and custom

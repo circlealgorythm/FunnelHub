@@ -2,6 +2,12 @@
 
 ## Current Status
 
+- 2026-08-14: the shared «Мост ценностей» lesson now uses the supplied Kinescope video through
+  the «Смотреть видео» button in both Telegram and VK. Commit `73e41b3` is pushed and deployed.
+  Local and in-container `tests/test_most_telegram_bot.py` both passed (12 passed); `app`,
+  `most-telegram-bot`, `most-funnel-worker`, and `most-vk-funnel-worker` are running, and
+  `https://bot.aisukam.ru/health` is OK.
+
 - 2026-07-23: the user cancelled the legacy TG/VK migration. Both Inbox migration tabs and the
   corresponding API/service are removed from production. Alembic is now `20260723_02 (head)`;
   the migration tables, campaign tokens and migration custom fields are gone. Cleanup deleted
