@@ -26,6 +26,7 @@ import type { ReactNode } from "react";
 type ConversationStatus = "open" | "needs_reply" | "replied" | "closed";
 type ReplyChannel = "telegram" | "telegram_most" | "vk" | "vk_most" | "email";
 type InboxSegment = "main" | "most-tsennostey";
+type InboxListMode = "conversations" | "subscribers";
 type DatabaseSegment = "main" | "most-tsennostey";
 
 type Conversation = {
@@ -426,6 +427,7 @@ export function App() {
   const [detail, setDetail] = useState<ConversationDetail | null>(null);
   const [filter, setFilter] = useState<ConversationStatus | "all">("all");
   const [inboxSegment, setInboxSegment] = useState<InboxSegment>("main");
+  const [inboxListMode, setInboxListMode] = useState<InboxListMode>("conversations");
   const [query, setQuery] = useState("");
   const [draft, setDraft] = useState("");
   const [replyChannels, setReplyChannels] = useState<ReplyChannel[]>([]);
@@ -501,7 +503,8 @@ export function App() {
         params.set("exclude_source", "most-tsennostey");
       }
       const queryString = params.toString();
-      const response = await fetch(`${API_BASE_URL}/api/inbox/conversations${queryString ? `?${queryString}` : ""}`, {
+      const endpoint = inboxListMode === "subscribers" ? "subscribers" : "conversations";
+      const response = await fetch(`${API_BASE_URL}/api/inbox/${endpoint}${queryString ? `?${queryString}` : ""}`, {
         credentials: "include",
       });
       if (response.status === 401) {
@@ -531,14 +534,14 @@ export function App() {
       setListState("error");
       setError(formatError(caught));
     }
-  }, [filter, inboxSegment]);
+  }, [filter, inboxListMode, inboxSegment]);
 
   const loadDetail = useCallback(async (conversationId: string) => {
     setDetailState("loading");
     setError(null);
     try {
       const response = await fetch(
-        `${API_BASE_URL}/api/inbox/conversations/${conversationId}`,
+        `${API_BASE_URL}/api/inbox/${inboxListMode === "subscribers" ? "subscribers" : "conversations"}/${conversationId}`,
         { credentials: "include" }
       );
       if (response.status === 401) {
@@ -699,7 +702,7 @@ export function App() {
     setError(null);
     try {
       const response = await fetch(
-        `${API_BASE_URL}/api/inbox/conversations/${selectedId}/reply`,
+        `${API_BASE_URL}/api/inbox/${inboxListMode === "subscribers" ? "subscribers" : "conversations"}/${selectedId}/reply`,
         {
           method: "POST",
           credentials: "include",
@@ -746,8 +749,31 @@ export function App() {
   }
 
   function handleSelectConversation(conversationId: string) {
-    window.history.replaceState(null, "", `?conversation=${conversationId}`);
+    window.history.replaceState(
+      null,
+      "",
+      inboxListMode === "subscribers" ? "?subscribers" : `?conversation=${conversationId}`
+    );
     setSelectedId(conversationId);
+  }
+
+  async function openLeadInInbox(leadId: string) {
+    setError(null);
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/inbox/leads/${leadId}/inbox-target`, {
+        credentials: "include",
+      });
+      if (!response.ok) {
+        throw new Error(await readApiError(response, "Для лида нет активного канала для ответа."));
+      }
+      const target = (await response.json()) as { kind: "conversation" | "subscriber"; id: string };
+      setActiveView("inbox");
+      setInboxListMode(target.kind === "subscriber" ? "subscribers" : "conversations");
+      setSelectedId(target.id);
+      window.history.replaceState(null, "", target.kind === "subscriber" ? "?subscribers" : `?conversation=${target.id}`);
+    } catch (caught) {
+      setError(formatError(caught));
+    }
   }
 
   function switchView(view: AppView) {
@@ -946,6 +972,7 @@ export function App() {
           }}
           onRefresh={() => void loadDatabaseLeads()}
           onSaveLeadVkId={(leadId, vkId) => saveLeadVkId(leadId, vkId)}
+          onOpenLeadInInbox={openLeadInInbox}
           onDeleteLead={deleteDatabaseLead}
           onSearch={(event) => void submitDatabaseSearch(event)}
           onSelectLead={setSelectedLeadId}
@@ -1078,7 +1105,16 @@ export function App() {
           ))}
         </nav>
 
-        <div className="filter-row" aria-label="Фильтр диалогов">
+        <nav className="filter-row" aria-label="Тип списка Inbox">
+          <button className={inboxListMode === "conversations" ? "filter-chip is-active" : "filter-chip"} onClick={() => { setSelectedId(null); setInboxListMode("conversations"); }} type="button">
+            Диалоги
+          </button>
+          <button className={inboxListMode === "subscribers" ? "filter-chip is-active" : "filter-chip"} onClick={() => { setSelectedId(null); setInboxListMode("subscribers"); }} type="button">
+            Активные подписчики
+          </button>
+        </nav>
+
+        {inboxListMode === "conversations" ? <div className="filter-row" aria-label="Фильтр диалогов">
           {filters.map((item) => (
             <button
               className={filter === item.value ? "filter-chip is-active" : "filter-chip"}
@@ -1092,7 +1128,7 @@ export function App() {
               {item.label}
             </button>
           ))}
-        </div>
+        </div> : null}
 
         <div className="conversation-list" aria-live="polite">
           {listState === "loading" ? <ConversationSkeleton /> : null}
@@ -1123,7 +1159,7 @@ export function App() {
                 </span>
               </span>
               <span className="conversation-meta">
-                <StatusPill status={conversation.status} />
+                {inboxListMode === "conversations" ? <StatusPill status={conversation.status} /> : null}
                 <time>{formatRelativeDate(conversation.last_message_at)}</time>
               </span>
             </button>
@@ -1153,7 +1189,7 @@ export function App() {
                   </p>
                 </div>
               </div>
-              <div className="header-actions">
+              {inboxListMode === "conversations" ? <div className="header-actions">
                 <button
                   className="soft-button"
                   onClick={() => void updateStatus("replied")}
@@ -1170,7 +1206,7 @@ export function App() {
                   <Archive aria-hidden="true" size={17} />
                   <span>Закрыть</span>
                 </button>
-              </div>
+              </div> : null}
             </header>
 
             <div className="workspace">
@@ -1739,6 +1775,7 @@ function DatabaseWorkspace({
   onSegmentChange,
   onRefresh,
   onSaveLeadVkId,
+  onOpenLeadInInbox,
   onSearch,
   onSelectLead,
   onSwitchView,
@@ -1765,6 +1802,7 @@ function DatabaseWorkspace({
   onSegmentChange: (segment: DatabaseSegment) => void;
   onRefresh: () => void;
   onSaveLeadVkId: (leadId: string, vkId: string) => Promise<void>;
+  onOpenLeadInInbox: (leadId: string) => void;
   onSearch: (event: FormEvent<HTMLFormElement>) => void;
   onSelectLead: (leadId: string) => void;
   onSwitchView: (view: AppView) => void;
@@ -1950,7 +1988,7 @@ function DatabaseWorkspace({
           {databaseDetailState === "loading" ? (
             <div className="detail-empty">Загружаем карточку...</div>
           ) : selectedLeadDetail ? (
-            <LeadDatabaseDetail detail={selectedLeadDetail} onSaveVkId={onSaveLeadVkId} onDeleteLead={onDeleteLead} />
+            <LeadDatabaseDetail detail={selectedLeadDetail} onSaveVkId={onSaveLeadVkId} onDeleteLead={onDeleteLead} onOpenInbox={onOpenLeadInInbox} />
           ) : (
             <div className="detail-empty">
               <DatabaseIcon aria-hidden="true" size={34} />
@@ -1968,10 +2006,12 @@ function LeadDatabaseDetail({
   detail,
   onSaveVkId,
   onDeleteLead,
+  onOpenInbox,
 }: {
   detail: DatabaseLeadDetail;
   onSaveVkId: (leadId: string, vkId: string) => Promise<void>;
   onDeleteLead: (leadId: string) => Promise<void>;
+  onOpenInbox: (leadId: string) => void;
 }) {
   const [copiedLink, setCopiedLink] = useState<string | null>(null);
   const [vkIdDraft, setVkIdDraft] = useState(existingVkId(detail));
@@ -2025,14 +2065,20 @@ function LeadDatabaseDetail({
             <p>{detail.lead.source ?? "источник не указан"}</p>
           </div>
         </div>
-        <button 
-          type="button" 
-          className="soft-button" 
-          style={{ color: "#d94242", boxShadow: "inset 0 0 0 1px #d94242" }}
-          onClick={() => setShowDeleteConfirm(true)}
-        >
-          Удалить лида
-        </button>
+        <div style={{ display: "flex", gap: "0.5rem" }}>
+          <button className="soft-button" onClick={() => onOpenInbox(detail.lead.id)} type="button">
+            <MessageCircle aria-hidden="true" size={16} />
+            <span>Написать в Inbox</span>
+          </button>
+          <button
+            type="button"
+            className="soft-button"
+            style={{ color: "#d94242", boxShadow: "inset 0 0 0 1px #d94242" }}
+            onClick={() => setShowDeleteConfirm(true)}
+          >
+            Удалить лида
+          </button>
+        </div>
       </div>
 
       <div className="detail-stats">

@@ -9,6 +9,7 @@ from typing import Annotated, Literal, cast
 from aiogram import Bot
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from funnelhub.config import Settings, get_settings
@@ -30,8 +31,11 @@ from funnelhub.services.inbox import (
     InboxReplyChannelOption,
     ReplyChannel,
     get_inbox_conversation_detail,
+    get_inbox_subscriber_detail,
     list_inbox_conversations,
+    list_inbox_subscribers,
     send_inbox_reply,
+    send_inbox_subscriber_reply,
 )
 from funnelhub.services.inbox_database import (
     DatabaseImportBatchSummary,
@@ -115,6 +119,11 @@ class InboxReplyRequest(BaseModel):
 
 class InboxReplyResponse(BaseModel):
     messages: list[InboxMessageResponse]
+
+
+class InboxTargetResponse(BaseModel):
+    kind: Literal["conversation", "subscriber"]
+    id: uuid.UUID
 
 
 class InboxStatusRequest(BaseModel):
@@ -236,6 +245,39 @@ async def get_conversations(
     return [conversation_response(summary) for summary in summaries]
 
 
+@router.get("/subscribers", response_model=list[InboxConversationResponse])
+async def get_subscribers(
+    session: SessionDep,
+    source: Literal["most-tsennostey"] | None = None,
+    exclude_source: Literal["most-tsennostey"] | None = None,
+) -> list[InboxConversationResponse]:
+    subscribers = await list_inbox_subscribers(
+        session,
+        source=source,
+        exclude_source=exclude_source,
+    )
+    return [conversation_response(subscriber) for subscriber in subscribers]
+
+
+@router.get("/leads/{lead_id}/inbox-target", response_model=InboxTargetResponse)
+async def get_lead_inbox_target(
+    lead_id: uuid.UUID,
+    session: SessionDep,
+) -> InboxTargetResponse:
+    conversation = await session.scalar(
+        select(Conversation)
+        .where(Conversation.lead_id == lead_id)
+        .order_by(Conversation.updated_at.desc())
+        .limit(1)
+    )
+    if conversation is not None:
+        return InboxTargetResponse(kind="conversation", id=conversation.id)
+    subscriber = await get_inbox_subscriber_detail(session, lead_id)
+    if subscriber is not None:
+        return InboxTargetResponse(kind="subscriber", id=lead_id)
+    raise HTTPException(status_code=404, detail="Lead has no active reply channel.")
+
+
 @router.get(
     "/conversations/{conversation_id}",
     response_model=InboxConversationDetailResponse,
@@ -247,6 +289,20 @@ async def get_conversation(
     detail = await get_inbox_conversation_detail(session, conversation_id)
     if detail is None:
         raise HTTPException(status_code=404, detail="Conversation not found.")
+    return conversation_detail_response(detail)
+
+
+@router.get(
+    "/subscribers/{lead_id}",
+    response_model=InboxConversationDetailResponse,
+)
+async def get_subscriber(
+    lead_id: uuid.UUID,
+    session: SessionDep,
+) -> InboxConversationDetailResponse:
+    detail = await get_inbox_subscriber_detail(session, lead_id)
+    if detail is None:
+        raise HTTPException(status_code=404, detail="Active subscriber not found.")
     return conversation_detail_response(detail)
 
 
@@ -318,6 +374,105 @@ async def post_conversation_reply(
         messages = await send_inbox_reply(
             session=session,
             conversation_id=conversation_id,
+            text=request.text,
+            channels=request.channels,
+            clients=ApiInboxSendClients(
+                telegram_bot=telegram_client,
+                most_telegram_bot=most_telegram_client,
+                vk_client=vk_client,
+                most_vk_client=most_vk_client,
+                email_client=email_client,
+                email_subject=settings.email_default_subject,
+                public_base_url=settings.public_base_url,
+                email_from_email=settings.email_from_email,
+                email_from_name=settings.email_from_name,
+                email_signature_image_url=settings.email_signature_image_url,
+            ),
+        )
+        await session.commit()
+        return InboxReplyResponse(
+            messages=[
+                message_response(
+                    InboxMessageView(
+                        id=message.id,
+                        channel=message.channel,
+                        direction=message.direction,
+                        message_type=message.message_type,
+                        body=message.body,
+                        status=message.status,
+                        created_at=message.created_at,
+                        sent_at=message.sent_at,
+                        metadata=message.metadata_ or {},
+                    )
+                )
+                for message in messages
+            ]
+        )
+    except ValueError as exc:
+        await session.rollback()
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    finally:
+        if telegram_bot is not None:
+            await telegram_bot.session.close()
+        if most_telegram_bot is not None:
+            await most_telegram_bot.session.close()
+
+
+@router.post("/subscribers/{lead_id}/reply", response_model=InboxReplyResponse)
+async def post_subscriber_reply(
+    lead_id: uuid.UUID,
+    request: InboxReplyRequest,
+    session: SessionDep,
+    settings: SettingsDep,
+) -> InboxReplyResponse:
+    detail = await get_inbox_subscriber_detail(session, lead_id)
+    if detail is None:
+        raise HTTPException(status_code=404, detail="Active subscriber not found.")
+
+    selected_channels = request.channels or [cast(ReplyChannel, detail.conversation.channel)]
+    telegram_bot: Bot | None = None
+    most_telegram_bot: Bot | None = None
+    try:
+        telegram_client: TelegramMessageClient | None = None
+        most_telegram_client: TelegramMessageClient | None = None
+        vk_client: VkMessageClient | None = None
+        most_vk_client: VkMessageClient | None = None
+        email_client = None
+        if "telegram" in selected_channels:
+            if not settings.telegram_bot_token:
+                raise HTTPException(status_code=503, detail="Telegram client is not configured.")
+            telegram_bot = Bot(token=settings.telegram_bot_token)
+            telegram_client = telegram_bot
+        if "telegram_most" in selected_channels:
+            if not settings.most_telegram_bot_token:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Most Telegram client is not configured.",
+                )
+            most_telegram_bot = Bot(token=settings.most_telegram_bot_token)
+            most_telegram_client = most_telegram_bot
+        if "vk" in selected_channels:
+            if not settings.vk_group_access_token:
+                raise HTTPException(status_code=503, detail="VK client is not configured.")
+            vk_client = HttpVkMessageClient(
+                access_token=settings.vk_group_access_token,
+                api_version=settings.vk_api_version,
+            )
+        if "vk_most" in selected_channels:
+            if not settings.most_vk_group_access_token:
+                raise HTTPException(status_code=503, detail="Most VK client is not configured.")
+            most_vk_client = HttpVkMessageClient(
+                access_token=settings.most_vk_group_access_token,
+                api_version=settings.vk_api_version,
+            )
+        if "email" in selected_channels:
+            email_client = build_email_provider_client(settings)
+            if email_client is None:
+                raise HTTPException(status_code=503, detail="Email client is not configured.")
+
+        messages = await send_inbox_subscriber_reply(
+            session=session,
+            lead_id=lead_id,
             text=request.text,
             channels=request.channels,
             clients=ApiInboxSendClients(

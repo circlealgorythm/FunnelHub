@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Literal, Protocol, cast
 
-from sqlalchemy import Select, func, select, update
+from sqlalchemy import Select, case, exists, func, literal, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from funnelhub.db.models import (
@@ -181,7 +181,7 @@ async def send_inbox_reply(
     for channel in reply_channels:
         message = await send_reply_to_channel(
             session=session,
-            conversation=conversation,
+            lead_id=conversation.lead_id,
             channel=channel,
             text=clean_text,
             clients=clients,
@@ -194,6 +194,45 @@ async def send_inbox_reply(
         (message.sent_at for message in sent_messages if message.sent_at is not None),
         default=datetime.now(UTC),
     )
+    await session.flush()
+    return sent_messages
+
+
+async def send_inbox_subscriber_reply(
+    session: AsyncSession,
+    *,
+    lead_id: uuid.UUID,
+    text: str,
+    clients: InboxSendClients,
+    channels: list[ReplyChannel] | None = None,
+) -> list[Message]:
+    clean_text = text.strip()
+    if not clean_text:
+        raise ValueError("Reply text is required.")
+
+    available_channels = await get_available_reply_channels(
+        session=session,
+        lead_id=lead_id,
+        current_channel=None,
+    )
+    if not available_channels:
+        raise ValueError("Lead has no active reply channel.")
+    reply_channels = normalize_reply_channels(
+        channels,
+        fallback_channel=available_channels[0].channel,
+    )
+    await validate_reply_channels(session=session, lead_id=lead_id, channels=reply_channels)
+
+    sent_messages = [
+        await send_reply_to_channel(
+            session=session,
+            lead_id=lead_id,
+            channel=channel,
+            text=clean_text,
+            clients=clients,
+        )
+        for channel in reply_channels
+    ]
     await session.flush()
     return sent_messages
 
@@ -227,6 +266,28 @@ async def list_inbox_conversations(
     )
     rows = (await session.execute(statement)).all()
     return [row_to_summary(row) for row in rows]
+
+
+async def list_inbox_subscribers(
+    session: AsyncSession,
+    *,
+    source: str | None = None,
+    exclude_source: str | None = None,
+) -> list[InboxConversationSummary]:
+    statement = build_subscriber_summary_query()
+    if source:
+        statement = statement.where(Lead.source == source)
+    if exclude_source:
+        statement = statement.where((Lead.source.is_(None)) | (Lead.source != exclude_source))
+    rows = (
+        await session.execute(
+            statement.order_by(
+                latest_lead_message_created_at_subquery().desc().nullslast(),
+                Lead.updated_at.desc(),
+            )
+        )
+    ).all()
+    return [row_to_subscriber_summary(row) for row in rows]
 
 
 async def get_inbox_conversation_detail(
@@ -269,10 +330,49 @@ async def get_inbox_conversation_detail(
     )
 
 
+async def get_inbox_subscriber_detail(
+    session: AsyncSession,
+    lead_id: uuid.UUID,
+) -> InboxConversationDetail | None:
+    row = (
+        await session.execute(build_subscriber_summary_query().where(Lead.id == lead_id))
+    ).one_or_none()
+    if row is None:
+        return None
+
+    messages = (
+        await session.scalars(
+            select(Message).where(Message.lead_id == lead_id).order_by(Message.created_at.asc())
+        )
+    ).all()
+    return InboxConversationDetail(
+        conversation=row_to_subscriber_summary(row),
+        messages=[
+            InboxMessageView(
+                id=message.id,
+                channel=message.channel,
+                direction=message.direction,
+                message_type=message.message_type,
+                body=message.body,
+                status=message.status,
+                created_at=message.created_at,
+                sent_at=message.sent_at,
+                metadata=message.metadata_ or {},
+            )
+            for message in messages
+        ],
+        reply_channels=await get_available_reply_channels(
+            session=session,
+            lead_id=lead_id,
+            current_channel=row.channel,
+        ),
+    )
+
+
 async def send_reply_to_channel(
     *,
     session: AsyncSession,
-    conversation: Conversation,
+    lead_id: uuid.UUID,
     channel: ReplyChannel,
     text: str,
     clients: InboxSendClients,
@@ -285,7 +385,7 @@ async def send_reply_to_channel(
         telegram_result = await send_telegram_text_message(
             session=session,
             bot=bot,
-            lead_id=conversation.lead_id,
+            lead_id=lead_id,
             text=text,
             channel=channel,
         )
@@ -297,7 +397,7 @@ async def send_reply_to_channel(
         vk_result = await send_vk_text_message(
             session=session,
             client=vk_client,
-            lead_id=conversation.lead_id,
+            lead_id=lead_id,
             text=text,
             channel=channel,
         )
@@ -308,7 +408,7 @@ async def send_reply_to_channel(
         email_result = await send_email_text_message(
             session=session,
             client=clients.email_client,
-            lead_id=conversation.lead_id,
+            lead_id=lead_id,
             subject=clients.email_subject,
             text=text,
             public_base_url=clients.public_base_url,
@@ -559,7 +659,6 @@ def build_conversation_summary_query() -> Select[tuple[Any, ...]]:
         .correlate(Conversation)
         .scalar_subquery()
     )
-
     return (
         select(
             Conversation.id,
@@ -589,6 +688,103 @@ def build_conversation_summary_query() -> Select[tuple[Any, ...]]:
     )
 
 
+def build_subscriber_summary_query() -> Select[tuple[Any, ...]]:
+    active_identity = (
+        select(MessengerIdentity)
+        .where(
+            MessengerIdentity.lead_id == Lead.id,
+            MessengerIdentity.channel.in_(("telegram", "telegram_most", "vk", "vk_most")),
+            MessengerIdentity.is_subscribed.is_(True),
+        )
+        .order_by(MessengerIdentity.created_at.desc())
+        .limit(1)
+        .correlate(Lead)
+    )
+    identity_channel = (
+        active_identity.with_only_columns(MessengerIdentity.channel).scalar_subquery()
+    )
+    email_is_subscribed = exists(
+        select(EmailSubscription.id).where(
+            EmailSubscription.lead_id == Lead.id,
+            EmailSubscription.status == "subscribed",
+            EmailSubscription.unsubscribed_at.is_(None),
+        )
+    )
+    has_active_messenger = identity_channel.is_not(None)
+    return (
+        select(
+            Lead.id,
+            Lead.id.label("lead_id"),
+            case((has_active_messenger, identity_channel), else_="email").label("channel"),
+            literal("open").label("status"),
+            latest_lead_message_created_at_subquery().label("last_message_at"),
+            Lead.full_name,
+            Lead.first_name,
+            Lead.last_name,
+            Lead.status.label("lead_status"),
+            primary_lead_contact_subquery("email").label("email"),
+            primary_lead_contact_subquery("phone").label("phone"),
+            active_identity.with_only_columns(MessengerIdentity.display_name).scalar_subquery().label(
+                "display_name"
+            ),
+            active_identity.with_only_columns(MessengerIdentity.username).scalar_subquery().label(
+                "username"
+            ),
+            has_active_messenger.label("is_subscribed"),
+            latest_lead_message_body_subquery().label("last_message_body"),
+            latest_lead_message_direction_subquery().label("last_message_direction"),
+            select(func.count(Message.id))
+            .where(
+                Message.lead_id == Lead.id,
+                Message.direction == "inbound",
+                Message.read_at.is_(None),
+            )
+            .correlate(Lead)
+            .scalar_subquery()
+            .label("unread_count"),
+        )
+        .where(has_active_messenger | email_is_subscribed)
+        .where(~exists(select(Conversation.id).where(Conversation.lead_id == Lead.id)))
+    )
+
+
+def latest_lead_message_created_at_subquery() -> Any:
+    return (
+        select(func.max(Message.created_at))
+        .where(Message.lead_id == Lead.id)
+        .correlate(Lead)
+        .scalar_subquery()
+    )
+
+
+def latest_lead_message_body_subquery() -> Any:
+    return (
+        select(Message.body)
+        .where(
+            Message.lead_id == Lead.id,
+            Message.created_at == latest_lead_message_created_at_subquery(),
+        )
+        .order_by(Message.id.desc())
+        .limit(1)
+        .correlate(Lead)
+        .scalar_subquery()
+    )
+
+
+def latest_lead_message_direction_subquery() -> Any:
+    return (
+        select(Message.direction)
+        .where(
+            Message.lead_id == Lead.id,
+            Message.created_at == latest_lead_message_created_at_subquery(),
+        )
+        .order_by(Message.id.desc())
+        .limit(1)
+        .correlate(Lead)
+        .scalar_subquery()
+    )
+
+
 def primary_contact_subquery(contact_type: str) -> Any:
     return (
         select(LeadContact.value)
@@ -599,6 +795,20 @@ def primary_contact_subquery(contact_type: str) -> Any:
         .order_by(LeadContact.is_primary.desc(), LeadContact.created_at.asc())
         .limit(1)
         .correlate(Conversation)
+        .scalar_subquery()
+    )
+
+
+def primary_lead_contact_subquery(contact_type: str) -> Any:
+    return (
+        select(LeadContact.value)
+        .where(
+            LeadContact.lead_id == Lead.id,
+            LeadContact.contact_type == contact_type,
+        )
+        .order_by(LeadContact.is_primary.desc(), LeadContact.created_at.asc())
+        .limit(1)
+        .correlate(Lead)
         .scalar_subquery()
     )
 
@@ -624,3 +834,7 @@ def row_to_summary(row: Any) -> InboxConversationSummary:
         last_message_direction=row.last_message_direction,
         unread_count=int(row.unread_count or 0),
     )
+
+
+def row_to_subscriber_summary(row: Any) -> InboxConversationSummary:
+    return row_to_summary(row)
