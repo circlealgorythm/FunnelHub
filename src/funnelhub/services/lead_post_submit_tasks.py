@@ -12,7 +12,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from funnelhub.config import Settings
 from funnelhub.db.models import LeadPostSubmitTask
 from funnelhub.services.email_messaging import EmailProviderClient
-from funnelhub.services.getcourse_api import enrich_lead_from_getcourse_api
+from funnelhub.services.getcourse_api import (
+    GetCourseConsultationFormClient,
+    enrich_lead_from_getcourse_api,
+)
 from funnelhub.services.lead_notifications import (
     send_lead_application_notification,
     send_lead_tag_notification,
@@ -21,6 +24,7 @@ from funnelhub.services.lead_notifications import (
 logger = logging.getLogger(__name__)
 
 TASK_GETCOURSE_PROFILE_ENRICHMENT = "getcourse_profile_enrichment"
+TASK_GETCOURSE_CONSULTATION_SUBMISSION = "getcourse_consultation_submission"
 TASK_LEAD_APPLICATION_NOTIFICATION = "lead_application_notification"
 TASK_LEAD_TAG_NOTIFICATION = "lead_tag_notification"
 
@@ -57,6 +61,23 @@ async def enqueue_lead_post_submit_tasks(
             payload={"created": created, "source": source},
             max_attempts=3,
         )
+
+
+async def enqueue_getcourse_consultation_submission(
+    *,
+    session: AsyncSession,
+    lead_id: uuid.UUID,
+    name: str,
+    phone: str,
+    email: str,
+) -> None:
+    await enqueue_lead_post_submit_task(
+        session=session,
+        lead_id=lead_id,
+        task_type=TASK_GETCOURSE_CONSULTATION_SUBMISSION,
+        payload={"name": name, "phone": phone, "email": email},
+        max_attempts=5,
+    )
 
 
 async def enqueue_lead_post_submit_task(
@@ -193,6 +214,15 @@ async def process_lead_post_submit_task(
     task: LeadPostSubmitTask,
     email_client: EmailProviderClient | None,
 ) -> None:
+    if task.task_type == TASK_GETCOURSE_CONSULTATION_SUBMISSION:
+        name = str(task.payload.get("name") or "").strip()
+        phone = str(task.payload.get("phone") or "").strip()
+        email = str(task.payload.get("email") or "").strip()
+        if not name or not phone or not email:
+            raise ValueError("GetCourse consultation task has incomplete contact data.")
+        await GetCourseConsultationFormClient().submit(name=name, phone=phone, email=email)
+        return
+
     if task.task_type == TASK_GETCOURSE_PROFILE_ENRICHMENT:
         result = await enrich_lead_from_getcourse_api(
             session=session,

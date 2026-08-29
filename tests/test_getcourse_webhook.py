@@ -27,9 +27,10 @@ from funnelhub.db.models import (
 from funnelhub.db.session import async_session_maker, engine
 from funnelhub.main import app
 from funnelhub.services.bot_linking import link_messenger_identity
-from funnelhub.services.getcourse_api import GetCourseExportClient
+from funnelhub.services.getcourse_api import GetCourseConsultationFormClient, GetCourseExportClient
 from funnelhub.services.ingestion_guard import getcourse_rate_limiter
 from funnelhub.services.lead_post_submit_tasks import (
+    TASK_GETCOURSE_CONSULTATION_SUBMISSION,
     TASK_GETCOURSE_PROFILE_ENRICHMENT,
     TASK_LEAD_APPLICATION_NOTIFICATION,
     run_due_lead_post_submit_tasks_once,
@@ -135,6 +136,107 @@ async def test_getcourse_webhook_creates_lead_from_query_params() -> None:
         assert email_funnel_state.status == "active"
         assert email_funnel_state.current_step_key == "day_01_intro"
         assert email_funnel_state.next_run_at is not None
+
+
+async def test_aisu_landing_application_imports_user_to_getcourse(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("AISU_LANDING_INGEST_TOKEN", "test-aisu-token")
+    get_settings.cache_clear()
+    captured: dict[str, str] = {}
+
+    async def submit_consultation_form(
+        self: GetCourseConsultationFormClient,
+        *,
+        name: str,
+        phone: str,
+        email: str,
+    ) -> None:
+        captured.update(
+            {
+                "name": name,
+                "phone": phone,
+                "email": email,
+            }
+        )
+
+    monkeypatch.setattr(
+        GetCourseConsultationFormClient,
+        "submit",
+        submit_consultation_form,
+    )
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://127.0.0.1:8000",
+    ) as client:
+        forbidden = await client.post(
+            "/webhooks/landing-applications/aisu",
+            json={
+                "name": "Лид с сайта",
+                "phone": "+7 999 000-00-00",
+                "email": TEST_EMAIL,
+                "form_type": "consultation",
+            },
+        )
+        response = await client.post(
+            "/webhooks/landing-applications/aisu",
+            headers={"Authorization": "Bearer test-aisu-token"},
+            json={
+                "name": "Лид с сайта",
+                "phone": "+7 999 000-00-00",
+                "email": TEST_EMAIL,
+                "form_type": "consultation",
+                "utm_source": "yandex",
+                "yclid": "direct-click-1",
+                "metrika_client_id": "metrika-client-1",
+                "metrika_visit_id": "metrika-visit-1",
+            },
+        )
+
+    assert forbidden.status_code == 401
+    assert response.status_code == 202
+    assert response.json()["status"] == "accepted"
+    assert response.json()["join_url"].startswith("http")
+    async with async_session_maker() as session:
+        lead_id = await session.scalar(
+            select(LeadContact.lead_id).where(
+                LeadContact.contact_type == "email",
+                LeadContact.normalized_value == TEST_EMAIL,
+            )
+        )
+        assert lead_id is not None
+        task = await session.scalar(
+            select(LeadPostSubmitTask).where(
+                LeadPostSubmitTask.lead_id == lead_id,
+                LeadPostSubmitTask.task_type == TASK_GETCOURSE_CONSULTATION_SUBMISSION,
+            )
+        )
+        assert task is not None
+        assert task.status == "pending"
+        attribution = await session.scalar(
+            select(LeadUtm).where(
+                LeadUtm.lead_id == lead_id,
+                LeadUtm.yclid == "direct-click-1",
+            )
+        )
+        assert attribution is not None
+        assert attribution.utm_source == "yandex"
+        assert attribution.metrika_client_id == "metrika-client-1"
+        assert attribution.metrika_visit_id == "metrika-visit-1"
+
+        stats = await run_due_lead_post_submit_tasks_once(
+            session=session,
+            settings=get_settings(),
+            email_client=None,
+        )
+
+    get_settings.cache_clear()
+    assert stats.completed == 1
+    assert captured == {
+        "name": "Лид с сайта",
+        "phone": "+7 999 000-00-00",
+        "email": TEST_EMAIL,
+    }
 
 
 async def test_getcourse_webhook_persists_lead_contacts_and_custom_fields() -> None:

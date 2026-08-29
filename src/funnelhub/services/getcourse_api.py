@@ -4,6 +4,7 @@ import asyncio
 import base64
 import json
 import logging
+import re
 from dataclasses import dataclass
 from typing import Any, cast
 
@@ -21,6 +22,8 @@ from funnelhub.services.getcourse_webhook import (
 
 logger = logging.getLogger(__name__)
 httpx_logger = logging.getLogger("httpx")
+AISU_CONSULTATION_FORM_URL = "https://school.aisukam.ru/pl/lite/block-public/process-html?id=2119330684"
+AISU_CONSULTATION_FORM_HELPER_ID = "131449469ffa9c60a761"
 
 
 @dataclass(frozen=True)
@@ -194,7 +197,7 @@ class GetCourseExportClient:
 
 
 class GetCourseUserImportClient:
-    """Minimal GetCourse Import API client used only to update an existing user field."""
+    """GetCourse Import API client for narrowly scoped user updates."""
 
     def __init__(
         self,
@@ -234,11 +237,11 @@ class GetCourseUserImportClient:
             f"{self._base_url}/pl/api/users",
             data={"action": "add", "key": self._api_key, "params": encoded_params},
         )
-        if payload.get("success") is not True:
+        if not _getcourse_api_success(payload.get("success")):
             raise RuntimeError(str(payload.get("error_message") or "GetCourse user update failed"))
 
         result = payload.get("result")
-        if isinstance(result, dict) and result.get("error") is True:
+        if isinstance(result, dict) and _getcourse_api_success(result.get("error")):
             raise RuntimeError(str(result.get("error_message") or "GetCourse user update failed"))
 
     async def _post_json(self, url: str, data: dict[str, str]) -> dict[str, Any]:
@@ -257,6 +260,81 @@ class GetCourseUserImportClient:
         if not isinstance(payload, dict):
             raise RuntimeError("GetCourse API returned non-object JSON.")
         return cast(dict[str, Any], payload)
+
+
+class GetCourseConsultationFormClient:
+    """Submits the public consultation form with a freshly issued GetCourse signature."""
+
+    def __init__(self, *, http_client: httpx.AsyncClient | None = None) -> None:
+        self._http_client = http_client
+
+    async def submit(
+        self,
+        *,
+        name: str,
+        phone: str,
+        email: str,
+    ) -> None:
+        if self._http_client is not None:
+            response = await self._submit_with_client(
+                self._http_client,
+                name=name,
+                phone=phone,
+                email=email,
+            )
+        else:
+            async with httpx.AsyncClient(timeout=20.0, follow_redirects=True) as client:
+                response = await self._submit_with_client(
+                    client,
+                    name=name,
+                    phone=phone,
+                    email=email,
+                )
+        response.raise_for_status()
+        if "Не заполнено поле" in response.text or "Ошибка" in response.text:
+            raise RuntimeError("GetCourse consultation form rejected the submission.")
+
+    async def _submit_with_client(
+        self,
+        client: httpx.AsyncClient,
+        *,
+        name: str,
+        phone: str,
+        email: str,
+    ) -> httpx.Response:
+        form_page = await client.get(AISU_CONSULTATION_FORM_URL)
+        form_page.raise_for_status()
+        request_time = _getcourse_form_value(form_page.text, "requestTime")
+        request_simple_sign = _getcourse_form_value(form_page.text, "requestSimpleSign")
+        if request_time is None or request_simple_sign is None:
+            raise RuntimeError("GetCourse consultation form signature is unavailable.")
+
+        return await client.post(
+            AISU_CONSULTATION_FORM_URL,
+            data={
+                "formParams[first_name]": name,
+                "formParams[phone]": phone,
+                "formParams[email]": email,
+                "formParams[setted_offer_id]": "",
+                "formParams[willCreatePaidDeal]": "",
+                "formParams[userCustomFields][10616540]": "Да",
+                "__gc__internal__form__helper": "https://aisukam.ru/",
+                "__gc__internal__form__helper_ref": "",
+                "requestTime": request_time,
+                "requestSimpleSign": request_simple_sign,
+                "isHtmlWidget": "1",
+            },
+            headers={"Referer": "https://aisukam.ru/", "Origin": "https://aisukam.ru"},
+        )
+
+
+def _getcourse_api_success(value: object) -> bool:
+    return value is True or value == "true"
+
+
+def _getcourse_form_value(html: str, name: str) -> str | None:
+    match = re.search(rf'window\.{re.escape(name)}\s*=\s*["\']?([^;"\'\s]+)', html)
+    return match.group(1) if match else None
 
 
 def parse_export_rows(payload: dict[str, Any]) -> list[dict[str, Any]]:

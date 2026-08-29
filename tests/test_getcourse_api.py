@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import AsyncGenerator
+from urllib.parse import parse_qs
 
 import httpx
 import pytest
@@ -12,6 +13,7 @@ from funnelhub.db.base import Base
 from funnelhub.db.models import Lead, LeadContact, LeadExternalId
 from funnelhub.db.session import async_session_maker, engine
 from funnelhub.services.getcourse_api import (
+    GetCourseConsultationFormClient,
     build_user_export_filter,
     enrich_lead_from_getcourse_api,
     parse_export_rows,
@@ -169,3 +171,30 @@ async def test_enrich_lead_from_getcourse_api_saves_vk_id(
         )
         assert external_id is not None
         assert external_id.external_id == "321654"
+
+
+async def test_consultation_form_client_uses_fresh_getcourse_signature() -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.method == "GET":
+            return httpx.Response(
+                200,
+                text='window.requestTime = 123456; window.requestSimpleSign = "fresh-sign";',
+            )
+        return httpx.Response(200, text="Заявка принята")
+
+    http_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    try:
+        await GetCourseConsultationFormClient(http_client=http_client).submit(
+            name="Лид",
+            phone="+79990000000",
+            email=TEST_EMAIL,
+        )
+    finally:
+        await http_client.aclose()
+    assert [request.method for request in requests] == ["GET", "POST"]
+    submitted = parse_qs(requests[1].content.decode())
+    assert submitted["requestTime"] == ["123456"]
+    assert submitted["requestSimpleSign"] == ["fresh-sign"]

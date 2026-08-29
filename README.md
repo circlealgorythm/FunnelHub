@@ -29,4 +29,4 @@ mypy src
 pytest -x
 ```
 
-Project methodology lives in `.harness/`.
+Current unimplemented work is tracked in [docs/roadmap.md](docs/roadmap.md).

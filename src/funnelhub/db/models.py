@@ -92,6 +92,9 @@ class LeadUtm(Base, TimestampMixin):
     utm_term: Mapped[str | None] = mapped_column(String(255))
     utm_content: Mapped[str | None] = mapped_column(String(512))
     utm_group: Mapped[str | None] = mapped_column(String(255))
+    yclid: Mapped[str | None] = mapped_column(String(255))
+    metrika_client_id: Mapped[str | None] = mapped_column(String(255))
+    metrika_visit_id: Mapped[str | None] = mapped_column(String(255))
     raw_data: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
 
 

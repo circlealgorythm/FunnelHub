@@ -2,9 +2,17 @@ from __future__ import annotations
 
 import logging
 import secrets
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    Header,
+    HTTPException,
+    Request,
+    Response,
+    status,
+)
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -28,7 +36,10 @@ from funnelhub.services.ingestion_guard import (
     strip_getcourse_webhook_secret_fields,
 )
 from funnelhub.services.landing_applications import ingest_most_tsennostey_application
-from funnelhub.services.lead_post_submit_tasks import enqueue_lead_post_submit_tasks
+from funnelhub.services.lead_post_submit_tasks import (
+    enqueue_getcourse_consultation_submission,
+    enqueue_lead_post_submit_tasks,
+)
 from funnelhub.vk_bot import handle_vk_message_allow, handle_vk_message_new
 
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
@@ -101,6 +112,52 @@ class MostTsennosteyApplicationResponse(BaseModel):
     vk_url: str | None = None
 
 
+class AisuLandingApplicationRequest(BaseModel):
+    name: str = Field(min_length=2, max_length=60)
+    phone: str = Field(min_length=10, max_length=24)
+    email: str = Field(min_length=3, max_length=80)
+    form_type: Literal["consultation"]
+    source: str | None = Field(default=None, max_length=500)
+    utm_source: str | None = Field(default=None, max_length=255)
+    utm_medium: str | None = Field(default=None, max_length=255)
+    utm_campaign: str | None = Field(default=None, max_length=255)
+    utm_term: str | None = Field(default=None, max_length=255)
+    utm_content: str | None = Field(default=None, max_length=512)
+    utm_group: str | None = Field(default=None, max_length=255)
+    yclid: str | None = Field(default=None, max_length=255)
+    metrika_client_id: str | None = Field(default=None, max_length=255)
+    metrika_visit_id: str | None = Field(default=None, max_length=255)
+
+    @field_validator("name", "phone", "email")
+    @classmethod
+    def trim_landing_text(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("Value must not be blank.")
+        return cleaned
+
+    @field_validator("phone")
+    @classmethod
+    def validate_landing_phone(cls, value: str) -> str:
+        digits = "".join(character for character in value if character.isdigit())
+        if not 10 <= len(digits) <= 15:
+            raise ValueError("Phone must contain from 10 to 15 digits.")
+        return value
+
+    @field_validator("email")
+    @classmethod
+    def validate_landing_email(cls, value: str) -> str:
+        local_part, separator, domain = value.partition("@")
+        if not local_part or not separator or "." not in domain or domain.startswith("."):
+            raise ValueError("Email is invalid.")
+        return value
+
+
+class AisuLandingApplicationResponse(BaseModel):
+    status: Literal["accepted"]
+    join_url: str
+
+
 @router.api_route(
     "/getcourse",
     methods=["GET", "POST"],
@@ -139,7 +196,7 @@ async def getcourse_webhook(
             lead_id=result.lead_id,
             created=result.created,
             source="webhooks/getcourse",
-            notify_admin=True,
+            notify_admin=result.created,
         )
     except ValueError as exc:
         raise HTTPException(
@@ -208,7 +265,7 @@ async def most_tsennostey_application(
         lead_id=result.lead_id,
         created=result.created,
         source="most-tsennostey",
-        notify_admin=True,
+        notify_admin=result.created,
     )
     await session.commit()
     return MostTsennosteyApplicationResponse(
@@ -221,6 +278,74 @@ async def most_tsennostey_application(
     )
 
 
+@router.post(
+    "/landing-applications/aisu",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=AisuLandingApplicationResponse,
+)
+async def aisu_landing_application(
+    application: AisuLandingApplicationRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    authorization: Annotated[str | None, Header()] = None,
+) -> AisuLandingApplicationResponse:
+    expected_token = settings.aisu_landing_ingest_token
+    received_token = authorization.removeprefix("Bearer ") if authorization else ""
+    if not expected_token:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Aisu landing application ingestion is not configured.",
+        )
+    if not secrets.compare_digest(received_token, expected_token):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid landing token.",
+        )
+
+    result = await ingest_getcourse_webhook(
+        session,
+        {
+            "name": application.name,
+            "phone": application.phone,
+            "email": application.email,
+            "custom_10616540": "Да",
+            "source": application.source,
+            "utm_source": application.utm_source,
+            "utm_medium": application.utm_medium,
+            "utm_campaign": application.utm_campaign,
+            "utm_term": application.utm_term,
+            "utm_content": application.utm_content,
+            "utm_group": application.utm_group,
+            "yclid": application.yclid,
+            "metrika_client_id": application.metrika_client_id,
+            "metrika_visit_id": application.metrika_visit_id,
+        },
+    )
+    await start_default_email_funnel_for_lead(
+        session=session,
+        settings=settings,
+        lead_id=result.lead_id,
+    )
+    await enqueue_lead_post_submit_tasks(
+        session=session,
+        settings=settings,
+        lead_id=result.lead_id,
+        created=result.created,
+        source="landing-applications/aisu",
+        notify_admin=True,
+    )
+    await enqueue_getcourse_consultation_submission(
+        session=session,
+        lead_id=result.lead_id,
+        name=application.name,
+        phone=application.phone,
+        email=application.email,
+    )
+    await session.commit()
+    return AisuLandingApplicationResponse(
+        status="accepted",
+        join_url=build_join_url(settings, result.bot_link_token),
+    )
 @router.get(
     "/email/unisender-go",
     status_code=status.HTTP_200_OK,

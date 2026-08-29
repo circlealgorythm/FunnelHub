@@ -76,6 +76,9 @@ XLSX_EXPORT_COLUMNS = [
     ("utm_term", "utm_term"),
     ("utm_content", "utm_content"),
     ("utm_group", "utm_group"),
+    ("yclid", "Yandex Direct Click ID"),
+    ("metrika_client_id", "Yandex Metrika ClientID"),
+    ("metrika_visit_id", "Yandex Metrika Visit ID"),
     ("vk_id", "VK-ID из GetCourse"),
     ("getcourse_groups", "Группы GetCourse"),
     ("partner", "От партнера"),
@@ -225,7 +228,9 @@ async def list_database_leads(
     total = int(await session.scalar(count_statement) or 0)
     rows = (
         await session.execute(
-            base_statement.order_by(Lead.created_at.desc()).limit(limit).offset(offset)
+            base_statement.order_by(Lead.updated_at.desc(), Lead.created_at.desc())
+            .limit(limit)
+            .offset(offset)
         )
     ).all()
     return DatabaseLeadList(
@@ -353,6 +358,9 @@ async def get_database_lead_detail(
                 "utm_term": item.utm_term,
                 "utm_content": item.utm_content,
                 "utm_group": item.utm_group,
+                "yclid": item.yclid,
+                "metrika_client_id": item.metrika_client_id,
+                "metrika_visit_id": item.metrika_visit_id,
                 "created_at": item.created_at,
             }
             for item in utm_snapshots
@@ -994,6 +1002,9 @@ def xlsx_export_row(detail: DatabaseLeadDetail) -> dict[str, Any]:
         "utm_term": form_utm.get("utm_term"),
         "utm_content": form_utm.get("utm_content"),
         "utm_group": form_utm.get("utm_group"),
+        "yclid": form_utm.get("yclid"),
+        "metrika_client_id": form_utm.get("metrika_client_id"),
+        "metrika_visit_id": form_utm.get("metrika_visit_id"),
         "vk_id": custom.get("vk_id"),
         "getcourse_groups": custom.get("getcourse_groups"),
         "partner": custom.get("partner"),

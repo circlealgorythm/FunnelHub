@@ -152,7 +152,7 @@ async def ingest_getcourse_webhook(
     custom_fields = await upsert_custom_fields(session, lead, normalized)
     await upsert_consents(session, lead, custom_fields)
 
-    if has_utm_data(normalized["utm"]):
+    if has_attribution_data(normalized):
         session.add(
             LeadUtm(
                 id=uuid.uuid4(),
@@ -164,6 +164,9 @@ async def ingest_getcourse_webhook(
                 utm_term=normalized["utm_term"],
                 utm_content=normalized["utm_content"],
                 utm_group=normalized["utm_group"],
+                yclid=normalized["yclid"],
+                metrika_client_id=normalized["metrika_client_id"],
+                metrika_visit_id=normalized["metrika_visit_id"],
                 raw_data=normalized["raw_payload"],
             )
         )
@@ -230,6 +233,13 @@ def normalize_getcourse_payload(payload: dict[str, Any]) -> dict[str, Any]:
         ),
         "source": clean_text(first_payload_value(payload, PROFILE_FIELD_ALIASES["source"]))
         or regular_utm["utm_source"],
+        "yclid": clean_text(first_payload_value(payload, ("yclid", "Yclid"))),
+        "metrika_client_id": clean_text(
+            first_payload_value(payload, ("metrika_client_id", "metrikaClientId", "client_id"))
+        ),
+        "metrika_visit_id": clean_text(
+            first_payload_value(payload, ("metrika_visit_id", "metrikaVisitId", "visit_id"))
+        ),
         "custom_fields": additional_fields,
         "utm": regular_utm,
         **regular_utm,
@@ -571,8 +581,15 @@ def merge_consent_metadata(
     return merged
 
 
-def has_utm_data(values: dict[str, str | None]) -> bool:
-    return any(values.get(key) is not None for key in UTM_KEYS)
+def has_attribution_data(normalized: dict[str, Any]) -> bool:
+    return any(
+        (
+            *normalized["utm"].values(),
+            normalized["yclid"],
+            normalized["metrika_client_id"],
+            normalized["metrika_visit_id"],
+        )
+    )
 
 
 def extract_custom_fields(payload: dict[str, Any]) -> dict[str, str | None]:

@@ -148,6 +148,9 @@ class Settings(BaseSettings):
     most_tsennostey_ingest_token: str | None = Field(
         default=None, validation_alias="MOST_TSENNOSTEY_INGEST_TOKEN"
     )
+    aisu_landing_ingest_token: str | None = Field(
+        default=None, validation_alias="AISU_LANDING_INGEST_TOKEN"
+    )
     autopost_upload_dir: str = Field(
         default="/app/uploads/autoposts", validation_alias="AUTOPOST_UPLOAD_DIR"
     )

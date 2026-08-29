@@ -112,7 +112,7 @@ async def getcourse_redirect_join_page(
             lead_id=result.lead_id,
             created=result.created,
             source="join/getcourse",
-            notify_admin=True,
+            notify_admin=result.created,
         )
     except ValueError:
         await session.rollback()

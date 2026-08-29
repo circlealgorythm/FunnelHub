@@ -708,7 +708,10 @@ export function App() {
         }
       );
       if (!response.ok) {
-        throw new Error(`Reply failed: ${response.status}`);
+        const payload = (await response.json().catch(() => null)) as {
+          detail?: string;
+        } | null;
+        throw new Error(payload?.detail ?? `Reply failed: ${response.status}`);
       }
       setDraft("");
       await loadConversations();
@@ -2164,6 +2167,9 @@ function LeadDatabaseDetail({
                 { label: "utm_content", value: snapshot.utm_content },
                 { label: "utm_term", value: snapshot.utm_term },
                 { label: "utm_group", value: snapshot.utm_group },
+                { label: "Yandex Direct Click ID", value: snapshot.yclid },
+                { label: "Yandex Metrika ClientID", value: snapshot.metrika_client_id },
+                { label: "Yandex Metrika Visit ID", value: snapshot.metrika_visit_id },
               ].filter((item) => item.value !== null && item.value !== undefined)}
             />
           </div>
@@ -2637,6 +2643,9 @@ function ImportManagerModal({
     { value: "utm_term", label: "UTM Term" },
     { value: "utm_content", label: "UTM Content" },
     { value: "utm_group", label: "UTM Group" },
+    { value: "yclid", label: "Yandex Direct Click ID" },
+    { value: "metrika_client_id", label: "Yandex Metrika ClientID" },
+    { value: "metrika_visit_id", label: "Yandex Metrika Visit ID" },
     { value: "vk_id", label: "VK-ID" },
     { value: "getcourse_groups", label: "Группы GetCourse" },
   ];
