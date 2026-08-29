@@ -550,6 +550,24 @@ export function App() {
         setDetailState("idle");
         return;
       }
+      if (response.status === 404 && inboxListMode === "subscribers") {
+        const targetResponse = await fetch(
+          `${API_BASE_URL}/api/inbox/leads/${conversationId}/inbox-target`,
+          { credentials: "include" }
+        );
+        if (targetResponse.ok) {
+          const target = (await targetResponse.json()) as {
+            kind: "conversation" | "subscriber";
+            id: string;
+          };
+          if (target.kind === "conversation") {
+            setInboxListMode("conversations");
+            setSelectedId(target.id);
+            window.history.replaceState(null, "", `?conversation=${target.id}`);
+            return;
+          }
+        }
+      }
       if (!response.ok) {
         throw new Error(`Inbox detail failed: ${response.status}`);
       }
