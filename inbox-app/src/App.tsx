@@ -578,7 +578,7 @@ export function App() {
       setDetailState("error");
       setError(formatError(caught));
     }
-  }, []);
+  }, [inboxListMode]);
 
   const loadDatabaseLeads = useCallback(async (requestedOffset?: number) => {
     const nextOffset =
