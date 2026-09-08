@@ -130,6 +130,15 @@ async def ingest_getcourse_webhook(
         session.add(lead)
 
     apply_payload_to_lead(lead, normalized)
+    if lead.device_fingerprint:
+        existing_duplicate_id = await session.scalar(
+            select(Lead.id).where(
+                Lead.device_fingerprint == lead.device_fingerprint,
+                Lead.id != lead.id,
+            ).limit(1)
+        )
+        if existing_duplicate_id is not None:
+            lead.is_device_duplicate = True
     await session.flush()
 
     await upsert_getcourse_external_id(session, lead, normalized)
@@ -167,6 +176,7 @@ async def ingest_getcourse_webhook(
                 yclid=normalized["yclid"],
                 metrika_client_id=normalized["metrika_client_id"],
                 metrika_visit_id=normalized["metrika_visit_id"],
+                device_fingerprint=normalized.get("device_fingerprint"),
                 raw_data=normalized["raw_payload"],
             )
         )
@@ -240,6 +250,21 @@ def normalize_getcourse_payload(payload: dict[str, Any]) -> dict[str, Any]:
         "metrika_visit_id": clean_text(
             first_payload_value(payload, ("metrika_visit_id", "metrikaVisitId", "visit_id"))
         ),
+        "client_ip": clean_text(
+            first_payload_value(payload, ("client_ip", "ip", "smartcaptcha_ip"))
+        ),
+        "device_fingerprint": clean_text(
+            first_payload_value(payload, ("device_fingerprint", "deviceFingerprint"))
+        ),
+        "device_gpu": clean_text(
+            first_payload_value(payload, ("device_gpu", "deviceGpu"))
+        ),
+        "device_screen": clean_text(
+            first_payload_value(payload, ("device_screen", "deviceScreen"))
+        ),
+        "device_cpu_cores": parse_int(
+            first_payload_value(payload, ("device_cpu_cores", "deviceCpuCores"))
+        ),
         "custom_fields": additional_fields,
         "utm": regular_utm,
         **regular_utm,
@@ -290,6 +315,16 @@ def apply_payload_to_lead(lead: Lead, normalized: dict[str, Any]) -> None:
         normalized["getcourse_last_activity_at"] or lead.getcourse_last_activity_at
     )
     lead.source = normalized["source"] or lead.source
+    if normalized.get("client_ip"):
+        lead.client_ip = normalized["client_ip"]
+    if normalized.get("device_fingerprint"):
+        lead.device_fingerprint = normalized["device_fingerprint"]
+    if normalized.get("device_gpu"):
+        lead.device_gpu = normalized["device_gpu"]
+    if normalized.get("device_screen"):
+        lead.device_screen = normalized["device_screen"]
+    if normalized.get("device_cpu_cores") is not None:
+        lead.device_cpu_cores = normalized["device_cpu_cores"]
     lead.raw_getcourse_data = normalized["raw_payload"]
     lead.updated_at = now
 

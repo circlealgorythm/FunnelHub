@@ -47,6 +47,12 @@ class Lead(Base, TimestampMixin):
     getcourse_created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     getcourse_last_activity_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     deleted_from_getcourse_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    client_ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    device_fingerprint: Mapped[str | None] = mapped_column(String(128), index=True, nullable=True)
+    device_gpu: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    device_screen: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    device_cpu_cores: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    is_device_duplicate: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     raw_getcourse_data: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
 
     contacts: Mapped[list[LeadContact]] = relationship(back_populates="lead")
@@ -95,6 +101,7 @@ class LeadUtm(Base, TimestampMixin):
     yclid: Mapped[str | None] = mapped_column(String(255))
     metrika_client_id: Mapped[str | None] = mapped_column(String(255))
     metrika_visit_id: Mapped[str | None] = mapped_column(String(255))
+    device_fingerprint: Mapped[str | None] = mapped_column(String(128), nullable=True)
     raw_data: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
 
 

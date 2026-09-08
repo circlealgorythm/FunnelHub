@@ -142,6 +142,7 @@ async def test_aisu_landing_application_imports_user_to_getcourse(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("AISU_LANDING_INGEST_TOKEN", "test-aisu-token")
+    monkeypatch.setenv("AISU_SMARTCAPTCHA_SERVER_KEY", "test-smartcaptcha-key")
     get_settings.cache_clear()
     captured: dict[str, str] = {}
 
@@ -165,6 +166,13 @@ async def test_aisu_landing_application_imports_user_to_getcourse(
         "submit",
         submit_consultation_form,
     )
+    validated_captcha: list[dict[str, str | None]] = []
+
+    async def verify_captcha(**kwargs: str | None) -> bool:
+        validated_captcha.append(kwargs)
+        return kwargs["token"] == "test-captcha-token"
+
+    monkeypatch.setattr("funnelhub.api.webhooks.verify_smartcaptcha_token", verify_captcha)
     async with AsyncClient(
         transport=ASGITransport(app=app),
         base_url="http://127.0.0.1:8000",
@@ -176,6 +184,7 @@ async def test_aisu_landing_application_imports_user_to_getcourse(
                 "phone": "+7 999 000-00-00",
                 "email": TEST_EMAIL,
                 "form_type": "consultation",
+                "smartcaptcha_token": "test-captcha-token",
             },
         )
         response = await client.post(
@@ -186,17 +195,47 @@ async def test_aisu_landing_application_imports_user_to_getcourse(
                 "phone": "+7 999 000-00-00",
                 "email": TEST_EMAIL,
                 "form_type": "consultation",
+                "smartcaptcha_token": "test-captcha-token",
+                "smartcaptcha_ip": "203.0.113.8",
                 "utm_source": "yandex",
                 "yclid": "direct-click-1",
                 "metrika_client_id": "metrika-client-1",
                 "metrika_visit_id": "metrika-visit-1",
+                "device_fingerprint": "dev_test_123",
+                "device_gpu": "NVIDIA GeForce RTX 3060",
+                "device_screen": "1920x1080@1",
+                "device_cpu_cores": 12,
+            },
+        )
+        blocked = await client.post(
+            "/webhooks/landing-applications/aisu",
+            headers={"Authorization": "Bearer test-aisu-token"},
+            json={
+                "name": "Лид с сайта",
+                "phone": "+7 999 000-00-00",
+                "email": "blocked-captcha@example.test",
+                "form_type": "consultation",
+                "smartcaptcha_token": "reused-or-invalid-token",
             },
         )
 
     assert forbidden.status_code == 401
+    assert blocked.status_code == 403
     assert response.status_code == 202
     assert response.json()["status"] == "accepted"
     assert response.json()["join_url"].startswith("http")
+    assert validated_captcha == [
+        {
+            "server_key": "test-smartcaptcha-key",
+            "token": "test-captcha-token",
+            "client_ip": "203.0.113.8",
+        },
+        {
+            "server_key": "test-smartcaptcha-key",
+            "token": "reused-or-invalid-token",
+            "client_ip": None,
+        },
+    ]
     async with async_session_maker() as session:
         lead_id = await session.scalar(
             select(LeadContact.lead_id).where(
@@ -205,6 +244,13 @@ async def test_aisu_landing_application_imports_user_to_getcourse(
             )
         )
         assert lead_id is not None
+        lead = await session.get(Lead, lead_id)
+        assert lead is not None
+        assert lead.client_ip == "203.0.113.8"
+        assert lead.device_fingerprint == "dev_test_123"
+        assert lead.device_gpu == "NVIDIA GeForce RTX 3060"
+        assert lead.device_screen == "1920x1080@1"
+        assert lead.device_cpu_cores == 12
         task = await session.scalar(
             select(LeadPostSubmitTask).where(
                 LeadPostSubmitTask.lead_id == lead_id,
@@ -223,6 +269,7 @@ async def test_aisu_landing_application_imports_user_to_getcourse(
         assert attribution.utm_source == "yandex"
         assert attribution.metrika_client_id == "metrika-client-1"
         assert attribution.metrika_visit_id == "metrika-visit-1"
+        assert attribution.device_fingerprint == "dev_test_123"
 
         stats = await run_due_lead_post_submit_tasks_once(
             session=session,

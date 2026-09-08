@@ -361,6 +361,7 @@ async def get_database_lead_detail(
                 "yclid": item.yclid,
                 "metrika_client_id": item.metrika_client_id,
                 "metrika_visit_id": item.metrika_visit_id,
+                "device_fingerprint": item.device_fingerprint,
                 "created_at": item.created_at,
             }
             for item in utm_snapshots
@@ -1139,6 +1140,16 @@ def lead_profile_fields(lead: Lead) -> list[dict[str, Any]]:
         ),
         ("created_at", "Создан в FunnelHub", lead.created_at),
         ("updated_at", "Обновлен в FunnelHub", lead.updated_at),
+        ("client_ip", "Реальный IP", lead.client_ip),
+        ("device_fingerprint", "ID устройства", lead.device_fingerprint),
+        ("device_gpu", "Видеокарта (GPU)", lead.device_gpu),
+        ("device_screen", "Экран", lead.device_screen),
+        ("device_cpu_cores", "Ядер CPU", lead.device_cpu_cores),
+        (
+            "is_device_duplicate",
+            "Повторное устройство",
+            "Да (дубль железа)" if lead.is_device_duplicate else None,
+        ),
     ]
     return [
         {"key": key, "label": label, "value": value}

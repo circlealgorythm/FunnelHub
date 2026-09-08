@@ -2073,8 +2073,8 @@ function LeadDatabaseDetail({
 
   return (
     <div className="lead-detail">
-      <div className="lead-detail-head" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-        <div style={{ display: "flex", gap: "1rem" }}>
+      <div className="lead-detail-head">
+        <div className="lead-detail-identity">
           <div className="avatar" aria-hidden="true">
             <UserRound size={22} />
           </div>
@@ -2083,7 +2083,7 @@ function LeadDatabaseDetail({
             <p>{detail.lead.source ?? "источник не указан"}</p>
           </div>
         </div>
-        <div style={{ display: "flex", gap: "0.5rem" }}>
+        <div className="lead-detail-actions">
           <button className="soft-button" onClick={() => onOpenInbox(detail.lead.id)} type="button">
             <MessageCircle aria-hidden="true" size={16} />
             <span>Написать в Inbox</span>
@@ -2234,6 +2234,7 @@ function LeadDatabaseDetail({
                 { label: "Yandex Direct Click ID", value: snapshot.yclid },
                 { label: "Yandex Metrika ClientID", value: snapshot.metrika_client_id },
                 { label: "Yandex Metrika Visit ID", value: snapshot.metrika_visit_id },
+                { label: "ID устройства (Железо)", value: snapshot.device_fingerprint },
               ].filter((item) => item.value !== null && item.value !== undefined)}
             />
           </div>
