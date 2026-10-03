@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import uuid
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, date, datetime, time
 from typing import Annotated, Literal, cast
 
 from aiogram import Bot
@@ -38,6 +38,7 @@ from funnelhub.services.inbox import (
     send_inbox_subscriber_reply,
 )
 from funnelhub.services.inbox_database import (
+    XLSX_EXPORT_COLUMNS,
     DatabaseImportBatchSummary,
     DatabaseImportResult,
     DatabaseLeadDetail,
@@ -213,6 +214,33 @@ class DatabaseImportBatchDetailResponse(BaseModel):
 
 class DatabaseLeadVkIdRequest(BaseModel):
     vk_id: str = Field(min_length=1, max_length=32)
+
+
+class ExportColumnOption(BaseModel):
+    key: str
+    label: str
+
+
+def parse_export_boundary_date(
+    value: str | None,
+    *,
+    is_end_of_day: bool = False,
+) -> datetime | None:
+    if not value or not value.strip():
+        return None
+    raw = value.strip()
+    try:
+        if len(raw) == 10 and raw[4] == "-" and raw[7] == "-":
+            parsed_date = date.fromisoformat(raw)
+            if is_end_of_day:
+                return datetime.combine(parsed_date, time.max).replace(tzinfo=UTC)
+            return datetime.combine(parsed_date, time.min).replace(tzinfo=UTC)
+        parsed_dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        if parsed_dt.tzinfo is None:
+            parsed_dt = parsed_dt.replace(tzinfo=UTC)
+        return parsed_dt
+    except (ValueError, TypeError):
+        return None
 
 
 @dataclass
@@ -562,20 +590,36 @@ async def get_database_leads(
     return database_lead_list_response(lead_list)
 
 
+@router.get("/database/leads/export/columns", response_model=list[ExportColumnOption])
+async def get_database_export_columns() -> list[ExportColumnOption]:
+    return [
+        ExportColumnOption(key=key, label=label)
+        for key, label in XLSX_EXPORT_COLUMNS
+    ]
+
+
 @router.get("/database/leads/export")
 async def export_database_leads(
     session: SessionDep,
     q: str | None = None,
     source: Literal["most-tsennostey"] | None = None,
     exclude_source: Literal["most-tsennostey"] | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    date_field: Literal["created_at", "getcourse_created_at"] = "created_at",
 ) -> Response:
+    parsed_date_from = parse_export_boundary_date(date_from, is_end_of_day=False)
+    parsed_date_to = parse_export_boundary_date(date_to, is_end_of_day=True)
     content = await export_database_leads_csv(
         session,
         query=q,
         source=source,
         exclude_source=exclude_source,
+        date_from=parsed_date_from,
+        date_to=parsed_date_to,
+        date_field=date_field,
     )
-    file_name = f"funnelhub-leads-{datetime.now().date().isoformat()}.csv"
+    file_name = f"funnelhub-leads-{datetime.now(UTC).date().isoformat()}.csv"
     return Response(
         content=content.encode("utf-8-sig"),
         media_type="text/csv; charset=utf-8",
@@ -589,14 +633,29 @@ async def export_database_leads_as_xlsx(
     q: str | None = None,
     source: Literal["most-tsennostey"] | None = None,
     exclude_source: Literal["most-tsennostey"] | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    date_field: Literal["created_at", "getcourse_created_at"] = "created_at",
+    columns: str | None = None,
 ) -> Response:
+    parsed_date_from = parse_export_boundary_date(date_from, is_end_of_day=False)
+    parsed_date_to = parse_export_boundary_date(date_to, is_end_of_day=True)
+    selected_columns = (
+        [col.strip() for col in columns.split(",") if col.strip()]
+        if columns
+        else None
+    )
     content = await export_database_leads_xlsx(
         session,
         query=q,
         source=source,
         exclude_source=exclude_source,
+        date_from=parsed_date_from,
+        date_to=parsed_date_to,
+        date_field=date_field,
+        columns=selected_columns,
     )
-    file_name = f"funnelhub-leads-{datetime.now().date().isoformat()}.xlsx"
+    file_name = f"funnelhub-leads-{datetime.now(UTC).date().isoformat()}.xlsx"
     return Response(
         content=content,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

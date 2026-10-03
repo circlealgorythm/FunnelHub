@@ -541,7 +541,7 @@ def log_vk_callback_event(event: VkCallbackEvent) -> None:
     object_keys = sorted(event.object.keys())
     message = event.object.get("message")
     message_keys = sorted(message.keys()) if isinstance(message, dict) else []
-    token_sources = [
+    token_sources: list[str] = [
         key for key in ("ref", "key", "access_key", "start", "payload") if key in event.object
     ]
     if isinstance(message, dict):

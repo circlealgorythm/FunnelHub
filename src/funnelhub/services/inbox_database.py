@@ -5,7 +5,7 @@ import io
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from openpyxl import Workbook, load_workbook  # type: ignore[import-untyped]
 from openpyxl.styles import Alignment, Font, PatternFill  # type: ignore[import-untyped]
@@ -204,6 +204,9 @@ async def list_database_leads(
     query: str | None = None,
     source: str | None = None,
     exclude_source: str | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    date_field: Literal["created_at", "getcourse_created_at"] = "created_at",
     limit: int = 50,
     offset: int = 0,
 ) -> DatabaseLeadList:
@@ -224,6 +227,18 @@ async def list_database_leads(
         source_filter = (Lead.source.is_(None)) | (Lead.source != exclude_source)
         base_statement = base_statement.where(source_filter)
         count_statement = count_statement.where(source_filter)
+
+    target_date_col = (
+        Lead.getcourse_created_at
+        if date_field == "getcourse_created_at"
+        else Lead.created_at
+    )
+    if date_from is not None:
+        base_statement = base_statement.where(target_date_col >= date_from)
+        count_statement = count_statement.where(target_date_col >= date_from)
+    if date_to is not None:
+        base_statement = base_statement.where(target_date_col <= date_to)
+        count_statement = count_statement.where(target_date_col <= date_to)
 
     total = int(await session.scalar(count_statement) or 0)
     rows = (
@@ -522,13 +537,20 @@ async def export_database_leads_csv(
     query: str | None = None,
     source: str | None = None,
     exclude_source: str | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    date_field: Literal["created_at", "getcourse_created_at"] = "created_at",
+    limit: int = 50_000,
 ) -> str:
     lead_list = await list_database_leads(
         session,
         query=query,
         source=source,
         exclude_source=exclude_source,
-        limit=10_000,
+        date_from=date_from,
+        date_to=date_to,
+        date_field=date_field,
+        limit=limit,
         offset=0,
     )
     output = io.StringIO()
@@ -545,19 +567,40 @@ async def export_database_leads_xlsx(
     query: str | None = None,
     source: str | None = None,
     exclude_source: str | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    date_field: Literal["created_at", "getcourse_created_at"] = "created_at",
+    columns: list[str] | None = None,
+    limit: int = 50_000,
 ) -> bytes:
     lead_list = await list_database_leads(
         session,
         query=query,
         source=source,
         exclude_source=exclude_source,
-        limit=10_000,
+        date_from=date_from,
+        date_to=date_to,
+        date_field=date_field,
+        limit=limit,
         offset=0,
     )
     workbook = Workbook()
     sheet = workbook.active
     sheet.title = "Лиды"
-    headers = [label for _, label in XLSX_EXPORT_COLUMNS]
+
+    valid_columns_dict = dict(XLSX_EXPORT_COLUMNS)
+    if columns:
+        selected_columns = [
+            (key, valid_columns_dict[key])
+            for key in columns
+            if key in valid_columns_dict
+        ]
+        if not selected_columns:
+            selected_columns = list(XLSX_EXPORT_COLUMNS)
+    else:
+        selected_columns = list(XLSX_EXPORT_COLUMNS)
+
+    headers = [label for _, label in selected_columns]
     sheet.append(headers)
 
     header_fill = PatternFill("solid", fgColor="24483C")
@@ -572,7 +615,9 @@ async def export_database_leads_xlsx(
         if detail is None:
             continue
         export_row = xlsx_export_row(detail)
-        sheet.append([xlsx_cell_value(export_row.get(key, "")) for key, _ in XLSX_EXPORT_COLUMNS])
+        sheet.append(
+            [xlsx_cell_value(export_row.get(key, "")) for key, _ in selected_columns]
+        )
 
     for column_cells in sheet.columns:
         first_cell = column_cells[0]

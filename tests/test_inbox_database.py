@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import AsyncGenerator
+from datetime import UTC, datetime
 from io import BytesIO
 
 import pytest
@@ -243,6 +244,24 @@ async def test_export_database_leads_xlsx_uses_human_readable_columns() -> None:
     assert "Согласия" in headers
     assert TEST_GC_ID in values
     assert "Database Test Lead" in values
+
+
+async def test_export_database_leads_xlsx_with_selected_columns_and_dates() -> None:
+    await create_database_lead()
+
+    async with async_session_maker() as session:
+        content = await export_database_leads_xlsx(
+            session,
+            query="Database Test Lead",
+            columns=["name", "phone", "email"],
+            date_from=datetime(2020, 1, 1, tzinfo=UTC),
+            date_to=datetime(2030, 1, 1, tzinfo=UTC),
+        )
+
+    workbook = load_workbook(BytesIO(content), read_only=True)
+    sheet = workbook.active
+    headers = [cell.value for cell in sheet[1]]
+    assert headers == ["Имя", "Телефон", "Email"]
 
 
 async def test_imported_getcourse_fields_are_available_in_database_detail() -> None:

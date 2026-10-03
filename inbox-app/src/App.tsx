@@ -77,6 +77,70 @@ type AuthState = "checking" | "authenticated" | "anonymous";
 type AppView = "inbox" | "database" | "broadcasts" | "autoposts" | "followups";
 type DatabasePageSize = 20 | 50;
 
+type ExportColumnOption = {
+  key: string;
+  label: string;
+};
+
+type ExportDatabaseOptions = {
+  dateFrom: string;
+  dateTo: string;
+  dateField: "created_at" | "getcourse_created_at";
+  columns: string[];
+};
+
+const DEFAULT_EXPORT_COLUMNS: ExportColumnOption[] = [
+  { key: "lead_id", label: "ID FunnelHub" },
+  { key: "getcourse_user_id", label: "ID GetCourse" },
+  { key: "name", label: "Имя" },
+  { key: "email", label: "Email" },
+  { key: "phone", label: "Телефон" },
+  { key: "country", label: "Страна" },
+  { key: "city", label: "Город" },
+  { key: "source", label: "Источник" },
+  { key: "registration_type", label: "Тип регистрации" },
+  { key: "getcourse_created_at", label: "Создан в GetCourse" },
+  { key: "getcourse_last_activity_at", label: "Последняя активность GetCourse" },
+  { key: "status", label: "Статус" },
+  { key: "telegram", label: "Telegram" },
+  { key: "vk", label: "VK" },
+  { key: "utm_source", label: "utm_source" },
+  { key: "utm_medium", label: "utm_medium" },
+  { key: "utm_campaign", label: "utm_campaign" },
+  { key: "utm_term", label: "utm_term" },
+  { key: "utm_content", label: "utm_content" },
+  { key: "utm_group", label: "utm_group" },
+  { key: "yclid", label: "Yandex Direct Click ID" },
+  { key: "metrika_client_id", label: "Yandex Metrika ClientID" },
+  { key: "metrika_visit_id", label: "Yandex Metrika Visit ID" },
+  { key: "vk_id", label: "VK-ID из GetCourse" },
+  { key: "getcourse_groups", label: "Группы GetCourse" },
+  { key: "partner", label: "От партнера" },
+  { key: "partner_id", label: "ID партнера" },
+  { key: "partner_email", label: "Email партнера" },
+  { key: "partner_name", label: "ФИО партнера" },
+  { key: "manager_name", label: "ФИО менеджера" },
+  { key: "consents", label: "Согласия" },
+  { key: "custom_fields", label: "Дополнительные поля" },
+  { key: "conversations_count", label: "Диалогов" },
+  { key: "messages_count", label: "Сообщений" },
+  { key: "created_at", label: "Создан в FunnelHub" },
+  { key: "updated_at", label: "Обновлен в FunnelHub" },
+];
+
+const PRIMARY_COLUMN_KEYS = [
+  "name",
+  "email",
+  "phone",
+  "status",
+  "source",
+  "created_at",
+  "getcourse_user_id",
+  "utm_source",
+  "utm_medium",
+  "utm_campaign",
+];
+
 type Broadcast = {
   id: string;
   segment_query: string | null;
@@ -827,7 +891,7 @@ export function App() {
     setDatabaseOffset(nextOffset);
   }
 
-  async function exportDatabase() {
+  async function exportDatabase(options?: ExportDatabaseOptions) {
     setError(null);
     try {
       const params = new URLSearchParams();
@@ -838,6 +902,18 @@ export function App() {
         params.set("source", "most-tsennostey");
       } else {
         params.set("exclude_source", "most-tsennostey");
+      }
+      if (options?.dateFrom) {
+        params.set("date_from", options.dateFrom);
+      }
+      if (options?.dateTo) {
+        params.set("date_to", options.dateTo);
+      }
+      if (options?.dateField) {
+        params.set("date_field", options.dateField);
+      }
+      if (options?.columns && options.columns.length > 0) {
+        params.set("columns", options.columns.join(","));
       }
       const suffix = params.toString() ? `?${params}` : "";
       const response = await fetch(
@@ -858,11 +934,13 @@ export function App() {
       URL.revokeObjectURL(url);
     } catch (caught) {
       setError(formatError(caught));
+      throw caught;
     }
   }
 
   const [importFile, setImportFile] = useState<File | null>(null);
   const [showImportHistory, setShowImportHistory] = useState(false);
+  const [showExportModal, setShowExportModal] = useState(false);
 
   function openImportModal(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -978,7 +1056,7 @@ export function App() {
           databaseState={databaseState}
           onChangePage={changeDatabasePage}
           onChangePageSize={changeDatabasePageSize}
-          onExport={() => void exportDatabase()}
+          onExport={() => setShowExportModal(true)}
           onImport={openImportModal}
           onOpenHistory={() => setShowImportHistory(true)}
           onLogout={() => void logout()}
@@ -998,6 +1076,12 @@ export function App() {
           selectedLeadDetail={selectedLeadDetail}
           selectedLeadId={selectedLeadId}
         />
+        {showExportModal ? (
+          <ExportDatabaseModal
+            onClose={() => setShowExportModal(false)}
+            onExport={exportDatabase}
+          />
+        ) : null}
         {importFile ? (
           <ImportManagerModal
             file={importFile}
@@ -2837,6 +2921,280 @@ function ImportManagerModal({
               </button>
           ) : null}
         </div>
+      </div>
+    </div>
+  );
+}
+
+function ExportDatabaseModal({
+  onClose,
+  onExport,
+}: {
+  onClose: () => void;
+  onExport: (options: ExportDatabaseOptions) => Promise<void>;
+}) {
+  const [columns, setColumns] = useState<ExportColumnOption[]>(DEFAULT_EXPORT_COLUMNS);
+  const [selectedKeys, setSelectedKeys] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem("funnelhub_export_columns_v1");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      }
+    } catch {
+      // ignore
+    }
+    return DEFAULT_EXPORT_COLUMNS.map((c) => c.key);
+  });
+
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [dateField, setDateField] = useState<"created_at" | "getcourse_created_at">("created_at");
+  const [columnFilter, setColumnFilter] = useState("");
+  const [exporting, setExporting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function fetchColumns() {
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/inbox/database/leads/export/columns`, {
+          credentials: "include",
+        });
+        if (res.ok) {
+          const data = (await res.json()) as ExportColumnOption[];
+          if (Array.isArray(data) && data.length > 0) {
+            setColumns(data);
+          }
+        }
+      } catch {
+        // Fall back to built-in default columns
+      }
+    }
+    void fetchColumns();
+  }, []);
+
+  function toggleColumn(key: string) {
+    setSelectedKeys((prev) => {
+      const next = prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key];
+      try {
+        localStorage.setItem("funnelhub_export_columns_v1", JSON.stringify(next));
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  }
+
+  function selectAll() {
+    const all = columns.map((c) => c.key);
+    setSelectedKeys(all);
+    try {
+      localStorage.setItem("funnelhub_export_columns_v1", JSON.stringify(all));
+    } catch {
+      // ignore
+    }
+  }
+
+  function clearAll() {
+    setSelectedKeys([]);
+    try {
+      localStorage.setItem("funnelhub_export_columns_v1", JSON.stringify([]));
+    } catch {
+      // ignore
+    }
+  }
+
+  function selectPrimary() {
+    const validPrimary = columns
+      .filter((c) => PRIMARY_COLUMN_KEYS.includes(c.key))
+      .map((c) => c.key);
+    setSelectedKeys(validPrimary);
+    try {
+      localStorage.setItem("funnelhub_export_columns_v1", JSON.stringify(validPrimary));
+    } catch {
+      // ignore
+    }
+  }
+
+  function setPresetDates(days: number | "today" | "yesterday" | "month" | "all") {
+    if (days === "all") {
+      setDateFrom("");
+      setDateTo("");
+      return;
+    }
+    const today = new Date();
+    const formatYmd = (d: Date) => {
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, "0");
+      const day = String(d.getDate()).padStart(2, "0");
+      return `${year}-${month}-${day}`;
+    };
+
+    if (days === "today") {
+      const val = formatYmd(today);
+      setDateFrom(val);
+      setDateTo(val);
+    } else if (days === "yesterday") {
+      const y = new Date(today);
+      y.setDate(y.getDate() - 1);
+      const val = formatYmd(y);
+      setDateFrom(val);
+      setDateTo(val);
+    } else if (days === "month") {
+      const start = new Date(today.getFullYear(), today.getMonth(), 1);
+      setDateFrom(formatYmd(start));
+      setDateTo(formatYmd(today));
+    } else if (typeof days === "number") {
+      const start = new Date(today);
+      start.setDate(today.getDate() - (days - 1));
+      setDateFrom(formatYmd(start));
+      setDateTo(formatYmd(today));
+    }
+  }
+
+  async function handleExportSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (selectedKeys.length === 0) {
+      setError("Выберите хотя бы одну колонку для выгрузки");
+      return;
+    }
+    if (dateFrom && dateTo && dateFrom > dateTo) {
+      setError("Дата начала не может быть позже даты окончания");
+      return;
+    }
+    setError(null);
+    setExporting(true);
+    try {
+      await onExport({
+        dateFrom,
+        dateTo,
+        dateField,
+        columns: selectedKeys,
+      });
+      onClose();
+    } catch (err) {
+      setError(formatError(err));
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  const filteredColumns = columns.filter(
+    (col) =>
+      col.label.toLowerCase().includes(columnFilter.toLowerCase()) ||
+      col.key.toLowerCase().includes(columnFilter.toLowerCase())
+  );
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal-dialog export-modal-dialog">
+        <div className="modal-header">
+          <h2>Параметры выгрузки XLSX</h2>
+          <button className="icon-button" onClick={onClose} type="button" aria-label="Закрыть">
+            <X size={20} />
+          </button>
+        </div>
+
+        <form onSubmit={(e) => void handleExportSubmit(e)} className="modal-body">
+          {error ? <p className="form-message is-error">{error}</p> : null}
+
+          {/* Date section */}
+          <div className="form-group">
+            <label>Период дат</label>
+            <div className="export-date-grid">
+              <div>
+                <span className="field-hint" style={{ marginBottom: "4px", display: "block" }}>С даты</span>
+                <input
+                  type="date"
+                  value={dateFrom}
+                  onChange={(e) => setDateFrom(e.target.value)}
+                />
+              </div>
+              <div>
+                <span className="field-hint" style={{ marginBottom: "4px", display: "block" }}>По дату</span>
+                <input
+                  type="date"
+                  value={dateTo}
+                  onChange={(e) => setDateTo(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="export-quick-dates">
+              <button type="button" className="export-quick-btn" onClick={() => setPresetDates("all")}>Все время</button>
+              <button type="button" className="export-quick-btn" onClick={() => setPresetDates("today")}>Сегодня</button>
+              <button type="button" className="export-quick-btn" onClick={() => setPresetDates("yesterday")}>Вчера</button>
+              <button type="button" className="export-quick-btn" onClick={() => setPresetDates(7)}>7 дней</button>
+              <button type="button" className="export-quick-btn" onClick={() => setPresetDates(30)}>30 дней</button>
+              <button type="button" className="export-quick-btn" onClick={() => setPresetDates("month")}>Этот месяц</button>
+            </div>
+          </div>
+
+          {/* Date field selector */}
+          <div className="form-group">
+            <label>По какому полю фильтровать</label>
+            <select
+              value={dateField}
+              onChange={(e) => setDateField(e.target.value as "created_at" | "getcourse_created_at")}
+            >
+              <option value="created_at">Дата создания в FunnelHub</option>
+              <option value="getcourse_created_at">Дата регистрации в GetCourse</option>
+            </select>
+          </div>
+
+          {/* Column selection */}
+          <div className="form-group">
+            <div className="export-columns-header">
+              <label style={{ margin: 0 }}>
+                Колонки ({selectedKeys.length} из {columns.length})
+              </label>
+              <div className="export-columns-actions">
+                <button type="button" className="export-quick-btn" onClick={selectAll}>Все</button>
+                <button type="button" className="export-quick-btn" onClick={selectPrimary}>Основные</button>
+                <button type="button" className="export-quick-btn" onClick={clearAll}>Снять все</button>
+              </div>
+            </div>
+
+            <input
+              type="text"
+              placeholder="Поиск по колонкам..."
+              value={columnFilter}
+              onChange={(e) => setColumnFilter(e.target.value)}
+              style={{ marginBottom: "8px", padding: "8px 12px", fontSize: "13px" }}
+            />
+
+            <div className="export-columns-list">
+              {filteredColumns.map((col) => {
+                const checked = selectedKeys.includes(col.key);
+                return (
+                  <label
+                    key={col.key}
+                    className={`export-column-chip ${checked ? "is-selected" : ""}`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => toggleColumn(col.key)}
+                    />
+                    <span>{col.label}</span>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="modal-footer">
+            <button className="soft-button" onClick={onClose} type="button" disabled={exporting}>
+              Отмена
+            </button>
+            <button className="send-button" type="submit" disabled={exporting || selectedKeys.length === 0}>
+              <Download size={16} aria-hidden="true" />
+              <span>{exporting ? "Формирование..." : "Скачать XLSX"}</span>
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );

@@ -151,6 +151,9 @@ class Settings(BaseSettings):
     aisu_landing_ingest_token: str | None = Field(
         default=None, validation_alias="AISU_LANDING_INGEST_TOKEN"
     )
+    aisu_smartcaptcha_server_key: str | None = Field(
+        default=None, validation_alias="AISU_SMARTCAPTCHA_SERVER_KEY"
+    )
     autopost_upload_dir: str = Field(
         default="/app/uploads/autoposts", validation_alias="AUTOPOST_UPLOAD_DIR"
     )

@@ -54,6 +54,7 @@ src/funnelhub/services/landing_applications.py
 src/funnelhub/services/lead_notifications.py
 src/funnelhub/services/lead_post_submit_tasks.py
 src/funnelhub/services/lead_tags.py
+src/funnelhub/services/smartcaptcha.py
 src/funnelhub/services/telegram_messaging.py
 src/funnelhub/services/vk_messaging.py
 src/funnelhub/services/vk_oauth.py
