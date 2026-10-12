@@ -9,13 +9,14 @@ services:
     environment:
       APP_ENV: production
       APP_DEBUG: "false"
-      DATABASE_URL: postgresql+asyncpg://funnelhub:funnelhub@postgres:5432/funnelhub
-      REDIS_URL: redis://redis:6379/0
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://funnelhub:${POSTGRES_PASSWORD:-funnelhub}@postgres:5432/funnelhub}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       PUBLIC_BASE_URL: https://bot.aisukam.ru
     ports:
       - "127.0.0.1:8000:8000"
     volumes:
       - autopost_uploads:/app/uploads/autoposts
+      - ./inbox-app/dist:/app/inbox-app/dist:ro
     depends_on:
       - postgres
       - redis
@@ -29,8 +30,8 @@ services:
     environment:
       APP_ENV: production
       APP_DEBUG: "false"
-      DATABASE_URL: postgresql+asyncpg://funnelhub:funnelhub@postgres:5432/funnelhub
-      REDIS_URL: redis://redis:6379/0
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://funnelhub:${POSTGRES_PASSWORD:-funnelhub}@postgres:5432/funnelhub}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       PUBLIC_BASE_URL: https://bot.aisukam.ru
     volumes:
       - autopost_uploads:/app/uploads/autoposts
@@ -40,6 +41,8 @@ services:
     restart: unless-stopped
 
   most-telegram-bot:
+    profiles:
+      - most
     build: .
     command: python -m funnelhub.most_telegram_bot
     env_file:
@@ -47,8 +50,8 @@ services:
     environment:
       APP_ENV: production
       APP_DEBUG: "false"
-      DATABASE_URL: postgresql+asyncpg://funnelhub:funnelhub@postgres:5432/funnelhub
-      REDIS_URL: redis://redis:6379/0
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://funnelhub:${POSTGRES_PASSWORD:-funnelhub}@postgres:5432/funnelhub}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       PUBLIC_BASE_URL: https://bot.aisukam.ru
     depends_on:
       - postgres
@@ -56,6 +59,8 @@ services:
     restart: unless-stopped
 
   most-funnel-worker:
+    profiles:
+      - most
     build: .
     command: python -m funnelhub.most_funnel_worker
     env_file:
@@ -63,8 +68,8 @@ services:
     environment:
       APP_ENV: production
       APP_DEBUG: "false"
-      DATABASE_URL: postgresql+asyncpg://funnelhub:funnelhub@postgres:5432/funnelhub
-      REDIS_URL: redis://redis:6379/0
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://funnelhub:${POSTGRES_PASSWORD:-funnelhub}@postgres:5432/funnelhub}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       PUBLIC_BASE_URL: https://bot.aisukam.ru
     depends_on:
       - postgres
@@ -72,6 +77,8 @@ services:
     restart: unless-stopped
 
   most-vk-funnel-worker:
+    profiles:
+      - most
     build: .
     command: python -m funnelhub.most_vk_funnel_worker
     env_file:
@@ -79,8 +86,8 @@ services:
     environment:
       APP_ENV: production
       APP_DEBUG: "false"
-      DATABASE_URL: postgresql+asyncpg://funnelhub:funnelhub@postgres:5432/funnelhub
-      REDIS_URL: redis://redis:6379/0
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://funnelhub:${POSTGRES_PASSWORD:-funnelhub}@postgres:5432/funnelhub}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       PUBLIC_BASE_URL: https://bot.aisukam.ru
     depends_on:
       - postgres
@@ -95,8 +102,8 @@ services:
     environment:
       APP_ENV: production
       APP_DEBUG: "false"
-      DATABASE_URL: postgresql+asyncpg://funnelhub:funnelhub@postgres:5432/funnelhub
-      REDIS_URL: redis://redis:6379/0
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://funnelhub:${POSTGRES_PASSWORD:-funnelhub}@postgres:5432/funnelhub}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       PUBLIC_BASE_URL: https://bot.aisukam.ru
     depends_on:
       - postgres
@@ -106,15 +113,25 @@ services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_DB: funnelhub
-      POSTGRES_USER: funnelhub
-      POSTGRES_PASSWORD: funnelhub
+      POSTGRES_DB: ${POSTGRES_DB:-funnelhub}
+      POSTGRES_USER: ${POSTGRES_USER:-funnelhub}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-funnelhub}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
 
   redis:
     image: redis:7-alpine
+    command: >
+      sh -c '
+        if [ -n "$$REDIS_PASSWORD" ]; then
+          exec redis-server --requirepass "$$REDIS_PASSWORD"
+        else
+          exec redis-server
+        fi
+      '
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
     restart: unless-stopped
 
 volumes:
