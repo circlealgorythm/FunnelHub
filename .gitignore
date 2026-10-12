@@ -13,3 +13,7 @@ uploads/
 inbox-app/node_modules/
 inbox-app/dist/
 obj/
+backups/
+*.sql
+*.sql.gz
+*.sql.gz.gpg

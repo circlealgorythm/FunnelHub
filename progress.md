@@ -5,9 +5,9 @@
 - **Repository root directory**: `C:\Users\circlealgorythm\Documents\Бот воронка`
 - **Standard startup path**: `uv run uvicorn funnelhub.main:app --port 8000`
 - **Standard verification path**: `powershell -ExecutionPolicy Bypass -File .\init.ps1` (или `uv run pytest`)
-- **Active Feature**: Нет (SEC-004 завершена, готов к SEC-005)
+- **Active Feature**: Нет (SEC-005 завершена, готов к SEC-006)
 - **Current blocker**: Нет
-- **Highest priority unfinished feature**: `SEC-005` (Автоматизированное шифрованное резервное копирование БД)
+- **Highest priority unfinished feature**: `SEC-006` (Бастионирование хоста VPS: SSH, UFW, Fail2ban)
 
 ---
 
@@ -42,14 +42,22 @@
   - Добавлено сжатие ответов `encode zstd gzip`.
   - Написан unit-тест `tests/test_caddyfile.py`, проверяющий баланс скобок и наличие всех защитных директив.
   - Верификация: `tests/test_caddyfile.py` пройден, `ruff check` пройден, `init.ps1` пройден (код 0).
+- [x] **`SEC-005` (Автоматизированное шифрованное резервное копирование БД)** (passing):
+  - Разработан скрипт `scripts/backup-db.sh`: создание транзакционно-целостного дампа PostgreSQL через `docker compose exec pg_dump` без остановки БД, сжатие `gzip -9`, опциональное симметричное шифрование GPG AES-256 (`BACKUP_ENCRYPTION_PASSPHRASE`), строгие права доступа (0600) и авторотация бэкапов старше 14 дней.
+  - Разработан скрипт быстрого аварийного восстановления `scripts/restore-db.sh` с поддержкой зашифрованных (`.gpg`), сжатых (`.gz`) и чистых (`.sql`) файлов.
+  - Подготовлен шаблон cron-задачи `scripts/backup-cron.example` для ежедневного ночного запуска (03:00).
+  - Каталог `backups/` и файлы дампов надежно скрыты в `.gitignore`.
+  - Настройки резервного копирования задокументированы в `.env.example`.
+  - Написан комплект тестов `tests/test_backup_scripts.py` (4 unit-теста).
+  - Верификация: `pytest` (11 тестов пройдено), `ruff check` пройден, `init.ps1` пройден (код 0).
 
 ### What's In Progress
-- [ ] Ожидание команды пользователя на старт `SEC-005`.
+- [ ] Ожидание команды пользователя на старт `SEC-006`.
 
 ### What's Next
-1. Взять фичу `SEC-005`: автоматизированное шифрованное резервное копирование БД (скрипт `backup-db.sh`, GPG-шифрование, ротация 14 дней).
-2. Проверить синтаксис и выполнить тестовый прогон скрипта создания дампа.
-3. Дождаться подтверждения пользователя перед переходом к `SEC-006`.
+1. Взять фичу `SEC-006`: Бастионирование хоста VPS (SSH hardening, UFW firewall rules, Fail2ban configuration).
+2. Подготовить исполняемый скрипт и руководство по настройке безопасности ОС.
+3. Дождаться подтверждения пользователя.
 
 ---
 

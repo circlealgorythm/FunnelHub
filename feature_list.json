@@ -63,10 +63,10 @@
       "title": "Автоматизированное шифрованное резервное копирование БД (Disaster Recovery)",
       "description": "Создание скрипта backup-db.sh для создания дампа PostgreSQL через docker exec, архивации, шифрования GPG и локальной ротации (14 дней) с инструкцией для S3.",
       "user_visible_behavior": "На сервере ежедневно формируется зашифрованный дамп базы данных, готовый к выгрузке в независимое облако.",
-      "status": "not-started",
+      "status": "passing",
       "dependencies": ["SEC-002"],
       "verification": "1. Проверить синтаксис скрипта бэкапа и возможность генерации дампа. 2. Проверить процедуру восстановления из зашифрованной копии.",
-      "evidence": "",
+      "evidence": "1. Создан scripts/backup-db.sh с pg_dump (--clean, --if-exists), gzip-сжатием, AES256 GPG-шифрованием и ротацией (14 дней). 2. Создан scripts/restore-db.sh для быстрого восстановления дампа. 3. Создан scripts/backup-cron.example для автозапуска в cron. 4. backups/ и *.sql.gz* изолированы в .gitignore. 5. Создан и успешно пройден tests/test_backup_scripts.py (4 теста). 6. init.ps1 и ruff check завершились кодом 0.",
       "notes": "Гарантирует сохранность базы лидов при сбое VPS или шифровальщиках."
     },
     {

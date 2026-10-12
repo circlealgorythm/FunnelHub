@@ -1,0 +1,7 @@
+# /etc/cron.d/funnelhub-backup
+# Automated daily backup of FunnelHub PostgreSQL at 03:00 AM MSK
+# 1. Edit the path to match the repository location on the VPS (e.g., /root/FunnelHub or /opt/funnelhub)
+# 2. Ensure BACKUP_ENCRYPTION_PASSPHRASE is set in .env for GPG encryption
+# 3. Copy to /etc/cron.d/funnelhub-backup and chmod 644 /etc/cron.d/funnelhub-backup
+
+0 3 * * * root /bin/bash /opt/funnelhub/scripts/backup-db.sh >> /var/log/funnelhub-backup.log 2>&1

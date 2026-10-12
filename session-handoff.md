@@ -21,12 +21,18 @@
   - `Caddyfile` усилен защитой от DoS (`request_body max_size 15MB`), включено удаление сигнатуры `-Server` и добавлены заголовки `HSTS`, `X-Content-Type-Options`, `X-Frame-Options SAMEORIGIN`, `Referrer-Policy`, `Permissions-Policy`.
   - Покрыт тестами в `tests/test_caddyfile.py`.
 
+- Завершен `SEC-005` (Автоматизированное шифрованное резервное копирование БД):
+  - Разработаны `scripts/backup-db.sh`, `scripts/restore-db.sh`, `scripts/backup-cron.example`.
+  - Добавлена поддержка GPG AES256 шифрования, `pg_dump` без остановки БД, авторотация 14 дней.
+  - Настройки задокументированы в `.env.example`, дампы изолированы в `.gitignore`.
+  - Написаны тесты в `tests/test_backup_scripts.py` (4 теста).
+
 ## Still Broken or Unverified
-- Задачи безопасности `SEC-005` и `SEC-006` в статусе `not-started`.
+- Задача безопасности `SEC-006` в статусе `not-started`.
 
 ## Next Best Action
-- Взять в работу задачу `SEC-005` (Автоматизированное шифрованное резервное копирование БД).
-- Не трогать другие компоненты до завершения и верификации `SEC-005`.
+- Взять в работу задачу `SEC-006` (Бастионирование хоста VPS: SSH, UFW, Fail2ban).
+- Не трогать другие компоненты до завершения и верификации `SEC-006`.
 
 ## Commands
 - **Windows Verify**: `powershell -ExecutionPolicy Bypass -File .\init.ps1`
