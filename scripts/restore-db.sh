@@ -10,10 +10,23 @@ PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 ENV_FILE="${PROJECT_ROOT}/.env"
 if [[ -f "${ENV_FILE}" ]]; then
-    set -a
-    # shellcheck disable=SC1090
-    source "${ENV_FILE}"
-    set +a
+    # Load environment variables safely without executing arbitrary shell syntax
+    while IFS= read -r line || [[ -n "${line}" ]]; do
+        line="$(echo "${line}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+        [[ -z "${line}" || "${line}" =~ ^# ]] && continue
+        if [[ "${line}" =~ ^([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]]; then
+            var_key="${BASH_REMATCH[1]}"
+            var_val="${BASH_REMATCH[2]}"
+            if [[ "${var_val}" =~ ^\"(.*)\"$ ]]; then
+                var_val="${BASH_REMATCH[1]}"
+            elif [[ "${var_val}" =~ ^\'(.*)\'$ ]]; then
+                var_val="${BASH_REMATCH[1]}"
+            fi
+            if [[ -z "${!var_key:-}" ]]; then
+                export "${var_key}=${var_val}"
+            fi
+        fi
+    done < "${ENV_FILE}"
 fi
 
 COMPOSE_FILE="${COMPOSE_FILE:-${PROJECT_ROOT}/docker-compose.prod.yml}"
