@@ -80,7 +80,7 @@ async def enrich_lead_from_getcourse_api(
             reason="profile_not_found",
         )
 
-    await ingest_getcourse_webhook(session, profile)
+    await ingest_getcourse_webhook(session, profile, target_lead_id=lead.id)
     return GetCourseProfileEnrichmentResult(attempted=True, updated=True)
 
 
@@ -396,9 +396,19 @@ def select_matching_profile(
 ) -> dict[str, Any] | None:
     for row in rows:
         normalized = normalize_export_row(row)
+        raw_id = normalized.get("id") or normalized.get("gc_user_id")
+        if raw_id is not None:
+            try:
+                if int(raw_id) <= 0:
+                    continue
+            except (ValueError, TypeError):
+                pass
+        email_val = str(normalized.get("email") or "")
+        if "не найден" in email_val.lower():
+            continue
         if row_matches_filter(normalized, filter_params):
             return normalized
-    return normalize_export_row(rows[0]) if rows else None
+    return None
 
 
 def normalize_export_row(row: dict[str, Any]) -> dict[str, Any]:

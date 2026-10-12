@@ -198,3 +198,49 @@ async def test_consultation_form_client_uses_fresh_getcourse_signature() -> None
     submitted = parse_qs(requests[1].content.decode())
     assert submitted["requestTime"] == ["123456"]
     assert submitted["requestSimpleSign"] == ["fresh-sign"]
+
+
+def test_select_matching_profile_rejects_user_not_found_placeholder() -> None:
+    from funnelhub.services.getcourse_api import select_matching_profile
+
+    rows = [
+        {
+            "id": "-1",
+            "Email": "Пользователь не найден",
+            "email": "Пользователь не найден",
+            "Телефон": "",
+            "Имя": "",
+        }
+    ]
+    matched = select_matching_profile(rows, {"email": "marimanaveselkova@gmail.ru"})
+    assert matched is None
+
+
+def test_select_matching_profile_does_not_fallback_to_unmatched_rows() -> None:
+    from funnelhub.services.getcourse_api import select_matching_profile
+
+    rows = [
+        {
+            "id": 12345,
+            "Email": "other@example.com",
+            "email": "other@example.com",
+        }
+    ]
+    matched = select_matching_profile(rows, {"email": "target@example.com"})
+    assert matched is None
+
+
+def test_normalize_getcourse_payload_rejects_negative_id_and_not_found_email() -> None:
+    from funnelhub.services.getcourse_webhook import normalize_getcourse_payload
+
+    payload = {
+        "id": "-1",
+        "Email": "Пользователь не найден",
+        "email": "Пользователь не найден",
+        "Имя": "Пользователь не найден",
+    }
+    normalized = normalize_getcourse_payload(payload)
+    assert normalized["getcourse_user_id"] is None
+    assert normalized["email"] is None
+    assert normalized["normalized_email"] is None
+    assert normalized["full_name"] is None

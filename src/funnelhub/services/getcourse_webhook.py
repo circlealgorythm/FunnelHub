@@ -109,6 +109,7 @@ class GetCourseWebhookIngestionResult:
 async def ingest_getcourse_webhook(
     session: AsyncSession,
     payload: dict[str, Any],
+    target_lead_id: uuid.UUID | None = None,
 ) -> GetCourseWebhookIngestionResult:
     normalized = normalize_getcourse_payload(payload)
     if (
@@ -118,14 +119,21 @@ async def ingest_getcourse_webhook(
     ):
         raise ValueError("Webhook must include gc_user_id, email, or phone.")
 
-    lead = await find_existing_lead(
-        session=session,
-        getcourse_user_id=normalized["getcourse_user_id"],
-        normalized_email=normalized["normalized_email"],
-        normalized_phone=normalized["normalized_phone"],
-    )
+    lead: Lead | None = None
+    if target_lead_id is not None:
+        lead = await session.get(Lead, target_lead_id)
+
+    if lead is None:
+        lead = await find_existing_lead(
+            session=session,
+            getcourse_user_id=normalized["getcourse_user_id"],
+            normalized_email=normalized["normalized_email"],
+            normalized_phone=normalized["normalized_phone"],
+        )
     created = lead is None
     if lead is None:
+        if target_lead_id is not None:
+            raise ValueError(f"Target lead {target_lead_id} not found.")
         lead = Lead(id=uuid.uuid4())
         session.add(lead)
 
@@ -203,12 +211,22 @@ def normalize_getcourse_payload(payload: dict[str, Any]) -> dict[str, Any]:
     raw_payload = {str(key): _json_safe(value) for key, value in payload.items()}
 
     email = clean_text(first_payload_value(payload, ("email", "Email", "E-mail")))
+    if email and "не найден" in email.lower():
+        email = None
     phone = clean_text(first_payload_value(payload, ("phone", "Телефон", "Phone")))
+    if phone and "не найден" in phone.lower():
+        phone = None
     first_name = clean_text(first_payload_value(payload, ("first_name", "Имя", "Имя пользователя")))
+    if first_name and "не найден" in first_name.lower():
+        first_name = None
     last_name = clean_text(first_payload_value(payload, ("last_name", "Фамилия")))
+    if last_name and "не найден" in last_name.lower():
+        last_name = None
     full_name = clean_text(
         first_payload_value(payload, ("name", "full_name", "ФИО"))
     ) or join_name(first_name, last_name)
+    if full_name and "не найден" in full_name.lower():
+        full_name = None
     regular_utm = {key: clean_text(payload.get(key)) for key in UTM_KEYS}
     additional_fields = extract_custom_fields(payload)
     additional_fields.update(extract_known_additional_fields(payload))
@@ -218,11 +236,14 @@ def normalize_getcourse_payload(payload: dict[str, Any]) -> dict[str, Any]:
     else:
         additional_fields.pop("vk_id", None)
 
+    raw_gc_id = parse_int(
+        first_payload_value(payload, ("gc_user_id", "getcourse_user_id", "id", "ID"))
+    )
+    getcourse_user_id = raw_gc_id if raw_gc_id is not None and raw_gc_id > 0 else None
+
     return {
         "raw_payload": raw_payload,
-        "getcourse_user_id": parse_int(
-            first_payload_value(payload, ("gc_user_id", "getcourse_user_id", "id", "ID"))
-        ),
+        "getcourse_user_id": getcourse_user_id,
         "email": email,
         "normalized_email": normalize_email(email),
         "phone": phone,

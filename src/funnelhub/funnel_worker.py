@@ -15,6 +15,7 @@ from funnelhub.services.followup_runner import run_due_followup_posts_once
 from funnelhub.services.funnel_engine import load_funnel_definition
 from funnelhub.services.funnel_runner import run_due_funnel_once
 from funnelhub.services.lead_post_submit_tasks import run_due_lead_post_submit_tasks_once
+from funnelhub.services.metrika_enrichment import enrich_lead_utm_search_queries
 from funnelhub.services.vk_messaging import HttpVkMessageClient
 
 logger = logging.getLogger(__name__)
@@ -44,6 +45,7 @@ async def main() -> None:
         if settings.vk_group_access_token
         else None
     )
+    last_metrika_sync_monotonic = 0.0
     try:
         while True:
             for definition in definitions:
@@ -146,6 +148,20 @@ async def main() -> None:
                             "failed": post_submit_stats.failed,
                         },
                     )
+
+            if settings.yandex_metrika_token and settings.yandex_metrika_counter_id:
+                now_monotonic = asyncio.get_running_loop().time()
+                # Run periodically every 2 hours
+                if (now_monotonic - last_metrika_sync_monotonic) > 7200:
+                    last_metrika_sync_monotonic = now_monotonic
+                    try:
+                        async with async_session_maker() as session:
+                            enriched_count = await enrich_lead_utm_search_queries(session, settings)
+                            if enriched_count > 0:
+                                logger.info("Auto-enriched %d leads from Metrika", enriched_count)
+                    except Exception as exc:
+                        logger.warning("Periodic Metrika enrichment failed: %s", exc)
+
             await asyncio.sleep(settings.funnel_runner_interval_seconds)
     finally:
         if bot is not None:

@@ -101,6 +101,7 @@ class LeadUtm(Base, TimestampMixin):
     yclid: Mapped[str | None] = mapped_column(String(255))
     metrika_client_id: Mapped[str | None] = mapped_column(String(255))
     metrika_visit_id: Mapped[str | None] = mapped_column(String(255))
+    search_query: Mapped[str | None] = mapped_column(String(512), nullable=True)
     device_fingerprint: Mapped[str | None] = mapped_column(String(128), nullable=True)
     raw_data: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
 
