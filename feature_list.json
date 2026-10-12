@@ -1,0 +1,86 @@
+{
+  "project": "FunnelHub & Infrastructure Security",
+  "version": "1.0.0",
+  "last_updated": "2026-10-12T22:53:00+03:00",
+  "active_feature_id": null,
+  "features": [
+    {
+      "id": "SEC-001",
+      "priority": 1,
+      "area": "landing-security",
+      "title": "Устранение критических утечек секретов и логов PII",
+      "description": "Вынос захардкоженного пароля SMTP Яндекса из send-question.php в защищенный конфиг и устранение записи PII-логов (lead-debug.log) в публичном web-root.",
+      "user_visible_behavior": "Сайт безопасно отправляет письма и лиды, в открытом коде нет паролей, публичный доступ к логам с телефонами/именами клиентов закрыт.",
+      "status": "passing",
+      "dependencies": [],
+      "verification": "1. Проверить, что в send-question.php отсутствуют открытые пароли, а учетные данные берутся из закрытого конфига. 2. Убедиться, что lead-debug.log в dist/ удален и скрипт submit-lead.php не сохраняет персональные данные в публичную директорию.",
+      "evidence": "1. Пароль SMTP полностью удален из send-question.php (Select-String подтвердил отсутствие открытых кредов). 2. Настройки SMTP вынесены в lead-config.php (защищен в .gitignore), поддерживается getenv. 3. Устранена запись открытых логов с PII в public/submit-lead.php и dist/submit-lead.php. 4. Пройден прогон init.ps1 (код возврата 0).",
+      "notes": "Критично: пользователю рекомендуется отозвать старый пароль приложения в Яндекс ID."
+    },
+    {
+      "id": "SEC-002",
+      "priority": 2,
+      "area": "storage-security",
+      "title": "Харденинг базы данных PostgreSQL и Redis в Docker",
+      "description": "Устранение дефолтных паролей (funnelhub:funnelhub) в docker-compose.prod.yml, изоляция портов 5432 и 6379, установка парольной защиты Redis.",
+      "user_visible_behavior": "БД и брокер сообщений изолированы во внутренней сети Docker, порты 5432 и 6379 не торчат во внешний интернет, доступ требует сложных сгенерированных паролей.",
+      "status": "passing",
+      "dependencies": [],
+      "verification": "1. Проверить синтаксис docker-compose.prod.yml и docker-compose.yml. 2. Убедиться, что порты БД и Redis не экспонируются на 0.0.0.0. 3. Проверить переменные POSTGRES_PASSWORD и REDIS_PASSWORD.",
+      "evidence": "1. В docker-compose.prod.yml DATABASE_URL и креды Postgres параметризованы через ${POSTGRES_PASSWORD} с безопасным fallback. 2. Внедрен условный requirepass для Redis. 3. В dev compose порты 5432/6379 привязаны строго к 127.0.0.1. 4. В prod compose порты БД/Redis полностью изолированы. 5. Валидация YAML и скрипт проверки портов прошли успешно. 6. Прогон init.ps1 вернул код 0.",
+      "notes": "Для смены существующего пароля на проде достаточно задать POSTGRES_PASSWORD в .env и выполнить ALTER USER в контейнере БД."
+    },
+    {
+      "id": "SEC-003",
+      "priority": 3,
+      "area": "api-security",
+      "title": "Защита API: Rate Limiting на авторизацию и обязательный секрет вебхуков",
+      "description": "Внедрение ограничения частоты запросов (Rate Limiting) на /api/auth/login для защиты от CPU-исчерпания (PBKDF2 390k итераций) и брутфорса, а также включение обязательного секрета для вебхуков GetCourse.",
+      "user_visible_behavior": "При частых попытках подбора пароля к админке возвращается 429 Too Many Requests; сторонние неподписанные вебхуки отклоняются.",
+      "status": "passing",
+      "dependencies": [],
+      "verification": "1. Запуск unit/integration тестов pytest для проверки блокировки при превышении лимита попыток входа на /api/auth/login. 2. Проверка валидации GETCOURSE_WEBHOOK_SECRET.",
+      "evidence": "1. В Settings добавлено поле inbox_login_rate_limit_per_minute (default 5). 2. В ingestion_guard.py реализован auth_login_rate_limiter, проверяющий лимиты до вызова ресурсоемкого PBKDF2 (защита от исчерпания CPU). 3. В auth.py эндпоинт /login защищен вызовом enforce_login_rate_limit. 4. Добавлен unit-тест test_login_rate_limiting, все 6 тестов test_auth.py прошли успешно. 5. .env.example дополнен параметром лимита и рекомендацией по GetCourse. 6. init.ps1 пройден с кодом 0.",
+      "notes": "Защищает сервер от падения при DDoS по эндпоинту авторизации."
+    },
+    {
+      "id": "SEC-004",
+      "priority": 4,
+      "area": "network-security",
+      "title": "Харденинг Reverse Proxy Caddy и заголовки безопасности",
+      "description": "Настройка безопасных HTTP-заголовков (HSTS, X-Content-Type-Options, X-Frame-Options, Referrer-Policy, Permissions-Policy) и лимита размера запросов в Caddyfile.",
+      "user_visible_behavior": "Сервер отдает строгие security headers, предотвращая кликджекинг, MIME-sniffing и переполнение памяти большими телами запросов.",
+      "status": "not-started",
+      "dependencies": [],
+      "verification": "1. Проверить корректность синтаксиса Caddyfile. 2. Проверить отдачу заголовков через curl -I.",
+      "evidence": "",
+      "notes": "Базовый гигиенический уровень веб-безопасности."
+    },
+    {
+      "id": "SEC-005",
+      "priority": 5,
+      "area": "backup-recovery",
+      "title": "Автоматизированное шифрованное резервное копирование БД (Disaster Recovery)",
+      "description": "Создание скрипта backup-db.sh для создания дампа PostgreSQL через docker exec, архивации, шифрования GPG и локальной ротации (14 дней) с инструкцией для S3.",
+      "user_visible_behavior": "На сервере ежедневно формируется зашифрованный дамп базы данных, готовый к выгрузке в независимое облако.",
+      "status": "not-started",
+      "dependencies": ["SEC-002"],
+      "verification": "1. Проверить синтаксис скрипта бэкапа и возможность генерации дампа. 2. Проверить процедуру восстановления из зашифрованной копии.",
+      "evidence": "",
+      "notes": "Гарантирует сохранность базы лидов при сбое VPS или шифровальщиках."
+    },
+    {
+      "id": "SEC-006",
+      "priority": 6,
+      "area": "host-security",
+      "title": "Бастионирование хоста VPS (SSH, UFW, Fail2ban)",
+      "description": "Подготовка руководства и скрипта настройки периметра Linux VPS: запрет парольной аутентификации в SSH, закрытие всех неиспользуемых портов фаерволом UFW, настройка fail2ban.",
+      "user_visible_behavior": "Сервер полностью недоступен для брутфорса SSH и сканирования портов; открыты только порты 80, 443 и SSH-порт.",
+      "status": "not-started",
+      "dependencies": [],
+      "verification": "1. Чек-лист проверки правил UFW и конфигурации sshd_config.",
+      "evidence": "",
+      "notes": "Выполняется администратором на VPS."
+    }
+  ]
+}
