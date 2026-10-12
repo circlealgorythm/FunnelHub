@@ -5,9 +5,10 @@
 - **Repository root directory**: `C:\Users\circlealgorythm\Documents\Бот воронка`
 - **Standard startup path**: `uv run uvicorn funnelhub.main:app --port 8000`
 - **Standard verification path**: `powershell -ExecutionPolicy Bypass -File .\init.ps1` (или `uv run pytest`)
-- **Active Feature**: Нет (Все задачи SEC-001 - SEC-006 завершены!)
+- **Active Feature**: Нет (UI-001 завершена, готов к UI-002)
 - **Current blocker**: Нет
-- **Highest priority unfinished feature**: Нет (Все запланированные фичи в статусе passing)
+- **Highest priority unfinished feature**: `UI-002` (Тактильный отклик интерактивных элементов: :active & Focus)
+- **Roadmap Artifact**: `C:\Users\circlealgorythm\.gemini\antigravity\brain\8c8ef25d-722d-42a5-a397-ea5a9c3c4356\ROADMAP_UI_POLISH.md`
 
 ---
 
@@ -56,12 +57,28 @@
   - Разработан комплект тестов `tests/test_host_security.py` (2 unit-теста).
   - Верификация: `pytest` (13 тестов пройдено), `ruff check` пройден, `init.ps1` пройден (код 0).
 
+- [x] **`SEC-007` (Защита от дублей сообщений: Worker claiming & идемпотентная отправка)** (passing):
+  - В `get_due_funnel_states` добавлен worker claiming через `SELECT ... FOR UPDATE SKIP LOCKED` для PostgreSQL (graceful fallback для SQLite).
+  - В `run_due_funnel_step` внедрен двухуровневый предохранитель:
+    1. Идемпотентная проверка `last_sent_step_key` (исключение повторной отправки уже доставленного шага).
+    2. Внутритранзакционный захват `in_flight_send_attempts` с TTL 300с (предотвращение гонок между параллельными воркерами).
+  - В `broadcast_runner` и `followup_runner` добавлено claiming с `SKIP LOCKED` для исключения дублирования таргетов и постов.
+  - Разработан комплект тестов `tests/test_worker_claiming.py` (4 unit-теста).
+  - Верификация: `pytest` (17 тестов пройдено), `ruff check` пройден, `init.ps1` пройден (код 0).
+
+- [x] **`UI-001` (Нормализация токенов, анимационных кривых и скроллбаров)** (passing):
+  - В `:root` объявлены физические кривые Безье `--ease-out: cubic-bezier(0.23, 1, 0.32, 1)`, `--ease-spring`, `--ease-in-out`, токены длительности и семантическая шкала слоев (`--z-sticky`, `--z-dropdown`, `--z-modal`, `--z-toast`).
+  - Стилизованы системные скроллбары (`scrollbar-width: thin`, `scrollbar-color: var(--line) transparent`, `::-webkit-scrollbar`) в теплой бумажной гамме без серых полос Windows.
+  - Устранены все `transition: all` из глобальных стилей в пользу конкретных композитных свойств.
+  - Верификация: `npm run build` в `inbox-app` пройден (2.40s, 0 ошибок), `init.ps1` пройден (код 0).
+
 ### What's In Progress
-- [ ] Все задачи дорожной карты выполнены на 100%.
+- [ ] Ожидание команды пользователя на старт `UI-002`.
 
 ### What's Next
-1. Фиксация изменений `SEC-006` в Git.
-2. Предоставление сводного отчета и инструкции по безопасной выкатке на прод.
+1. Взять фичу `UI-002`: Тактильный отклик интерактивных элементов (`:active scale(0.97)` для кнопок, табов, чипов и доступные кольца `:focus-visible`).
+2. Верифицировать через `npm run build` в `inbox-app`.
+3. Дождаться подтверждения пользователя перед переходом к `UI-003`.
 
 ---
 

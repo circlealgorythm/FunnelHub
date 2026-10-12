@@ -32,11 +32,18 @@
   - Написано руководство оператора `scripts/HOST_SECURITY.md`.
   - Покрыто unit-тестами в `tests/test_host_security.py` (2 теста).
 
+- Завершен `UI-001` (Нормализация токенов, анимационных кривых и скроллбаров):
+  - Сформирован и зафиксирован реестр задач `UI-001` - `UI-007` в `ROADMAP_UI_POLISH.md` и `feature_list.json`.
+  - В `:root` внедрены кривые `--ease-out: cubic-bezier(0.23, 1, 0.32, 1)`, `--ease-spring`, семантический z-index (`--z-modal`, `--z-toast`) и шкала длительностей.
+  - Настроены кастомные скроллбары (`scrollbar-width: thin`, `scrollbar-color: var(--line) transparent`) в теплой бумажной гамме без серых полос Windows.
+  - Устранены все `transition: all` из глобальных стилей в пользу конкретных композитных свойств.
+  - Проверено: `npm run build` в `inbox-app` (2.40s), `init.ps1` (код 0).
+
 ## Still Broken or Unverified
-- Все 6 задач дорожной карты безопасности (SEC-001 — SEC-006) успешно выполнены и верифицированы!
+- Задачи SEC-001 - SEC-007 и UI-001 успешно выполнены и верифицированы. Ожидает старта: UI-002.
 
 ## Next Best Action
-- Выкатка обновлений на продакшен-сервер (VPS) по чек-листу.
+- По команде пользователя запустить UI-002 (Тактильный отклик интерактивных элементов: :active & Focus).
 
 ## Commands
 - **Windows Verify**: `powershell -ExecutionPolicy Bypass -File .\init.ps1`
