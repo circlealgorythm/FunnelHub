@@ -5,9 +5,9 @@
 - **Repository root directory**: `C:\Users\circlealgorythm\Documents\Бот воронка`
 - **Standard startup path**: `uv run uvicorn funnelhub.main:app --port 8000`
 - **Standard verification path**: `powershell -ExecutionPolicy Bypass -File .\init.ps1` (или `uv run pytest`)
-- **Active Feature**: None (awaiting user confirmation for `UI-005`)
+- **Active Feature**: None (awaiting user confirmation for `UI-006`)
 - **Current blocker**: Нет
-- **Highest priority unfinished feature**: `UI-005` (Плавность ленты сообщений и уведомлений)
+- **Highest priority unfinished feature**: `UI-006` (Состояния форм, плавная валидация и аккордеоны)
 - **Roadmap Artifact**: `C:\Users\circlealgorythm\.gemini\antigravity\brain\8c8ef25d-722d-42a5-a397-ea5a9c3c4356\ROADMAP_UI_POLISH.md`
 
 ---
@@ -102,15 +102,22 @@
   - Внедрен `font-variant-numeric: tabular-nums` для таблиц, дат, счетчиков, номеров телефонов и ID.
   - Разделены состояния hover (`rgba(36, 72, 60, 0.04)`) и selected (`var(--green-soft)`).
   - Верификация: `npm run build` в `inbox-app` пройден (2.08s, 0 ошибок), `init.ps1` пройден (33 теста, код 0).
+- [x] **`UI-005` (Плавность ленты сообщений и уведомлений)** (passing):
+  - Реализовано органичное микродвижение появления реплик в чате `@keyframes bubble-enter` (180ms, translateY(5px) -> 0, `--ease-out`) для `.message-bubble`.
+  - Улучшена пространственная анатомия бабблов (скругление 14px, скошенные уголки 4px со стороны отправителя, тональные легкие тени, поддержка `.is-inbound/.inbound` и `.is-outbound/.outbound`).
+  - Для контейнера ленты `.message-stream` задано `scroll-behavior: smooth` и `overscroll-behavior-y: contain`.
+  - Реализован плавный вход тостов `@keyframes toast-slide-up` (240ms, translateY(12px) -> 0), подключен `z-index: var(--z-toast)` и скругление 12px.
+  - Добавлена поддержка доступности `@media (prefers-reduced-motion: reduce)`.
+  - Верификация: `npm run build` в `inbox-app` пройден (2.38s, 0 ошибок), `init.ps1` пройден (33 теста, код 0).
 
 ### What's In Progress
-*None (awaiting user command for UI-005)*
+*None (awaiting user command for UI-006)*
 
 ### What's Next
 1. Получить команду пользователя на переход к следующей задаче дорожной карты.
-2. Взять фичу `UI-005`: Плавность ленты сообщений и уведомлений (микродвижение появления реплик в чате `bubble-enter`, оптимизация теней сообщений, плавный вход тоста `.toast` со сдвигом снизу).
+2. Взять фичу `UI-006`: Состояния форм, плавная валидация и аккордеоны (интеграция `:user-invalid` и `:user-valid` для полей ввода, плавное раскрытие `details`/аккордеонов, мягкий шиммер скелетонов).
 3. Верифицировать через `npm run build` в `inbox-app` и `init.ps1`.
-4. Зафиксировать коммит `style(UI-005)` и отчитаться пользователю.
+4. Зафиксировать коммит `style(UI-006)` и отчитаться пользователю.
 
 ---
 

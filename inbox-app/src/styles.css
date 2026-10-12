@@ -546,50 +546,84 @@ h2 {
   flex: 1;
 }
 
+/* --- Chat Stream & Bubble Kinematics (UI-005) --- */
+@keyframes bubble-enter {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .message-stream {
   display: flex;
   min-height: 0;
   flex-direction: column;
   gap: 12px;
   overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scroll-behavior: smooth;
   padding: 28px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
 }
 
 .message-bubble {
   width: min(680px, 84%);
-  padding: 14px 16px 12px;
-  border-radius: 8px;
-  box-shadow: 0 12px 34px rgba(50, 43, 34, 0.08);
+  padding: 14px 18px 12px;
+  border-radius: 14px;
+  animation: bubble-enter var(--duration-normal) var(--ease-out) forwards;
+  will-change: transform, opacity;
 }
 
 .message-bubble p {
   margin: 0;
   white-space: pre-wrap;
-  line-height: 1.45;
+  line-height: 1.5;
+  word-break: break-word;
+  overflow-wrap: break-word;
 }
 
 .message-bubble footer {
   display: flex;
   justify-content: space-between;
+  align-items: center;
   gap: 12px;
-  margin-top: 10px;
-  color: rgba(38, 37, 32, 0.56);
+  margin-top: 8px;
+  color: rgba(38, 37, 32, 0.58);
   font-size: 12px;
+  font-variant-numeric: tabular-nums;
 }
 
-.message-bubble.is-inbound {
+.message-bubble footer time {
+  font-variant-numeric: tabular-nums;
+}
+
+.message-bubble.is-inbound,
+.message-bubble.inbound {
   align-self: flex-start;
   background: var(--surface-strong);
+  border: 1px solid var(--line);
+  border-bottom-left-radius: 4px;
+  box-shadow: 0 2px 8px rgba(50, 43, 34, 0.04), 0 1px 2px rgba(50, 43, 34, 0.02);
 }
 
-.message-bubble.is-outbound {
+.message-bubble.is-outbound,
+.message-bubble.outbound {
   align-self: flex-end;
   background: var(--green);
-  color: white;
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom-right-radius: 4px;
+  box-shadow: 0 3px 12px rgba(36, 72, 60, 0.18), 0 1px 3px rgba(36, 72, 60, 0.08);
 }
 
-.message-bubble.is-outbound footer {
-  color: rgba(255, 255, 255, 0.72);
+.message-bubble.is-outbound footer,
+.message-bubble.outbound footer {
+  color: rgba(255, 255, 255, 0.76);
 }
 
 .lead-panel {
@@ -751,16 +785,34 @@ h2 {
   line-height: 1.45;
 }
 
+/* --- Toast Notifications (UI-005) --- */
+@keyframes toast-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
 .toast {
   position: fixed;
-  right: 20px;
-  bottom: 20px;
-  max-width: min(420px, calc(100vw - 40px));
-  padding: 13px 16px;
-  border-radius: 8px;
+  right: 24px;
+  bottom: 24px;
+  z-index: var(--z-toast);
+  max-width: min(440px, calc(100vw - 32px));
+  padding: 14px 18px;
+  border-radius: 12px;
   background: #6d2f28;
-  color: white;
-  box-shadow: var(--shadow);
+  color: #ffffff;
+  font-size: 14px;
+  line-height: 1.45;
+  box-shadow: 0 14px 36px rgba(45, 20, 18, 0.28), 0 2px 6px rgba(45, 20, 18, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  animation: toast-slide-up var(--duration-smooth) var(--ease-out) forwards;
+  transform-origin: center bottom;
 }
 
 .login-shell {
@@ -1967,7 +2019,9 @@ h2 {
 @media (prefers-reduced-motion: reduce) {
   .modal-overlay,
   .modal-dialog,
-  .modal-content {
+  .modal-content,
+  .message-bubble,
+  .toast {
     animation: none !important;
   }
 }

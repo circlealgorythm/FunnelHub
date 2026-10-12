@@ -1,7 +1,7 @@
 {
   "project": "FunnelHub & Infrastructure Security",
   "version": "1.0.0",
-  "last_updated": "2026-10-13T01:26:00+03:00",
+  "last_updated": "2026-10-13T01:31:00+03:00",
   "active_feature_id": null,
   "features": [
     {
@@ -180,10 +180,10 @@
       "title": "Плавность ленты сообщений и уведомлений",
       "description": "Микродвижение появления реплик в чате (bubble-enter 160ms), оптимизация теней сообщений, плавный вход тоста .toast со сдвигом снизу.",
       "user_visible_behavior": "Сообщения в диалоге появляются органично как в нативном мессенджере; всплывающие системные уведомления анимируются плавно.",
-      "status": "not-started",
+      "status": "passing",
       "dependencies": ["UI-001"],
       "verification": "1. npm run build. 2. Проверка рендеринга сообщений и тостов.",
-      "evidence": "",
+      "evidence": "1. Реализована анимация @keyframes bubble-enter (180ms, translateY(5px) -> 0, --ease-out) для .message-bubble. 2. Улучшена анатомия бабблов (скругление 14px, скошенные уголки у хвоста 4px, легкие тональные тени, поддержка .is-inbound/.inbound и .is-outbound/.outbound). 3. Для .message-stream настроено scroll-behavior: smooth и overscroll-behavior-y: contain. 4. Реализован @keyframes toast-slide-up (240ms, translateY(12px) -> 0) для .toast, подключен z-index: var(--z-toast) и скругление 12px. 5. Добавлена поддержка prefers-reduced-motion: reduce. 6. npm run build завершен успешно (2.38s, 0 ошибок). 7. init.ps1 пройден (33 теста).",
       "notes": "Spatial continuity для чата оператора."
     },
     {

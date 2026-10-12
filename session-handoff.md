@@ -75,11 +75,19 @@
   - Разделены состояния hover (`rgba(36, 72, 60, 0.04)`) и selected (`var(--green-soft)`).
   - Проверено: `npm run build` в `inbox-app` (2.08s, 0 ошибок), `init.ps1` (33 теста, код 0).
 
+- Завершен `UI-005` (Плавность ленты сообщений и уведомлений):
+  - Реализовано органичное микродвижение появления реплик в чате `@keyframes bubble-enter` (180ms, translateY(5px) -> 0, `--ease-out`) для `.message-bubble`.
+  - Улучшена пространственная анатомия бабблов (скругление 14px, скошенные уголки 4px со стороны отправителя, тональные легкие тени, поддержка `.is-inbound/.inbound` и `.is-outbound/.outbound`).
+  - Для контейнера ленты `.message-stream` задано `scroll-behavior: smooth` и `overscroll-behavior-y: contain`.
+  - Реализован плавный вход тостов `@keyframes toast-slide-up` (240ms, translateY(12px) -> 0), подключен `z-index: var(--z-toast)` и скругление 12px.
+  - Добавлена поддержка доступности `@media (prefers-reduced-motion: reduce)`.
+  - Проверено: `npm run build` в `inbox-app` (2.38s, 0 ошибок), `init.ps1` (33 теста, код 0).
+
 ## Still Broken or Unverified
-- Задачи SEC-001 - SEC-009 и UI-001 - UI-004 успешно выполнены и верифицированы. Ожидает старта: UI-005.
+- Задачи SEC-001 - SEC-009 и UI-001 - UI-005 успешно выполнены и верифицированы. Ожидает старта: UI-006.
 
 ## Next Best Action
-- По команде пользователя запустить UI-005 (Плавность ленты сообщений и уведомлений).
+- По команде пользователя запустить UI-006 (Состояния форм, плавная валидация и аккордеоны).
 
 ## Commands
 - **Windows Verify**: `powershell -ExecutionPolicy Bypass -File .\init.ps1`
