@@ -33,6 +33,7 @@ class InMemoryRateLimiter:
         limit: int,
         window_seconds: int = 60,
         now: float | None = None,
+        detail: str = "Too many requests.",
     ) -> None:
         if limit <= 0:
             return
@@ -45,7 +46,7 @@ class InMemoryRateLimiter:
         if len(bucket) >= limit:
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail="Too many GetCourse ingestion requests.",
+                detail=detail,
             )
         bucket.append(current)
 
@@ -54,6 +55,20 @@ class InMemoryRateLimiter:
 
 
 getcourse_rate_limiter = InMemoryRateLimiter()
+auth_login_rate_limiter = InMemoryRateLimiter()
+
+
+def enforce_login_rate_limit(
+    *,
+    request: Request,
+    settings: Settings,
+) -> None:
+    client_ip = get_request_ip(request)
+    auth_login_rate_limiter.check(
+        f"login:{client_ip}",
+        limit=settings.inbox_login_rate_limit_per_minute,
+        detail="Too many login attempts. Please try again later.",
+    )
 
 
 def enforce_getcourse_ingestion_guard(
@@ -67,6 +82,7 @@ def enforce_getcourse_ingestion_guard(
     getcourse_rate_limiter.check(
         f"{endpoint}:{client_ip}",
         limit=settings.getcourse_webhook_rate_limit_per_minute,
+        detail="Too many GetCourse ingestion requests.",
     )
     validate_getcourse_webhook_secret(
         request=request,

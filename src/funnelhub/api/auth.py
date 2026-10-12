@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
 
 from funnelhub.config import Settings, get_settings
@@ -16,6 +16,7 @@ from funnelhub.services.auth import (
     safe_auth_status,
     should_use_secure_cookie,
 )
+from funnelhub.services.ingestion_guard import enforce_login_rate_limit
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 SettingsDep = Annotated[Settings, Depends(get_settings)]
@@ -35,10 +36,12 @@ class AuthStatusResponse(BaseModel):
 
 @router.post("/login", response_model=AuthStatusResponse)
 async def login(
+    http_request: Request,
     request: LoginRequest,
     response: Response,
     settings: SettingsDep,
 ) -> AuthStatusResponse:
+    enforce_login_rate_limit(request=http_request, settings=settings)
     if not is_auth_configured(settings):
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

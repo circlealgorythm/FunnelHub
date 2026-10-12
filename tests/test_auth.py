@@ -105,3 +105,34 @@ def configure_auth(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     )
     monkeypatch.setenv("INBOX_SESSION_SECRET", "test-session-secret")
     get_settings.cache_clear()
+
+
+async def test_login_rate_limiting(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    from funnelhub.services.ingestion_guard import auth_login_rate_limiter
+
+    configure_auth(monkeypatch)
+    monkeypatch.setenv("INBOX_LOGIN_RATE_LIMIT_PER_MINUTE", "3")
+    get_settings.cache_clear()
+    auth_login_rate_limiter.reset()
+
+    try:
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://127.0.0.1:8000",
+        ) as client:
+            for _ in range(3):
+                res = await client.post(
+                    "/api/auth/login",
+                    json={"username": "aisu", "password": "wrong"},
+                )
+                assert res.status_code == 401
+
+            blocked_res = await client.post(
+                "/api/auth/login",
+                json={"username": "aisu", "password": "wrong"},
+            )
+            assert blocked_res.status_code == 429
+            assert "Too many login attempts" in blocked_res.json()["detail"]
+    finally:
+        auth_login_rate_limiter.reset()
+        get_settings.cache_clear()

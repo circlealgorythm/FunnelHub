@@ -106,6 +106,9 @@ class Settings(BaseSettings):
     inbox_session_ttl_seconds: int = Field(
         default=604800, validation_alias="INBOX_SESSION_TTL_SECONDS"
     )
+    inbox_login_rate_limit_per_minute: int = Field(
+        default=5, validation_alias="INBOX_LOGIN_RATE_LIMIT_PER_MINUTE",
+    )
     inbox_app_url: str = Field(
         default="http://127.0.0.1:5173", validation_alias="INBOX_APP_URL"
     )
@@ -170,6 +173,13 @@ class Settings(BaseSettings):
     autopost_followup_strip_marker: bool = Field(
         default=True, validation_alias="AUTOPOST_FOLLOWUP_STRIP_MARKER"
     )
+    yandex_metrika_token: str | None = Field(
+        default=None, validation_alias="YANDEX_METRIKA_TOKEN"
+    )
+    yandex_metrika_counter_id: str | None = Field(
+        default=None, validation_alias="YANDEX_METRIKA_COUNTER_ID"
+    )
+
 
     @field_validator("autopost_vk_owner_id", mode="before")
     @classmethod
