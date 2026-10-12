@@ -16,7 +16,7 @@ echo "=== Running verification (ruff + pytest) ==="
 export PYTHONPATH="src"
 
 uv run ruff check src/funnelhub/api/auth.py
-uv run pytest tests/test_metadata.py tests/test_auth.py tests/test_caddyfile.py tests/test_backup_scripts.py tests/test_host_security.py tests/test_worker_claiming.py tests/test_import_caps.py
+uv run pytest tests/test_metadata.py tests/test_auth.py tests/test_caddyfile.py tests/test_backup_scripts.py tests/test_host_security.py tests/test_worker_claiming.py tests/test_import_caps.py tests/test_cors_and_vk_failclosed.py
 
 echo "=== Verification Passed! Baseline is healthy. ==="
 echo "Startup command: uv run uvicorn funnelhub.main:app --port 8000"

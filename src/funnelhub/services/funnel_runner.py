@@ -36,7 +36,9 @@ from funnelhub.services.telegram_messaging import (
 )
 from funnelhub.services.vk_messaging import (
     VkMessageClient,
+    VkPermissionRevokedError,
     VkTextButton,
+    VkTokenInvalidError,
     VkUrlButton,
     send_vk_text_message,
 )
@@ -48,12 +50,22 @@ BOT_BUTTON_URLS = {
     "funnelhub://bot/telegram": "telegram",
     "funnelhub://bot/vk": "vk",
 }
+VK_PERMANENT_USER_ERROR_MARKERS = (
+    "Can't send messages for users without permission",
+    "Can't send messages to this user due to their privacy settings",
+    "User was deleted or banned",
+    "User is deactivated",
+    "VkPermissionRevokedError",
+)
+
 PERMANENT_DELIVERY_ERROR_MARKERS = (
     "Lead has no subscribed email subscription.",
     "Lead has no subscribed VK identity.",
-    "Can't send messages for users without permission",
+    *VK_PERMANENT_USER_ERROR_MARKERS,
     "bot was blocked by the user",
     "No valid recipients",
+    "User authorization failed",
+    "VkTokenInvalidError",
 )
 
 
@@ -474,10 +486,16 @@ async def pause_funnel_state_after_permanent_delivery_error(
         "paused_at": paused_at.isoformat(),
     }
     error_message = str(error)
-    if "Can't send messages for users without permission" in error_message:
+    if isinstance(error, VkPermissionRevokedError) or any(
+        m in error_message for m in VK_PERMANENT_USER_ERROR_MARKERS
+    ):
         await unsubscribe_latest_vk_identity_for_lead(session, state.lead_id, paused_at)
+
     if "bot was blocked by the user" in error_message:
         await unsubscribe_latest_telegram_identity_for_lead(session, state.lead_id, paused_at)
+
+    if isinstance(error, VkTokenInvalidError) or "User authorization failed" in error_message:
+        state.metadata_["paused_reason"] = "vk_token_invalid"
 
     await session.flush()
     return True

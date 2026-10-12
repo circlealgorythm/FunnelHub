@@ -18,7 +18,7 @@ $env:PYTHONPATH = "src"
 uv run ruff check src/funnelhub/api/auth.py
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-uv run pytest tests/test_metadata.py tests/test_auth.py tests/test_caddyfile.py tests/test_backup_scripts.py tests/test_host_security.py tests/test_worker_claiming.py tests/test_import_caps.py
+uv run pytest tests/test_metadata.py tests/test_auth.py tests/test_caddyfile.py tests/test_backup_scripts.py tests/test_host_security.py tests/test_worker_claiming.py tests/test_import_caps.py tests/test_cors_and_vk_failclosed.py
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 Write-Host "=== Verification Passed! Baseline is healthy. ===" -ForegroundColor Green

@@ -1,8 +1,8 @@
 {
   "project": "FunnelHub & Infrastructure Security",
   "version": "1.0.0",
-  "last_updated": "2026-10-13T00:55:00+03:00",
-  "active_feature_id": "SEC-009",
+  "last_updated": "2026-10-13T01:05:00+03:00",
+  "active_feature_id": null,
   "features": [
     {
       "id": "SEC-001",
@@ -115,10 +115,10 @@
       "title": "Харденинг Prod CORS и безопасная обработка сбоев VK (Fail-closed)",
       "description": "Вынос разрешенных origin CORS в настройки окружения и реализация fail-closed обработки ошибок при сбоях отправки в ВКонтакте (блокировка бота, отзыв токена).",
       "user_visible_behavior": "CORS в продакшене разрешает запросы только с доверенных доменов; сбои доставки VK не приводят к зависанию очередей воркера.",
-      "status": "in-progress",
+      "status": "passing",
       "dependencies": [],
       "verification": "1. Тест CORS с разрешенными и неразрешенными origin. 2. Тест fail-closed поведения при ошибках VK.",
-      "evidence": "",
+      "evidence": "1. В config.py добавлен параметр CORS_ALLOWED_ORIGINS с поддержкой строк через запятую и JSON-массивов, задокументирован в .env.example. 2. В main.py захардкоженный allow_origins заменен на settings.cors_allowed_origins. 3. В vk_messaging.py внедрены типизированные исключения VkApiError, VkPermissionRevokedError (коды 901, 902, 18), VkTokenInvalidError (код 5). 4. В funnel_runner.py внедрена fail-closed обработка: автоматическая отписка пользователя при отзыве разрешений/приватности и пауза воронки без краша воркера. 5. Создан tests/test_cors_and_vk_failclosed.py (5 unit-тестов). 6. Все 33 теста проекта и init.ps1 пройдены (код 0).",
       "notes": "Гигиена междоменных запросов и устойчивость к внешним сбоям API."
     },
     {
@@ -154,10 +154,10 @@
       "title": "Унификация и кинематика модальных окон",
       "description": "Устранение дубликатов modal-overlay и modal-dialog в styles.css, внедрение плавной анимации входа оверлея и диалога, замена z-index: 9999 на семантический токен.",
       "user_visible_behavior": "Модальные окна плавно и мягко открываются со скейлом от 0.96, без резких скачков и визуальных конфликтов стилей.",
-      "status": "not-started",
+      "status": "passing",
       "dependencies": ["UI-001"],
       "verification": "1. npm run build. 2. Проверка анимации открытия всех модалок (рассылки, посты, экспорт/импорт).",
-      "evidence": "",
+      "evidence": "1. В styles.css устранены дублирующиеся блоки .modal-overlay, .modal-dialog, .modal-header, .modal-body, .modal-footer и .workspace.is-list-only. 2. Реализованы keyframes modal-overlay-fade-in и modal-card-in (scale 0.96 translateY(6px) -> 1, ease-out, 180ms). 3. z-index переведен на семантический токен var(--z-modal) вместо 9999. 4. Оверлей переведен на inset: 0, backdrop-filter: blur(8px) и overscroll-behavior: contain. 5. Карточки модалок стандартизированы с var(--surface-strong), max-height calc(100dvh - 32px) и внутренней прокруткой modal-body. 6. Добавлена поддержка prefers-reduced-motion: reduce. 7. npm run build собран успешно (2.29s). 8. init.ps1 пройден (33 теста).",
       "notes": "Соблюдение Modern Web Guidance (animate-to-from-top-layer)."
     },
     {

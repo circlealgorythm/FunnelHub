@@ -38,6 +38,13 @@
   - В `api/inbox.py` внедрен возврат HTTP 413 Payload Too Large при превышении размера файла и HTTP 422 при превышении лимита строк с информативным описанием на русском языке.
   - Покрыто unit-тестами в `tests/test_import_caps.py` (10 тестов).
 
+- Завершен `SEC-009` (Харденинг Prod CORS и безопасная обработка сбоев VK / Fail-closed):
+  - В `config.py` внедрен параметр `CORS_ALLOWED_ORIGINS` с гибким парсингом списков через запятую и JSON-массивов, задокументирован в `.env.example`.
+  - В `main.py` захардкоженные allow_origins заменены на `settings.cors_allowed_origins`.
+  - В `vk_messaging.py` создана иерархия исключений: `VkApiError`, `VkPermissionRevokedError` (ошибки 901, 902, 18), `VkTokenInvalidError` (ошибка 5).
+  - В `funnel_runner.py` реализована fail-closed логика: автоматическая отписка пользователя при отзыве разрешений/приватности и пауза воронки при недействительном токене сообщества без сбоя процесса воркера.
+  - Покрыто unit-тестами в `tests/test_cors_and_vk_failclosed.py` (5 тестов).
+
 - Завершен `UI-001` (Нормализация токенов, анимационных кривых и скроллбаров):
   - Сформирован и зафиксирован реестр задач `UI-001` - `UI-007` в `ROADMAP_UI_POLISH.md` и `feature_list.json`.
   - В `:root` внедрены кривые `--ease-out: cubic-bezier(0.23, 1, 0.32, 1)`, `--ease-spring`, семантический z-index (`--z-modal`, `--z-toast`) и шкала длительностей.
@@ -52,14 +59,24 @@
   - Настроен подсвет полей поиска (`.search-field:focus-within`, `.database-search:focus-within`).
   - Проверено: `npm run build` в `inbox-app` (2.18s, 0 ошибок), `init.ps1` (код 0).
 
+- Завершен `UI-003` (Унификация и кинематика модальных окон):
+  - Устранены дублирующиеся блоки `.modal-overlay`, `.modal-dialog`, `.modal-header`, `.modal-body`, `.modal-footer` и `.workspace.is-list-only` в `inbox-app/src/styles.css`.
+  - Внедрены ключевые кадры анимаций `modal-overlay-fade-in` (120ms) и `modal-card-in` (180ms, масштаб с 0.96 со сдвигом 6px, кривая `--ease-out`).
+  - Заменен хардкод `z-index: 9999` на семантический токен `var(--z-modal)`.
+  - Оверлей переведен на `inset: 0`, `backdrop-filter: blur(8px)`, изоляцию прокрутки `overscroll-behavior: contain`.
+  - Диалоги и модалки подтверждения стандартизированы с фоном `var(--surface-strong)`, границей `1px solid var(--line)`, радиусом `16px`, `max-height: calc(100dvh - 32px)` и внутренним скроллом тела.
+  - Добавлена поддержка доступности `@media (prefers-reduced-motion: reduce)`.
+  - Проверено: `npm run build` в `inbox-app` (2.29s, 0 ошибок), `init.ps1` (33 теста, код 0).
+
 ## Still Broken or Unverified
-- Задачи SEC-001 - SEC-008 и UI-001, UI-002 успешно выполнены и верифицированы. Ожидает старта: UI-003.
+- Задачи SEC-001 - SEC-009 и UI-001 - UI-003 успешно выполнены и верифицированы. Ожидает старта: UI-004.
 
 ## Next Best Action
-- По команде пользователя запустить UI-003 (Унификация и кинематика модальных окон).
+- По команде пользователя запустить UI-004 (Таблицы, выравнивание данных и устранение CSS-конфликтов).
 
 ## Commands
 - **Windows Verify**: `powershell -ExecutionPolicy Bypass -File .\init.ps1`
 - **Linux Verify**: `./init.sh`
+- **Frontend Build**: `npm run build` (в каталоге `inbox-app`)
 - **Run Tests**: `uv run pytest`
 - **Run Lint**: `uv run ruff check`

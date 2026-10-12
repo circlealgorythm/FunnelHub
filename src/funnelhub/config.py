@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     public_base_url: str = Field(
         default="http://localhost:8000", validation_alias="PUBLIC_BASE_URL"
     )
+    cors_allowed_origins: list[str] | str = Field(
+        default=["http://localhost:5173", "http://127.0.0.1:5173"],
+        validation_alias="CORS_ALLOWED_ORIGINS",
+    )
     getcourse_webhook_secret: str | None = Field(
         default=None, validation_alias="GETCOURSE_WEBHOOK_SECRET"
     )
@@ -198,6 +202,27 @@ class Settings(BaseSettings):
             if clean_value.startswith(("public", "club")):
                 return clean_value.removeprefix("public").removeprefix("club")
         return value
+
+    @field_validator("cors_allowed_origins")
+    @classmethod
+    def parse_cors_allowed_origins(cls, value: Any) -> list[str]:
+        if isinstance(value, str):
+            value = value.strip()
+            if not value:
+                return []
+            if value.startswith("[") and value.endswith("]"):
+                import json
+
+                try:
+                    parsed = json.loads(value)
+                    if isinstance(parsed, list):
+                        return [str(item).strip() for item in parsed if str(item).strip()]
+                except Exception:
+                    pass
+            return [origin.strip() for origin in value.split(",") if origin.strip()]
+        if isinstance(value, (list, tuple, set)):
+            return [str(origin).strip() for origin in value if str(origin).strip()]
+        return ["http://localhost:5173", "http://127.0.0.1:5173"]
 
 
 @lru_cache

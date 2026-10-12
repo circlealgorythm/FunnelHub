@@ -5,9 +5,9 @@
 - **Repository root directory**: `C:\Users\circlealgorythm\Documents\Бот воронка`
 - **Standard startup path**: `uv run uvicorn funnelhub.main:app --port 8000`
 - **Standard verification path**: `powershell -ExecutionPolicy Bypass -File .\init.ps1` (или `uv run pytest`)
-- **Active Feature**: Нет (UI-002 завершена, готов к UI-003)
+- **Active Feature**: None (awaiting user confirmation for `UI-004`)
 - **Current blocker**: Нет
-- **Highest priority unfinished feature**: `UI-003` (Унификация и кинематика модальных окон)
+- **Highest priority unfinished feature**: `UI-004` (Таблицы, выравнивание данных и устранение CSS-конфликтов)
 - **Roadmap Artifact**: `C:\Users\circlealgorythm\.gemini\antigravity\brain\8c8ef25d-722d-42a5-a397-ea5a9c3c4356\ROADMAP_UI_POLISH.md`
 
 ---
@@ -56,7 +56,6 @@
   - Подготовлено детальное руководство `scripts/HOST_SECURITY.md` с командами проверки, мониторинга и разблокировки IP.
   - Разработан комплект тестов `tests/test_host_security.py` (2 unit-теста).
   - Верификация: `pytest` (13 тестов пройдено), `ruff check` пройден, `init.ps1` пройден (код 0).
-
 - [x] **`SEC-007` (Защита от дублей сообщений: Worker claiming & идемпотентная отправка)** (passing):
   - В `get_due_funnel_states` добавлен worker claiming через `SELECT ... FOR UPDATE SKIP LOCKED` для PostgreSQL (graceful fallback для SQLite).
   - В `run_due_funnel_step` внедрен двухуровневый предохранитель:
@@ -65,34 +64,47 @@
   - В `broadcast_runner` и `followup_runner` добавлено claiming с `SKIP LOCKED` для исключения дублирования таргетов и постов.
   - Разработан комплект тестов `tests/test_worker_claiming.py` (4 unit-теста).
   - Верификация: `pytest` (17 тестов пройдено), `ruff check` пройден, `init.ps1` пройден (код 0).
-
 - [x] **`SEC-008` (Лимиты на импорт контактов / Import Caps)** (passing):
   - Введены лимиты `MAX_IMPORT_FILE_SIZE_BYTES = 10MB` и `MAX_IMPORT_ROWS = 5000` в `inbox_database.py`.
   - Реализована безопасная потоковая отсечка в `read_import_file_rows` для XLSX и CSV до накопления избыточных строк в памяти с игнорированием пустых хвостовых строк (защита сервера от OOM и DoS).
   - В `api/inbox.py` реализован возврат HTTP 413 Payload Too Large при превышении размера файла и HTTP 422 при превышении лимита строк с информативным описанием.
   - Разработан комплект тестов `tests/test_import_caps.py` (10 unit-тестов).
   - Верификация: `pytest` (28 тестов пройдено), `ruff check` пройден, `init.ps1` пройден (код 0).
-
+- [x] **`SEC-009` (Харденинг Prod CORS и безопасная обработка сбоев VK / Fail-closed)** (passing):
+  - В `config.py` внедрен параметр `CORS_ALLOWED_ORIGINS` с гибким парсингом списков через запятую и JSON-массивов, задокументирован в `.env.example`.
+  - В `main.py` захардкоженные allow_origins заменены на `settings.cors_allowed_origins`.
+  - В `vk_messaging.py` создана иерархия исключений: `VkApiError`, `VkPermissionRevokedError` (ошибки 901, 902, 18), `VkTokenInvalidError` (ошибка 5).
+  - В `funnel_runner.py` реализована fail-closed логика: автоматическая отписка пользователя при отзыве разрешений/приватности и пауза воронки при недействительном токене сообщества без сбоя процесса воркера.
+  - Разработан комплект тестов `tests/test_cors_and_vk_failclosed.py` (5 unit-тестов).
+  - Верификация: `pytest` (33 теста пройдено), `ruff check` пройден, `init.ps1` пройден (код 0).
 - [x] **`UI-001` (Нормализация токенов, анимационных кривых и скроллбаров)** (passing):
   - В `:root` объявлены физические кривые Безье `--ease-out: cubic-bezier(0.23, 1, 0.32, 1)`, `--ease-spring`, `--ease-in-out`, токены длительности и семантическая шкала слоев (`--z-sticky`, `--z-dropdown`, `--z-modal`, `--z-toast`).
   - Стилизованы системные скроллбары (`scrollbar-width: thin`, `scrollbar-color: var(--line) transparent`, `::-webkit-scrollbar`) в теплой бумажной гамме без серых полос Windows.
   - Устранены все `transition: all` из глобальных стилей в пользу конкретных композитных свойств.
   - Верификация: `npm run build` в `inbox-app` пройден (2.40s, 0 ошибок), `init.ps1` пройден (код 0).
-
 - [x] **`UI-002` (Тактильный отклик интерактивных элементов: :active & Focus)** (passing):
   - Внедрен физический отклик `:active { transform: scale(0.97) }` для всех кнопок (`.icon-button`, `.soft-button`, `.send-button`, `.login-button`, `.export-quick-btn`), табов (`.view-tab`), фильтров (`.filter-chip`).
   - Добавлен мягкий отклик `:active { transform: scale(0.99) }` для списка диалогов (`.conversation-item`) и `.reply-target` (`scale(0.98)`).
   - Настроена доступная фокус-система: подавление очертания при клике мышью (`:focus:not(:focus-visible)`) и четкий фокус-ринг `outline: 2px solid var(--plum); outline-offset: 2px` при навигации с клавиатуры.
   - Настроен подсвет полей поиска (`.search-field:focus-within`, `.database-search:focus-within`) и полей модальных окон через `var(--plum)`.
   - Верификация: `npm run build` в `inbox-app` пройден (2.18s, 0 ошибок), `init.ps1` пройден (28 тестов, код 0).
+- [x] **`UI-003` (Унификация и кинематика модальных окон)** (passing):
+  - Устранены дублирующиеся блоки `.modal-overlay`, `.modal-dialog`, `.modal-header`, `.modal-body`, `.modal-footer` и `.workspace.is-list-only` в `inbox-app/src/styles.css`.
+  - Внедрены ключевые кадры анимаций `modal-overlay-fade-in` (120ms) и `modal-card-in` (180ms, масштаб с 0.96 со сдвигом 6px, кривая `--ease-out`).
+  - Заменен хардкод `z-index: 9999` на семантический токен `var(--z-modal)`.
+  - Оверлей переведен на `inset: 0`, `backdrop-filter: blur(8px)`, изоляцию прокрутки `overscroll-behavior: contain`.
+  - Диалоги и модалки подтверждения стандартизированы с фоном `var(--surface-strong)`, границей `1px solid var(--line)`, радиусом `16px`, `max-height: calc(100dvh - 32px)` и внутренним скроллом тела.
+  - Добавлена поддержка доступности `@media (prefers-reduced-motion: reduce)`.
+  - Верификация: `npm run build` в `inbox-app` пройден (2.29s, 0 ошибок), `init.ps1` пройден (33 теста, код 0).
 
 ### What's In Progress
-- [ ] Ожидание команды пользователя на старт `UI-003`.
+*None (awaiting user command for UI-004)*
 
 ### What's Next
-1. Взять фичу `UI-003`: Унификация и кинематика модальных окон (Modal Architecture & Entrance Animations — слияние дубликатов, анимация входа оверлея и скейла карточки).
-2. Верифицировать через `npm run build` в `inbox-app`.
-3. Дождаться подтверждения пользователя перед переходом к `UI-004`.
+1. Получить команду пользователя на переход к следующей задаче дорожной карты.
+2. Взять фичу `UI-004`: Таблицы, выравнивание данных и устранение CSS-конфликтов (устранение дубликатов `lead-table-wrap`, добавление `font-variant-numeric: tabular-nums` для числовых полей, плавный hover строк таблицы).
+3. Верифицировать через `npm run build` в `inbox-app` и `init.ps1`.
+4. Зафиксировать коммит `style(UI-004)` и отчитаться пользователю.
 
 ---
 

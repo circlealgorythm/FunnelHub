@@ -18,6 +18,22 @@ from funnelhub.db.models import Conversation, Message, MessengerIdentity
 VK_BUTTON_LABEL_MAX_LENGTH = 40
 
 
+class VkApiError(RuntimeError):
+    def __init__(self, message: str, *, error_code: int | None = None) -> None:
+        super().__init__(message)
+        self.error_code = error_code
+
+
+class VkPermissionRevokedError(VkApiError):
+    """Пользователь запретил сообщения от сообщества или закрыл приватность."""
+    pass
+
+
+class VkTokenInvalidError(VkApiError):
+    """Токен доступа сообщества ВКонтакте недействителен, отозван или истек."""
+    pass
+
+
 class VkMessageClient(Protocol):
     async def send_message(
         self,
@@ -63,10 +79,26 @@ class HttpVkMessageClient:
 
         if "error" in payload:
             error = payload["error"]
+            error_code = error.get("error_code") if isinstance(error, dict) else None
             error_message = (
                 error.get("error_msg", "VK API error") if isinstance(error, dict) else str(error)
             )
-            raise RuntimeError(error_message)
+            error_lower = error_message.lower()
+            if error_code in (901, 902, 18) or any(
+                m in error_lower
+                for m in (
+                    "without permission",
+                    "privacy settings",
+                    "deactivated",
+                    "deleted or banned",
+                )
+            ):
+                raise VkPermissionRevokedError(error_message, error_code=error_code)
+
+            if error_code == 5 or "authorization failed" in error_lower:
+                raise VkTokenInvalidError(error_message, error_code=error_code)
+
+            raise VkApiError(error_message, error_code=error_code)
         return payload
 
     async def publish_wall_post(
