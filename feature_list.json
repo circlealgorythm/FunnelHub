@@ -1,7 +1,7 @@
 {
   "project": "FunnelHub & Infrastructure Security",
   "version": "1.0.0",
-  "last_updated": "2026-10-13T01:05:00+03:00",
+  "last_updated": "2026-10-13T01:26:00+03:00",
   "active_feature_id": null,
   "features": [
     {
@@ -167,10 +167,10 @@
       "title": "Таблицы, выравнивание данных и устранение CSS-конфликтов",
       "description": "Устранение дублирующегося блока lead-table-wrap, применение tabular-nums для числовых колонок (ID, телефон, даты), плавная подсветка строк таблицы.",
       "user_visible_behavior": "Колонки чисел и дат в таблице базы стоят ровно по вертикали, строки подсвечиваются мягко при наведении курсора.",
-      "status": "not-started",
+      "status": "passing",
       "dependencies": ["UI-001"],
       "verification": "1. npm run build. 2. Визуальная проверка таблицы базы лидов.",
-      "evidence": "",
+      "evidence": "1. Удален дублирующийся блок .lead-table-wrap в конце styles.css. 2. Для .lead-table настроено border-collapse: separate; border-spacing: 0; для устранения мерцания sticky-заголовков. 3. Подключен font-variant-numeric: tabular-nums для таблиц, дат, счетчиков и телефонов. 4. Разделены состояния hover (rgba(36, 72, 60, 0.04)) и selected (var(--green-soft)). 5. Сборка npm run build пройдена (2.08s, 0 ошибок). 6. init.ps1 пройден (33 теста).",
       "notes": "Устранение специфичности CSS."
     },
     {

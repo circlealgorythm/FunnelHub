@@ -68,11 +68,18 @@
   - Добавлена поддержка доступности `@media (prefers-reduced-motion: reduce)`.
   - Проверено: `npm run build` в `inbox-app` (2.29s, 0 ошибок), `init.ps1` (33 теста, код 0).
 
+- Завершен `UI-004` (Таблицы, выравнивание данных и устранение CSS-конфликтов):
+  - Удален дублирующийся блок `.lead-table-wrap`, `.lead-table th`, `.lead-table td` в конце `styles.css`.
+  - Для `.lead-table` настроено `border-collapse: separate; border-spacing: 0;` для устранения мерцания sticky-заголовков.
+  - Внедрен `font-variant-numeric: tabular-nums` для таблиц, дат, счетчиков, номеров телефонов и ID.
+  - Разделены состояния hover (`rgba(36, 72, 60, 0.04)`) и selected (`var(--green-soft)`).
+  - Проверено: `npm run build` в `inbox-app` (2.08s, 0 ошибок), `init.ps1` (33 теста, код 0).
+
 ## Still Broken or Unverified
-- Задачи SEC-001 - SEC-009 и UI-001 - UI-003 успешно выполнены и верифицированы. Ожидает старта: UI-004.
+- Задачи SEC-001 - SEC-009 и UI-001 - UI-004 успешно выполнены и верифицированы. Ожидает старта: UI-005.
 
 ## Next Best Action
-- По команде пользователя запустить UI-004 (Таблицы, выравнивание данных и устранение CSS-конфликтов).
+- По команде пользователя запустить UI-005 (Плавность ленты сообщений и уведомлений).
 
 ## Commands
 - **Windows Verify**: `powershell -ExecutionPolicy Bypass -File .\init.ps1`

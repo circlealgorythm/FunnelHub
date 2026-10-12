@@ -5,9 +5,9 @@
 - **Repository root directory**: `C:\Users\circlealgorythm\Documents\Бот воронка`
 - **Standard startup path**: `uv run uvicorn funnelhub.main:app --port 8000`
 - **Standard verification path**: `powershell -ExecutionPolicy Bypass -File .\init.ps1` (или `uv run pytest`)
-- **Active Feature**: None (awaiting user confirmation for `UI-004`)
+- **Active Feature**: None (awaiting user confirmation for `UI-005`)
 - **Current blocker**: Нет
-- **Highest priority unfinished feature**: `UI-004` (Таблицы, выравнивание данных и устранение CSS-конфликтов)
+- **Highest priority unfinished feature**: `UI-005` (Плавность ленты сообщений и уведомлений)
 - **Roadmap Artifact**: `C:\Users\circlealgorythm\.gemini\antigravity\brain\8c8ef25d-722d-42a5-a397-ea5a9c3c4356\ROADMAP_UI_POLISH.md`
 
 ---
@@ -96,15 +96,21 @@
   - Диалоги и модалки подтверждения стандартизированы с фоном `var(--surface-strong)`, границей `1px solid var(--line)`, радиусом `16px`, `max-height: calc(100dvh - 32px)` и внутренним скроллом тела.
   - Добавлена поддержка доступности `@media (prefers-reduced-motion: reduce)`.
   - Верификация: `npm run build` в `inbox-app` пройден (2.29s, 0 ошибок), `init.ps1` пройден (33 теста, код 0).
+- [x] **`UI-004` (Таблицы, выравнивание данных и устранение CSS-конфликтов)** (passing):
+  - Удален дублирующийся блок `.lead-table-wrap`, `.lead-table th`, `.lead-table td` в конце `styles.css`.
+  - Для `.lead-table` настроено `border-collapse: separate; border-spacing: 0;` для устранения мерцания sticky-заголовков в браузерах.
+  - Внедрен `font-variant-numeric: tabular-nums` для таблиц, дат, счетчиков, номеров телефонов и ID.
+  - Разделены состояния hover (`rgba(36, 72, 60, 0.04)`) и selected (`var(--green-soft)`).
+  - Верификация: `npm run build` в `inbox-app` пройден (2.08s, 0 ошибок), `init.ps1` пройден (33 теста, код 0).
 
 ### What's In Progress
-*None (awaiting user command for UI-004)*
+*None (awaiting user command for UI-005)*
 
 ### What's Next
 1. Получить команду пользователя на переход к следующей задаче дорожной карты.
-2. Взять фичу `UI-004`: Таблицы, выравнивание данных и устранение CSS-конфликтов (устранение дубликатов `lead-table-wrap`, добавление `font-variant-numeric: tabular-nums` для числовых полей, плавный hover строк таблицы).
+2. Взять фичу `UI-005`: Плавность ленты сообщений и уведомлений (микродвижение появления реплик в чате `bubble-enter`, оптимизация теней сообщений, плавный вход тоста `.toast` со сдвигом снизу).
 3. Верифицировать через `npm run build` в `inbox-app` и `init.ps1`.
-4. Зафиксировать коммит `style(UI-004)` и отчитаться пользователю.
+4. Зафиксировать коммит `style(UI-005)` и отчитаться пользователю.
 
 ---
 
