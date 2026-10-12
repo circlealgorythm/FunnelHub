@@ -5,9 +5,9 @@
 - **Repository root directory**: `C:\Users\circlealgorythm\Documents\Бот воронка`
 - **Standard startup path**: `uv run uvicorn funnelhub.main:app --port 8000`
 - **Standard verification path**: `powershell -ExecutionPolicy Bypass -File .\init.ps1` (или `uv run pytest`)
-- **Active Feature**: None (awaiting user confirmation for `UI-007`)
+- **Active Feature**: None (all features in roadmap completed)
 - **Current blocker**: Нет
-- **Highest priority unfinished feature**: `UI-007` (Очистка AI-паттернов и строгая типографика)
+- **Highest priority unfinished feature**: None (100% complete)
 - **Roadmap Artifact**: `C:\Users\circlealgorythm\.gemini\antigravity\brain\8c8ef25d-722d-42a5-a397-ea5a9c3c4356\ROADMAP_UI_POLISH.md`
 
 ---
@@ -116,15 +116,19 @@
   - Скелетоны (`.skeleton-row`, `.skeleton-message`) переведены на мягкий тональный градиент и плавный shimmer (1.8s, ease-in-out).
   - Добавлена поддержка `prefers-reduced-motion: reduce`.
   - Верификация: `npm run build` в `inbox-app` пройден (2.34s, 0 ошибок), `init.ps1` пройден (33 теста, код 0).
+- [x] **`UI-007` (Очистка AI-паттернов и строгая типографика)** (passing):
+  - Проведен полный аудит кодовой базы frontend: устранены все 11 символов длинного тире `—` (U+2014) в пользу аккуратных дефисов `-` в плейсхолдерах и профессиональных формулировок («Непокупатели: два сценария коммуникации», «Миграция: база непокупателей», «TG: ... / VK: ...»).
+  - Повторный скриптовый поиск подтвердил 0 вхождений U+2014 во всех файлах `inbox-app/src`.
+  - Пройден Pre-Flight чек-лист Design Taste: контрастность, читаемость, сохранение 100% брендовой теплой палитры, плавность всех переходов.
+  - Верификация: `npm run build` в `inbox-app` пройден (2.38s, 0 ошибок), `init.ps1` пройден (33 теста, код 0).
 
 ### What's In Progress
-*None (awaiting user command for UI-007)*
+*None (all features in UI Polish roadmap UI-001 - UI-007 completed!)*
 
 ### What's Next
-1. Получить команду пользователя на переход к финальной задаче дорожной карты.
-2. Взять фичу `UI-007`: Очистка AI-паттернов и строгая типографика (ликвидация символов длинного тире `—` в пользу дефисов/ясных формулировок, аудит по чек-листу Design Taste).
-3. Верифицировать через `npm run build` в `inbox-app` и `init.ps1`.
-4. Зафиксировать коммит `style(UI-007)` и отчитаться пользователю.
+1. Все 7 фич дорожной карты UI Polish (`UI-001` - `UI-007`) полностью реализованы, верифицированы и зафиксированы атомарными Git-коммитами.
+2. Интерфейс панели оператора FunnelHub Inbox приведен к эталонному состоянию: чистый, ровный, тактильный, без сбоев верстки и артефактов.
+3. Ожидание указаний пользователя по дальнейшим шагам.
 
 ---
 

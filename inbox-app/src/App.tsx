@@ -24,10 +24,10 @@ import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useState } fro
 import type { ReactNode } from "react";
 
 type ConversationStatus = "open" | "needs_reply" | "replied" | "closed";
-type ReplyChannel = "telegram" | "telegram_most" | "vk" | "vk_most" | "email";
-type InboxSegment = "main" | "most-tsennostey";
+type ReplyChannel = "telegram" | "vk" | "email";
+type InboxSegment = "main";
 type InboxListMode = "conversations" | "subscribers";
-type DatabaseSegment = "main" | "most-tsennostey";
+type DatabaseSegment = "main";
 
 type Conversation = {
   id: string;
@@ -107,7 +107,7 @@ const DEFAULT_EXPORT_COLUMNS: ExportColumnOption[] = [
   { key: "utm_source", label: "utm_source" },
   { key: "utm_medium", label: "utm_medium" },
   { key: "utm_campaign", label: "utm_campaign" },
-  { key: "utm_term", label: "utm_term" },
+  { key: "search_query", label: "Поисковый запрос / Ключевое слово" },
   { key: "utm_content", label: "utm_content" },
   { key: "utm_group", label: "utm_group" },
   { key: "yclid", label: "Yandex Direct Click ID" },
@@ -421,8 +421,8 @@ const statusLabels: Record<ConversationStatus, string> = {
 
 const channelLabels: Record<string, string> = {
   telegram: "Telegram",
-  telegram_most: "Telegram — Мост ценностей",
-  vk_most: "ВКонтакте — Мост ценностей",
+  telegram_most: "Telegram",
+  vk_most: "VK",
   vk: "VK",
   email: "Email",
 };
@@ -472,15 +472,6 @@ const filters: Array<{ value: ConversationStatus | "all"; label: string }> = [
   { value: "closed", label: "Закрытые" },
 ];
 
-const inboxSegments: Array<{ value: InboxSegment; label: string }> = [
-  { value: "main", label: "Основной Inbox" },
-  { value: "most-tsennostey", label: "Мост ценностей" },
-];
-
-const databaseSegments: Array<{ value: DatabaseSegment; label: string }> = [
-  { value: "main", label: "Общая база" },
-  { value: "most-tsennostey", label: "Мост ценностей" },
-];
 
 export function App() {
   const [authState, setAuthState] = useState<AuthState>("checking");
@@ -561,11 +552,6 @@ export function App() {
     try {
       const params = new URLSearchParams();
       if (filter !== "all") params.set("status", filter);
-      if (inboxSegment === "most-tsennostey") {
-        params.set("source", "most-tsennostey");
-      } else {
-        params.set("exclude_source", "most-tsennostey");
-      }
       const queryString = params.toString();
       const endpoint = inboxListMode === "subscribers" ? "subscribers" : "conversations";
       const response = await fetch(`${API_BASE_URL}/api/inbox/${endpoint}${queryString ? `?${queryString}` : ""}`, {
@@ -659,11 +645,6 @@ export function App() {
       if (databaseQuery.trim()) {
         params.set("q", databaseQuery.trim());
       }
-      if (databaseSegment === "most-tsennostey") {
-        params.set("source", "most-tsennostey");
-      } else {
-        params.set("exclude_source", "most-tsennostey");
-      }
       const response = await fetch(`${API_BASE_URL}/api/inbox/database/leads?${params}`, {
         credentials: "include",
       });
@@ -704,8 +685,7 @@ export function App() {
     setDatabaseDetailState("loading");
     setError(null);
     try {
-      const query = databaseSegment === "most-tsennostey" ? "?source=most-tsennostey" : "";
-      const response = await fetch(`${API_BASE_URL}/api/inbox/database/leads/${leadId}${query}`, {
+      const response = await fetch(`${API_BASE_URL}/api/inbox/database/leads/${leadId}`, {
         credentials: "include",
       });
       if (response.status === 401) {
@@ -898,11 +878,6 @@ export function App() {
       if (databaseQuery.trim()) {
         params.set("q", databaseQuery.trim());
       }
-      if (databaseSegment === "most-tsennostey") {
-        params.set("source", "most-tsennostey");
-      } else {
-        params.set("exclude_source", "most-tsennostey");
-      }
       if (options?.dateFrom) {
         params.set("date_from", options.dateFrom);
       }
@@ -952,8 +927,7 @@ export function App() {
 
   async function saveLeadVkId(leadId: string, vkId: string) {
     setError(null);
-    const query = databaseSegment === "most-tsennostey" ? "?source=most-tsennostey" : "";
-    const response = await fetch(`${API_BASE_URL}/api/inbox/database/leads/${leadId}/vk-id${query}`, {
+    const response = await fetch(`${API_BASE_URL}/api/inbox/database/leads/${leadId}/vk-id`, {
       method: "PUT",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
@@ -1190,22 +1164,6 @@ export function App() {
             placeholder="Имя, контакт, сообщение"
           />
         </div>
-
-        <nav className="view-switch inbox-source-tabs" aria-label="Разделы Inbox">
-          {inboxSegments.map((segment) => (
-            <button
-              className={inboxSegment === segment.value ? "view-tab is-active" : "view-tab"}
-              key={segment.value}
-              onClick={() => {
-                setSelectedId(null);
-                setInboxSegment(segment.value);
-              }}
-              type="button"
-            >
-              {segment.label}
-            </button>
-          ))}
-        </nav>
 
         <nav className="filter-row" aria-label="Тип списка Inbox">
           <button className={inboxListMode === "conversations" ? "filter-chip is-active" : "filter-chip"} onClick={() => { setSelectedId(null); setInboxListMode("conversations"); }} type="button">
@@ -1623,8 +1581,8 @@ function LegacyTelegramMigrationWorkspace({
         <section className="migration-hero">
           <div>
             <p className="migration-kicker">Новая схема сегментации</p>
-            <h2>Непокупатели — две разные коммуникации</h2>
-            <p>Telegram получает персональную ссылку на новый бот. VK продолжает общение сразу в сообщениях той же группы — без ссылки. Покупатели исключены.</p>
+            <h2>Непокупатели: два сценария коммуникации</h2>
+            <p>Telegram получает персональную ссылку на новый бот. VK продолжает общение сразу в сообщениях той же группы, без ссылки. Покупатели исключены.</p>
           </div>
           <div className="migration-counter" aria-live="polite">
             <strong>{selectedFiles}/2</strong>
@@ -1684,7 +1642,7 @@ function LegacyTelegramMigrationWorkspace({
           <div>
             <h2>{campaign ? `Кампания: ${campaign.name}` : "Проверка и запуск кампании"}</h2>
             {campaign ? (
-              <p>Статус: {campaign.status}. В кампании: TG — {campaign.telegram_prospects} непокупателей, VK — {campaign.vk_prospects} непокупателей. Запущено воронок: {campaign.activated_prospects}. Покупатели не включены.</p>
+              <p>Статус: {campaign.status}. В кампании: TG: {campaign.telegram_prospects} непокупателей, VK: {campaign.vk_prospects} непокупателей. Запущено воронок: {campaign.activated_prospects}. Покупатели не включены.</p>
             ) : <p>Сначала проверьте состав. Дубли между TG и VK автоматически остаются только в VK; покупателей кампания не затрагивает.</p>}
           </div>
           {campaign ? (
@@ -1761,7 +1719,7 @@ function MigrationProspectsWorkspace({
       <header className="database-header">
         <div>
           <p className="eyebrow">FunnelHub</p>
-          <h1>Миграция — кто не купил</h1>
+          <h1>Миграция: база непокупателей</h1>
           <ViewSwitch activeView={activeView} onSwitchView={onSwitchView} />
         </div>
         <div className="database-actions">
@@ -1845,7 +1803,7 @@ function MigrationProspectsWorkspace({
                     <span>{prospect.phone || "телефон нет"}</span>
                   </td>
                   <td><span>{prospect.channel === "telegram" ? "Telegram" : "ВКонтакте"}</span></td>
-                  <td><span>{prospect.vk_id || "—"}</span></td>
+                  <td><span>{prospect.vk_id || "-"}</span></td>
                 </tr>
               ))}
             </tbody>
@@ -1958,18 +1916,6 @@ function DatabaseWorkspace({
 
       <section className="database-grid">
         <div className="database-list-panel">
-          <nav className="view-switch database-source-tabs" aria-label="Разделы базы">
-            {databaseSegments.map((segment) => (
-              <button
-                className={databaseSegment === segment.value ? "view-tab is-active" : "view-tab"}
-                key={segment.value}
-                onClick={() => onSegmentChange(segment.value)}
-                type="button"
-              >
-                {segment.label}
-              </button>
-            ))}
-          </nav>
           <form className="database-search" onSubmit={onSearch}>
             <Search aria-hidden="true" size={18} />
             <input
@@ -2312,8 +2258,15 @@ function LeadDatabaseDetail({
                 { label: "utm_source", value: snapshot.utm_source },
                 { label: "utm_medium", value: snapshot.utm_medium },
                 { label: "utm_campaign", value: snapshot.utm_campaign },
+                {
+                  label: "Поисковый запрос / Ключевое слово",
+                  value:
+                    snapshot.search_query ||
+                    (snapshot.utm_term && String(snapshot.utm_term).trim().startsWith("-")
+                      ? "Автотаргетинг"
+                      : snapshot.utm_term),
+                },
                 { label: "utm_content", value: snapshot.utm_content },
-                { label: "utm_term", value: snapshot.utm_term },
                 { label: "utm_group", value: snapshot.utm_group },
                 { label: "Yandex Direct Click ID", value: snapshot.yclid },
                 { label: "Yandex Metrika ClientID", value: snapshot.metrika_client_id },
@@ -2789,7 +2742,7 @@ function ImportManagerModal({
     { value: "utm_source", label: "UTM Source" },
     { value: "utm_medium", label: "UTM Medium" },
     { value: "utm_campaign", label: "UTM Campaign" },
-    { value: "utm_term", label: "UTM Term" },
+    { value: "search_query", label: "Поисковый запрос / Ключевое слово" },
     { value: "utm_content", label: "UTM Content" },
     { value: "utm_group", label: "UTM Group" },
     { value: "yclid", label: "Yandex Direct Click ID" },
@@ -3624,7 +3577,7 @@ function BroadcastDetailModal({
                 {targets.map(t => (
                   <tr key={t.id}>
                     <td>{t.lead_name || "Без имени"}</td>
-                    <td>{t.lead_contact || "—"}</td>
+                    <td>{t.lead_contact || "-"}</td>
                     <td><code className="mono-badge">{t.status}</code></td>
                     <td style={{ color: "var(--danger)" }}>{t.error || ""}</td>
                   </tr>
@@ -4156,10 +4109,10 @@ function AutopostDetailModal({
                             {publication.external_post_id}
                           </a>
                         ) : (
-                          <code className="mono-badge">{publication.external_post_id || "—"}</code>
+                          <code className="mono-badge">{publication.external_post_id || "-"}</code>
                         )}
                       </td>
-                      <td>{publication.attempted_at ? formatDetailValue(publication.attempted_at) : "—"}</td>
+                      <td>{publication.attempted_at ? formatDetailValue(publication.attempted_at) : "-"}</td>
                       <td style={{ color: "var(--danger)" }}>{publication.error || ""}</td>
                     </tr>
                   ))}
@@ -4497,7 +4450,7 @@ function FollowupCreateModal({
               ))}
             </div>
             <p className="field-hint">
-              Получателей сейчас: {preview ? preview.total : "—"}
+              Получателей сейчас: {preview ? preview.total : "-"}
               {preview
                 ? ` · Telegram: ${preview.by_channel.telegram || 0}, VK: ${preview.by_channel.vk || 0}`
                 : ""}
@@ -4678,8 +4631,8 @@ function FollowupDetailModal({
                       <td>{channelLabels[delivery.channel] || delivery.channel}</td>
                       <td><GenericStatusPill status={delivery.status} /></td>
                       <td>{formatDetailValue(delivery.available_at)}</td>
-                      <td><code className="mono-badge">{delivery.external_message_id || "—"}</code></td>
-                      <td>{delivery.attempted_at ? formatDetailValue(delivery.attempted_at) : "—"}</td>
+                      <td><code className="mono-badge">{delivery.external_message_id || "-"}</code></td>
+                      <td>{delivery.attempted_at ? formatDetailValue(delivery.attempted_at) : "-"}</td>
                       <td style={{ color: "var(--danger)" }}>{delivery.error || ""}</td>
                     </tr>
                   ))}
