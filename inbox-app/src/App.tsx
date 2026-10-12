@@ -492,7 +492,7 @@ export function App() {
   const [databaseQuery, setDatabaseQuery] = useState("");
   const [databaseSegment, setDatabaseSegment] = useState<DatabaseSegment>("main");
   const [databaseList, setDatabaseList] = useState<DatabaseLeadList | null>(null);
-  const [databasePageSize, setDatabasePageSize] = useState<DatabasePageSize>(20);
+  const [databasePageSize, setDatabasePageSize] = useState<DatabasePageSize>(50);
   const [databaseOffset, setDatabaseOffset] = useState(0);
   const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
   const [selectedLeadDetail, setSelectedLeadDetail] = useState<DatabaseLeadDetail | null>(null);
@@ -2144,7 +2144,7 @@ function LeadDatabaseDetail({
         </div>
       </div>
 
-      <DetailSection count={detail.bot_links.length} defaultOpen title="Ссылки на ботов">
+      <DetailSection count={detail.bot_links.length} title="Ссылки на ботов">
         <form className="vk-id-form" onSubmit={(event) => void submitVkId(event)}>
           <label htmlFor={`vk-id-${detail.lead.id}`}>VK-ID</label>
           <div>
@@ -2213,7 +2213,7 @@ function LeadDatabaseDetail({
         <KeyValueRows items={detail.profile_fields} />
       </DetailSection>
 
-      <DetailSection count={detail.contacts.length} defaultOpen title="Контакты">
+      <DetailSection count={detail.contacts.length} title="Контакты">
         {detail.contacts.length === 0 ? <p>Контактов нет.</p> : null}
         {detail.contacts.map((contact, index) => (
           <KeyValueLine
@@ -2224,7 +2224,7 @@ function LeadDatabaseDetail({
         ))}
       </DetailSection>
 
-      <DetailSection count={detail.identities.length} defaultOpen title="Мессенджеры">
+      <DetailSection count={detail.identities.length} title="Мессенджеры">
         {detail.identities.length === 0 ? <p>Мессенджеры не привязаны.</p> : null}
         {detail.identities.map((identity, index) => (
           <KeyValueLine
@@ -2290,7 +2290,7 @@ function LeadDatabaseDetail({
         </div>
       </DetailSection>
 
-      <DetailSection count={detail.consents.length} defaultOpen title="Согласия">
+      <DetailSection count={detail.consents.length} title="Согласия">
         {detail.consents.length === 0 ? <p>Согласий нет.</p> : null}
         {detail.consents.map((consent) => (
           <KeyValueLine
@@ -2312,7 +2312,7 @@ function LeadDatabaseDetail({
         ))}
       </DetailSection>
 
-      <DetailSection count={detail.funnel_states.length} title="Воронка">
+      <DetailSection count={detail.funnel_states.length} defaultOpen title="Воронка">
         {detail.funnel_states.length === 0 ? <p>Нет активных состояний.</p> : null}
         <div className="funnel-state-list">
           {detail.funnel_states.map((state, index) => (
