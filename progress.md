@@ -5,9 +5,9 @@
 - **Repository root directory**: `C:\Users\circlealgorythm\Documents\Бот воронка`
 - **Standard startup path**: `uv run uvicorn funnelhub.main:app --port 8000`
 - **Standard verification path**: `powershell -ExecutionPolicy Bypass -File .\init.ps1` (или `uv run pytest`)
-- **Active Feature**: Нет (SEC-005 завершена, готов к SEC-006)
+- **Active Feature**: Нет (Все задачи SEC-001 - SEC-006 завершены!)
 - **Current blocker**: Нет
-- **Highest priority unfinished feature**: `SEC-006` (Бастионирование хоста VPS: SSH, UFW, Fail2ban)
+- **Highest priority unfinished feature**: Нет (Все запланированные фичи в статусе passing)
 
 ---
 
@@ -50,14 +50,18 @@
   - Настройки резервного копирования задокументированы в `.env.example`.
   - Написан комплект тестов `tests/test_backup_scripts.py` (4 unit-теста).
   - Верификация: `pytest` (11 тестов пройдено), `ruff check` пройден, `init.ps1` пройден (код 0).
+- [x] **`SEC-006` (Бастионирование хоста VPS: SSH, UFW, Fail2ban)** (passing):
+  - Разработан скрипт `scripts/harden-host.sh`: принудительный протокол безопасности Zero-Lockout (проверка наличия загруженных SSH-ключей перед запретом паролей), настройка фаервола UFW (открыты только 22, 80, 443; все остальные входящие порты заблокированы), развертывание Fail2ban (бан на 24ч при 3 ошибках входа SSH), безопасный reload SSH через предварительный `sshd -t`.
+  - Подготовлено детальное руководство `scripts/HOST_SECURITY.md` с командами проверки, мониторинга и разблокировки IP.
+  - Разработан комплект тестов `tests/test_host_security.py` (2 unit-теста).
+  - Верификация: `pytest` (13 тестов пройдено), `ruff check` пройден, `init.ps1` пройден (код 0).
 
 ### What's In Progress
-- [ ] Ожидание команды пользователя на старт `SEC-006`.
+- [ ] Все задачи дорожной карты выполнены на 100%.
 
 ### What's Next
-1. Взять фичу `SEC-006`: Бастионирование хоста VPS (SSH hardening, UFW firewall rules, Fail2ban configuration).
-2. Подготовить исполняемый скрипт и руководство по настройке безопасности ОС.
-3. Дождаться подтверждения пользователя.
+1. Фиксация изменений `SEC-006` в Git.
+2. Предоставление сводного отчета и инструкции по безопасной выкатке на прод.
 
 ---
 

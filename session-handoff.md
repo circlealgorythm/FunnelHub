@@ -27,12 +27,16 @@
   - Настройки задокументированы в `.env.example`, дампы изолированы в `.gitignore`.
   - Написаны тесты в `tests/test_backup_scripts.py` (4 теста).
 
+- Завершен `SEC-006` (Бастионирование хоста VPS: SSH, UFW, Fail2ban):
+  - Разработан скрипт периметра `scripts/harden-host.sh` с протоколом Zero-Lockout.
+  - Написано руководство оператора `scripts/HOST_SECURITY.md`.
+  - Покрыто unit-тестами в `tests/test_host_security.py` (2 теста).
+
 ## Still Broken or Unverified
-- Задача безопасности `SEC-006` в статусе `not-started`.
+- Все 6 задач дорожной карты безопасности (SEC-001 — SEC-006) успешно выполнены и верифицированы!
 
 ## Next Best Action
-- Взять в работу задачу `SEC-006` (Бастионирование хоста VPS: SSH, UFW, Fail2ban).
-- Не трогать другие компоненты до завершения и верификации `SEC-006`.
+- Выкатка обновлений на продакшен-сервер (VPS) по чек-листу.
 
 ## Commands
 - **Windows Verify**: `powershell -ExecutionPolicy Bypass -File .\init.ps1`
