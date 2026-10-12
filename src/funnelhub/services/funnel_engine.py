@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -14,6 +15,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from funnelhub.db.models import FunnelState
+
+logger = logging.getLogger(__name__)
 
 SUPPORTED_CHANNELS = {"messenger", "telegram", "telegram_most", "vk", "vk_most", "email"}
 FUNNEL_LOCAL_TIMEZONE = timezone(timedelta(hours=3), name="Europe/Moscow")
@@ -181,6 +184,8 @@ async def get_due_funnel_states(
     now: datetime | None = None,
     limit: int = 100,
     funnel_key: str | None = None,
+    for_update: bool = False,
+    skip_locked: bool = False,
 ) -> Sequence[FunnelState]:
     current_time = normalize_datetime(now)
     query = (
@@ -195,6 +200,9 @@ async def get_due_funnel_states(
     )
     if funnel_key is not None:
         query = query.where(FunnelState.funnel_key == funnel_key)
+
+    if for_update:
+        query = query.with_for_update(skip_locked=skip_locked)
 
     result = await session.scalars(
         query,
@@ -245,6 +253,43 @@ async def run_due_funnel_step(
             )
         await session.flush()
         return None
+
+    # Idempotency guard: prevent duplicate send if step was already sent
+    if metadata.get("last_sent_step_key") == step.key:
+        logger.warning(
+            "Idempotency guard: step '%s' was already sent for state '%s'. Skipping.",
+            step.key,
+            state.id,
+        )
+        return None
+
+    # Worker claiming / in-flight send attempt model:
+    # If this step is marked in-flight within claim TTL (300s), skip to avoid race conditions.
+    in_flight_claims = dict(metadata.get("in_flight_send_attempts") or {})
+    if step.key in in_flight_claims:
+        claim_time_str = in_flight_claims[step.key]
+        try:
+            claim_time = datetime.fromisoformat(claim_time_str)
+            if (current_time - claim_time).total_seconds() < 300:
+                logger.warning(
+                    "Worker claiming guard: step '%s' is in-flight for state '%s'. Skipping.",
+                    step.key,
+                    state.id,
+                )
+                return None
+        except Exception:
+            pass
+
+    # Record in-flight claim before sending
+    in_flight_claims[step.key] = current_time.isoformat()
+    metadata["in_flight_send_attempts"] = in_flight_claims
+    state.metadata_ = build_state_metadata(
+        definition=definition,
+        step_index=step_index,
+        existing_metadata=metadata,
+    )
+    await session.flush()
+
     send_step = step_with_question_option_buttons(definition, step)
     await sender.send(
         FunnelStepSend(
@@ -256,6 +301,10 @@ async def run_due_funnel_step(
         )
     )
     metadata["last_sent_step_key"] = step.key
+    # Clear in-flight claim once delivery attempt succeeds
+    in_flight_claims = dict(metadata.get("in_flight_send_attempts") or {})
+    in_flight_claims.pop(step.key, None)
+    metadata["in_flight_send_attempts"] = in_flight_claims
     if step.kind == "question" and step.question_key is not None:
         metadata["pending_question_key"] = step.question_key
         metadata["last_question_sent_at"] = current_time.isoformat()

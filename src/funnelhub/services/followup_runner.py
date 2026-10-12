@@ -53,6 +53,7 @@ async def run_due_followup_posts_once(
                 FunnelFollowupDelivery.available_at.asc(),
                 FunnelFollowupDelivery.created_at.asc(),
             )
+            .with_for_update(of=FunnelFollowupDelivery, skip_locked=True)
             .limit(limit)
         )
     ).all()

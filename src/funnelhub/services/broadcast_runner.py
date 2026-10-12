@@ -62,10 +62,15 @@ async def run_due_broadcasts_once(
         broadcast.status = "processing"
         await session.flush()
 
-    target_stmt = select(BroadcastTarget).where(
-        BroadcastTarget.broadcast_id == broadcast.id,
-        BroadcastTarget.status == "pending",
-    ).limit(limit)
+    target_stmt = (
+        select(BroadcastTarget)
+        .where(
+            BroadcastTarget.broadcast_id == broadcast.id,
+            BroadcastTarget.status == "pending",
+        )
+        .with_for_update(skip_locked=True)
+        .limit(limit)
+    )
     targets = (await session.scalars(target_stmt)).all()
 
     if not targets:

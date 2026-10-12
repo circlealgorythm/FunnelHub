@@ -313,6 +313,8 @@ async def run_due_funnel_once(
         now=now,
         limit=limit,
         funnel_key=definition.key,
+        for_update=True,
+        skip_locked=True,
     )
     sender = MessengerFunnelStepSender(
         session=session,
@@ -335,7 +337,11 @@ async def run_due_funnel_once(
 
     for state_id in state_ids:
         try:
-            state = await session.get(FunnelState, state_id)
+            state = await session.scalar(
+                select(FunnelState)
+                .where(FunnelState.id == state_id)
+                .with_for_update(skip_locked=True)
+            )
             if state is None:
                 skipped += 1
                 continue
