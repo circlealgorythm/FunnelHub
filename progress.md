@@ -5,9 +5,9 @@
 - **Repository root directory**: `C:\Users\circlealgorythm\Documents\Бот воронка`
 - **Standard startup path**: `uv run uvicorn funnelhub.main:app --port 8000`
 - **Standard verification path**: `powershell -ExecutionPolicy Bypass -File .\init.ps1` (или `uv run pytest`)
-- **Active Feature**: Нет (SEC-003 завершена, готов к SEC-004)
+- **Active Feature**: Нет (SEC-004 завершена, готов к SEC-005)
 - **Current blocker**: Нет
-- **Highest priority unfinished feature**: `SEC-004` (Харденинг Reverse Proxy Caddy и заголовки безопасности)
+- **Highest priority unfinished feature**: `SEC-005` (Автоматизированное шифрованное резервное копирование БД)
 
 ---
 
@@ -35,14 +35,21 @@
   - Написан unit-тест `test_login_rate_limiting` в `tests/test_auth.py`, проверяющий блокировку 429 Too Many Requests при превышении лимита. Все 6 тестов auth пройдены успешно.
   - В `.env.example` задокументирован параметр лимита и рекомендация по включению `GETCOURSE_WEBHOOK_SECRET_REQUIRED=true` на проде.
   - Верификация: `ruff check` и `init.ps1` завершились успешно (код 0).
+- [x] **`SEC-004` (Харденинг Reverse Proxy Caddy и заголовки безопасности)** (passing):
+  - В `Caddyfile` добавлен лимит размера тела запроса `request_body { max_size 15MB }` (защита от DoS и переполнения памяти без ущерба для заявок клиентов и картинок автопостинга).
+  - Настроены строгие security headers: `Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"`, `X-Content-Type-Options "nosniff"`, `X-Frame-Options "SAMEORIGIN"`, `Referrer-Policy "strict-origin-when-cross-origin"`, `Permissions-Policy`.
+  - Включено удаление заголовка `-Server` для сокрытия идентификатора Caddy/uvicorn.
+  - Добавлено сжатие ответов `encode zstd gzip`.
+  - Написан unit-тест `tests/test_caddyfile.py`, проверяющий баланс скобок и наличие всех защитных директив.
+  - Верификация: `tests/test_caddyfile.py` пройден, `ruff check` пройден, `init.ps1` пройден (код 0).
 
 ### What's In Progress
-- [ ] Ожидание команды пользователя на старт `SEC-004`.
+- [ ] Ожидание команды пользователя на старт `SEC-005`.
 
 ### What's Next
-1. Взять фичу `SEC-004`: харденинг Reverse Proxy Caddy и добавление security headers (HSTS, CSP, X-Frame-Options, лимит тела запроса 15MB).
-2. Проверить синтаксис Caddyfile.
-3. Дождаться подтверждения пользователя перед переходом к `SEC-005`.
+1. Взять фичу `SEC-005`: автоматизированное шифрованное резервное копирование БД (скрипт `backup-db.sh`, GPG-шифрование, ротация 14 дней).
+2. Проверить синтаксис и выполнить тестовый прогон скрипта создания дампа.
+3. Дождаться подтверждения пользователя перед переходом к `SEC-006`.
 
 ---
 

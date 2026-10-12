@@ -1,3 +1,33 @@
 bot.aisukam.ru {
+	# Ограничение размера тела входящего запроса (защита от DoS и переполнения памяти)
+	request_body {
+		max_size 15MB
+	}
+
+	# Сжатие трафика для оптимизации передачи данных
+	encode zstd gzip
+
+	# Заголовки безопасности
+	header {
+		# Форсирование HTTPS (HSTS) на 1 год с поддоменами и preload
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+
+		# Защита от MIME-sniffing
+		X-Content-Type-Options "nosniff"
+
+		# Защита от Clickjacking
+		X-Frame-Options "SAMEORIGIN"
+
+		# Защита от утечки параметров URL
+		Referrer-Policy "strict-origin-when-cross-origin"
+
+		# Отключение неиспользуемых браузерных API
+		Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()"
+
+		# Скрытие сигнатуры сервера
+		-Server
+	}
+
+	# Проксирование входящих запросов в сервис FunnelHub FastAPI
 	reverse_proxy 127.0.0.1:8000
 }

@@ -16,14 +16,17 @@
   - Внедрен Rate Limiter на `/api/auth/login` (отсечка брутфорса и защита CPU до вызова PBKDF2).
   - Покрыто unit-тестами в `test_auth.py` (HTTP 429 Too Many Requests).
   - Задокументированы параметры лимита и вебхуков в `.env.example`.
-- Зафиксированы правила Harness в `AGENTS.md` (включая Zero-Regression Protocol).
+- Зафиксированы правила Harness в `AGENTS.md` (включая Zero-Regression Protocol и обязательный атомарный Git-коммит).
+- Завершен `SEC-004` (Харденинг Reverse Proxy Caddy и заголовки безопасности):
+  - `Caddyfile` усилен защитой от DoS (`request_body max_size 15MB`), включено удаление сигнатуры `-Server` и добавлены заголовки `HSTS`, `X-Content-Type-Options`, `X-Frame-Options SAMEORIGIN`, `Referrer-Policy`, `Permissions-Policy`.
+  - Покрыт тестами в `tests/test_caddyfile.py`.
 
 ## Still Broken or Unverified
-- Задачи безопасности `SEC-004` - `SEC-006` в статусе `not-started`.
+- Задачи безопасности `SEC-005` и `SEC-006` в статусе `not-started`.
 
 ## Next Best Action
-- Взять в работу задачу `SEC-004` (Харденинг Reverse Proxy Caddy и заголовки безопасности).
-- Не трогать другие компоненты до завершения и верификации `SEC-004`.
+- Взять в работу задачу `SEC-005` (Автоматизированное шифрованное резервное копирование БД).
+- Не трогать другие компоненты до завершения и верификации `SEC-005`.
 
 ## Commands
 - **Windows Verify**: `powershell -ExecutionPolicy Bypass -File .\init.ps1`

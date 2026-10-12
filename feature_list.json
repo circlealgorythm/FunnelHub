@@ -50,10 +50,10 @@
       "title": "Харденинг Reverse Proxy Caddy и заголовки безопасности",
       "description": "Настройка безопасных HTTP-заголовков (HSTS, X-Content-Type-Options, X-Frame-Options, Referrer-Policy, Permissions-Policy) и лимита размера запросов в Caddyfile.",
       "user_visible_behavior": "Сервер отдает строгие security headers, предотвращая кликджекинг, MIME-sniffing и переполнение памяти большими телами запросов.",
-      "status": "not-started",
+      "status": "passing",
       "dependencies": [],
       "verification": "1. Проверить корректность синтаксиса Caddyfile. 2. Проверить отдачу заголовков через curl -I.",
-      "evidence": "",
+      "evidence": "1. В Caddyfile добавлен лимит request_body max_size 15MB. 2. Добавлены security headers: HSTS (max-age 1 год), X-Content-Type-Options nosniff, X-Frame-Options SAMEORIGIN, Referrer-Policy strict-origin-when-cross-origin, Permissions-Policy. 3. Настроено скрытие заголовка Server (-Server). 4. Добавлено сжатие encode zstd gzip. 5. Создан и успешно пройден unit-тест tests/test_caddyfile.py. 6. init.ps1 и ruff check завершились кодом 0.",
       "notes": "Базовый гигиенический уровень веб-безопасности."
     },
     {
