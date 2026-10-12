@@ -5,9 +5,9 @@
 - **Repository root directory**: `C:\Users\circlealgorythm\Documents\Бот воронка`
 - **Standard startup path**: `uv run uvicorn funnelhub.main:app --port 8000`
 - **Standard verification path**: `powershell -ExecutionPolicy Bypass -File .\init.ps1` (или `uv run pytest`)
-- **Active Feature**: `UI-002` (Тактильный отклик интерактивных элементов: :active & Focus)
+- **Active Feature**: Нет (UI-002 завершена, готов к UI-003)
 - **Current blocker**: Нет
-- **Highest priority unfinished feature**: `UI-002`
+- **Highest priority unfinished feature**: `UI-003` (Унификация и кинематика модальных окон)
 - **Roadmap Artifact**: `C:\Users\circlealgorythm\.gemini\antigravity\brain\8c8ef25d-722d-42a5-a397-ea5a9c3c4356\ROADMAP_UI_POLISH.md`
 
 ---
@@ -79,13 +79,20 @@
   - Устранены все `transition: all` из глобальных стилей в пользу конкретных композитных свойств.
   - Верификация: `npm run build` в `inbox-app` пройден (2.40s, 0 ошибок), `init.ps1` пройден (код 0).
 
+- [x] **`UI-002` (Тактильный отклик интерактивных элементов: :active & Focus)** (passing):
+  - Внедрен физический отклик `:active { transform: scale(0.97) }` для всех кнопок (`.icon-button`, `.soft-button`, `.send-button`, `.login-button`, `.export-quick-btn`), табов (`.view-tab`), фильтров (`.filter-chip`).
+  - Добавлен мягкий отклик `:active { transform: scale(0.99) }` для списка диалогов (`.conversation-item`) и `.reply-target` (`scale(0.98)`).
+  - Настроена доступная фокус-система: подавление очертания при клике мышью (`:focus:not(:focus-visible)`) и четкий фокус-ринг `outline: 2px solid var(--plum); outline-offset: 2px` при навигации с клавиатуры.
+  - Настроен подсвет полей поиска (`.search-field:focus-within`, `.database-search:focus-within`) и полей модальных окон через `var(--plum)`.
+  - Верификация: `npm run build` в `inbox-app` пройден (2.18s, 0 ошибок), `init.ps1` пройден (28 тестов, код 0).
+
 ### What's In Progress
-- [ ] Ожидание команды пользователя на старт `SEC-009` (Харденинг Prod CORS и fail-closed обработка VK).
+- [ ] Ожидание команды пользователя на старт `UI-003`.
 
 ### What's Next
-1. Взять фичу `SEC-009`: Вынос разрешенных origin CORS в настройки окружения и реализация fail-closed обработки ошибок при сбоях отправки в ВКонтакте.
-2. Верифицировать через `pytest` и `init.ps1`.
-3. Сделать атомарный git-коммит `security(SEC-009): ...`.
+1. Взять фичу `UI-003`: Унификация и кинематика модальных окон (Modal Architecture & Entrance Animations — слияние дубликатов, анимация входа оверлея и скейла карточки).
+2. Верифицировать через `npm run build` в `inbox-app`.
+3. Дождаться подтверждения пользователя перед переходом к `UI-004`.
 
 ---
 

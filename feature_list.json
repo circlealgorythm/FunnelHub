@@ -1,8 +1,8 @@
 {
   "project": "FunnelHub & Infrastructure Security",
   "version": "1.0.0",
-  "last_updated": "2026-10-13T00:52:00+03:00",
-  "active_feature_id": null,
+  "last_updated": "2026-10-13T00:55:00+03:00",
+  "active_feature_id": "SEC-009",
   "features": [
     {
       "id": "SEC-001",
@@ -115,7 +115,7 @@
       "title": "Харденинг Prod CORS и безопасная обработка сбоев VK (Fail-closed)",
       "description": "Вынос разрешенных origin CORS в настройки окружения и реализация fail-closed обработки ошибок при сбоях отправки в ВКонтакте (блокировка бота, отзыв токена).",
       "user_visible_behavior": "CORS в продакшене разрешает запросы только с доверенных доменов; сбои доставки VK не приводят к зависанию очередей воркера.",
-      "status": "not-started",
+      "status": "in-progress",
       "dependencies": [],
       "verification": "1. Тест CORS с разрешенными и неразрешенными origin. 2. Тест fail-closed поведения при ошибках VK.",
       "evidence": "",
