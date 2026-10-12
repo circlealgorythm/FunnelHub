@@ -5,9 +5,9 @@
 - **Repository root directory**: `C:\Users\circlealgorythm\Documents\Бот воронка`
 - **Standard startup path**: `uv run uvicorn funnelhub.main:app --port 8000`
 - **Standard verification path**: `powershell -ExecutionPolicy Bypass -File .\init.ps1` (или `uv run pytest`)
-- **Active Feature**: None (awaiting user confirmation for `UI-006`)
+- **Active Feature**: None (awaiting user confirmation for `UI-007`)
 - **Current blocker**: Нет
-- **Highest priority unfinished feature**: `UI-006` (Состояния форм, плавная валидация и аккордеоны)
+- **Highest priority unfinished feature**: `UI-007` (Очистка AI-паттернов и строгая типографика)
 - **Roadmap Artifact**: `C:\Users\circlealgorythm\.gemini\antigravity\brain\8c8ef25d-722d-42a5-a397-ea5a9c3c4356\ROADMAP_UI_POLISH.md`
 
 ---
@@ -109,15 +109,22 @@
   - Реализован плавный вход тостов `@keyframes toast-slide-up` (240ms, translateY(12px) -> 0), подключен `z-index: var(--z-toast)` и скругление 12px.
   - Добавлена поддержка доступности `@media (prefers-reduced-motion: reduce)`.
   - Верификация: `npm run build` в `inbox-app` пройден (2.38s, 0 ошибок), `init.ps1` пройден (33 теста, код 0).
+- [x] **`UI-006` (Состояния форм, плавная валидация и аккордеоны)** (passing):
+  - Реализованы правила псевдоклассов `:user-invalid` и `:user-valid` (Modern Web Guidance), предотвращающие преждевременное окрашивание незаполненных полей до взаимодействия.
+  - Настроен плавный фокус и мягкая подсветка для textarea поля ответа оператора.
+  - Аккордеоны `details`/`summary` получили плавный hover, `:focus-visible` ринг и анимацию входа содержимого `@keyframes details-body-fade` (120ms).
+  - Скелетоны (`.skeleton-row`, `.skeleton-message`) переведены на мягкий тональный градиент и плавный shimmer (1.8s, ease-in-out).
+  - Добавлена поддержка `prefers-reduced-motion: reduce`.
+  - Верификация: `npm run build` в `inbox-app` пройден (2.34s, 0 ошибок), `init.ps1` пройден (33 теста, код 0).
 
 ### What's In Progress
-*None (awaiting user command for UI-006)*
+*None (awaiting user command for UI-007)*
 
 ### What's Next
-1. Получить команду пользователя на переход к следующей задаче дорожной карты.
-2. Взять фичу `UI-006`: Состояния форм, плавная валидация и аккордеоны (интеграция `:user-invalid` и `:user-valid` для полей ввода, плавное раскрытие `details`/аккордеонов, мягкий шиммер скелетонов).
+1. Получить команду пользователя на переход к финальной задаче дорожной карты.
+2. Взять фичу `UI-007`: Очистка AI-паттернов и строгая типографика (ликвидация символов длинного тире `—` в пользу дефисов/ясных формулировок, аудит по чек-листу Design Taste).
 3. Верифицировать через `npm run build` в `inbox-app` и `init.ps1`.
-4. Зафиксировать коммит `style(UI-006)` и отчитаться пользователю.
+4. Зафиксировать коммит `style(UI-007)` и отчитаться пользователю.
 
 ---
 

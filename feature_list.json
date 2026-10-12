@@ -1,7 +1,7 @@
 {
   "project": "FunnelHub & Infrastructure Security",
   "version": "1.0.0",
-  "last_updated": "2026-10-13T01:31:00+03:00",
+  "last_updated": "2026-10-13T01:36:00+03:00",
   "active_feature_id": null,
   "features": [
     {
@@ -193,10 +193,10 @@
       "title": "Состояния форм, плавная валидация и аккордеоны",
       "description": "Интеграция :user-invalid и :user-valid для полей ввода, непрерывное плавное раскрытие details-секций, мягкий шиммер скелетонов.",
       "user_visible_behavior": "Ошибки в полях не появляются преждевременно; блоки свойств лида раскрываются плавно; скелетоны мерцают мягко без стробоскопа.",
-      "status": "not-started",
+      "status": "passing",
       "dependencies": ["UI-001"],
       "verification": "1. npm run build. 2. Проверка аккордеонов и форм в модалках.",
-      "evidence": "",
+      "evidence": "1. Реализованы правила псевдоклассов :user-invalid и :user-valid (Modern Web Guidance), предотвращающие преждевременное окрашивание незаполненных полей до взаимодействия. 2. Настроен плавный фокус и подсветка для textarea поля ответа оператора. 3. Аккордеоны details/summary получили плавный hover, :focus-visible ринг и анимацию входа содержимого @keyframes details-body-fade (120ms). 4. Скелетоны (.skeleton-row, .skeleton-message) переведены на мягкий тональный градиент и плавный shimmer (1.8s, ease-in-out). 5. Добавлена поддержка prefers-reduced-motion: reduce. 6. npm run build собран успешно (2.34s, 0 ошибок). 7. init.ps1 пройден (33 теста).",
       "notes": "Modern Web Guidance: required-field-feedback."
     },
     {

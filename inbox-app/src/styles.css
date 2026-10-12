@@ -754,6 +754,15 @@ h2 {
   color: var(--ink);
   line-height: 1.45;
   padding: 12px 14px;
+  transition: border-color var(--duration-fast) var(--ease-out),
+              box-shadow var(--duration-fast) var(--ease-out),
+              background-color var(--duration-fast) var(--ease-out);
+}
+
+.reply-box textarea:focus {
+  outline: none;
+  border-color: var(--plum);
+  box-shadow: 0 0 0 3px rgba(86, 52, 82, 0.14);
 }
 
 .send-button {
@@ -1246,8 +1255,21 @@ h2 {
   padding: 13px;
 }
 
+/* --- Accordion Details & Motion (UI-006) --- */
+@keyframes details-body-fade {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .detail-section {
   overflow: hidden;
+  border-radius: 10px;
 }
 
 .detail-section summary {
@@ -1256,9 +1278,21 @@ h2 {
   justify-content: space-between;
   gap: 10px;
   min-height: 44px;
-  padding: 11px 13px;
+  padding: 11px 14px;
   cursor: pointer;
   list-style: none;
+  user-select: none;
+  border-radius: 8px;
+  transition: background-color var(--duration-fast) var(--ease-out);
+}
+
+.detail-section summary:hover {
+  background: rgba(36, 72, 60, 0.03);
+}
+
+.detail-section summary:focus-visible {
+  outline: 2px solid var(--plum);
+  outline-offset: -2px;
 }
 
 .detail-section summary::-webkit-details-marker {
@@ -1296,11 +1330,13 @@ h2 {
   font-size: 11px;
   margin-left: 7px;
   padding: 0 6px;
+  font-variant-numeric: tabular-nums;
 }
 
 .detail-section-body {
   border-top: 1px solid var(--line);
-  padding: 12px 13px 13px;
+  padding: 13px 14px 14px;
+  animation: details-body-fade var(--duration-fast) var(--ease-out) forwards;
 }
 
 .detail-stats strong {
@@ -1534,12 +1570,27 @@ h2 {
   white-space: pre-wrap;
 }
 
+/* --- Soft Skeleton Shimmer (UI-006) --- */
+@keyframes shimmer {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: -100% 0;
+  }
+}
+
 .skeleton-row,
 .skeleton-message {
-  border-radius: 8px;
-  background: linear-gradient(90deg, #ece6dc, #fffdf8, #ece6dc);
-  background-size: 220% 100%;
-  animation: shimmer 1.2s infinite linear;
+  border-radius: 10px;
+  background: linear-gradient(
+    90deg,
+    rgba(235, 230, 222, 0.45) 0%,
+    rgba(255, 253, 248, 0.85) 50%,
+    rgba(235, 230, 222, 0.45) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.8s var(--ease-in-out) infinite;
 }
 
 .skeleton-row {
@@ -1563,12 +1614,6 @@ h2 {
   overflow: hidden;
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
-}
-
-@keyframes shimmer {
-  to {
-    background-position: -220% 0;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1937,6 +1982,27 @@ h2 {
   gap: 20px;
 }
 
+/* --- Form Validation States: User Feedback (UI-006) --- */
+input:user-invalid,
+select:user-invalid,
+textarea:user-invalid {
+  border-color: #a8423f !important;
+  background-color: rgba(168, 66, 63, 0.02) !important;
+  box-shadow: 0 0 0 3px rgba(168, 66, 63, 0.12) !important;
+}
+
+input:user-invalid:focus,
+select:user-invalid:focus,
+textarea:user-invalid:focus {
+  border-color: #a8423f !important;
+  box-shadow: 0 0 0 3px rgba(168, 66, 63, 0.18) !important;
+}
+
+input:user-valid:not(:placeholder-shown),
+textarea:user-valid:not(:placeholder-shown) {
+  border-color: var(--line);
+}
+
 .form-group {
   display: flex;
   flex-direction: column;
@@ -2021,8 +2087,15 @@ h2 {
   .modal-dialog,
   .modal-content,
   .message-bubble,
-  .toast {
+  .toast,
+  .detail-section-body {
     animation: none !important;
+  }
+
+  .skeleton-row,
+  .skeleton-message {
+    animation: none !important;
+    background: rgba(235, 230, 222, 0.55);
   }
 }
 
