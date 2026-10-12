@@ -5,9 +5,9 @@
 - **Repository root directory**: `C:\Users\circlealgorythm\Documents\Бот воронка`
 - **Standard startup path**: `uv run uvicorn funnelhub.main:app --port 8000`
 - **Standard verification path**: `powershell -ExecutionPolicy Bypass -File .\init.ps1` (или `uv run pytest`)
-- **Active Feature**: Нет (UI-001 завершена, готов к UI-002)
+- **Active Feature**: `UI-002` (Тактильный отклик интерактивных элементов: :active & Focus)
 - **Current blocker**: Нет
-- **Highest priority unfinished feature**: `UI-002` (Тактильный отклик интерактивных элементов: :active & Focus)
+- **Highest priority unfinished feature**: `UI-002`
 - **Roadmap Artifact**: `C:\Users\circlealgorythm\.gemini\antigravity\brain\8c8ef25d-722d-42a5-a397-ea5a9c3c4356\ROADMAP_UI_POLISH.md`
 
 ---
@@ -73,11 +73,12 @@
   - Верификация: `npm run build` в `inbox-app` пройден (2.40s, 0 ошибок), `init.ps1` пройден (код 0).
 
 ### What's In Progress
-- [ ] Ожидание команды пользователя на старт `UI-002`.
+- [ ] Ожидание команды пользователя на старт `SEC-008` (Лимиты на импорт контактов / Import Caps).
 
 ### What's Next
-1. Взять фичу `UI-002`: Тактильный отклик интерактивных элементов (`:active scale(0.97)` для кнопок, табов, чипов и доступные кольца `:focus-visible`).
-2. Верифицировать через `npm run build` в `inbox-app`.
+1. Взять фичу `SEC-008`: Установка лимитов на размер загружаемых файлов (до 10MB) и максимальное количество строк (до 5000) при импорте лидов через XLSX и CSV в `inbox_database.py` для защиты от OOM и DoS.
+2. Верифицировать через `pytest` и `init.ps1`.
+3. Сделать атомарный git-коммит `security(SEC-008): ...`.
 3. Дождаться подтверждения пользователя перед переходом к `UI-003`.
 
 ---
