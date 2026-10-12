@@ -73,7 +73,7 @@ XLSX_EXPORT_COLUMNS = [
     ("utm_source", "utm_source"),
     ("utm_medium", "utm_medium"),
     ("utm_campaign", "utm_campaign"),
-    ("utm_term", "utm_term"),
+    ("search_query", "Поисковый запрос / Ключевое слово"),
     ("utm_content", "utm_content"),
     ("utm_group", "utm_group"),
     ("yclid", "Yandex Direct Click ID"),
@@ -117,6 +117,9 @@ IMPORT_FIELD_ALIASES = {
     "getcourse_groups": ("getcourse_groups", "id групп пользователя/дата добавления"),
 }
 GETCOURSE_EXPORT_CONSENT_FIELD_KEYS = tuple(CONSENT_CUSTOM_FIELD_MAPPING)
+
+MAX_IMPORT_FILE_SIZE_BYTES: int = 10 * 1024 * 1024  # 10 MB
+MAX_IMPORT_ROWS: int = 5_000
 
 
 @dataclass(frozen=True)
@@ -371,6 +374,7 @@ async def get_database_lead_detail(
                 "utm_medium": item.utm_medium,
                 "utm_campaign": item.utm_campaign,
                 "utm_term": item.utm_term,
+                "search_query": item.search_query,
                 "utm_content": item.utm_content,
                 "utm_group": item.utm_group,
                 "yclid": item.yclid,
@@ -637,7 +641,19 @@ async def export_database_leads_xlsx(
 def read_import_file_rows(
     file_name: str,
     content: bytes,
+    *,
+    max_rows: int | None = None,
+    max_file_size_bytes: int | None = None,
 ) -> tuple[list[str], list[list[str]], str | None]:
+    limit_rows = max_rows if max_rows is not None else MAX_IMPORT_ROWS
+    limit_size = (
+        max_file_size_bytes if max_file_size_bytes is not None else MAX_IMPORT_FILE_SIZE_BYTES
+    )
+
+    if len(content) > limit_size:
+        limit_mb = limit_size // (1024 * 1024)
+        raise ValueError(f"Размер файла превышает допустимый лимит {limit_mb} МБ.")
+
     if file_name.lower().endswith(".xlsx"):
         wb = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
         sheet = wb.active
@@ -655,6 +671,14 @@ def read_import_file_rows(
         
         rows: list[list[str]] = []
         for row in rows_iter:
+            # Игнорируем полностью пустые строки
+            if not any(cell is not None and str(cell).strip() for cell in row):
+                continue
+            if len(rows) >= limit_rows:
+                raise ValueError(
+                    f"Файл содержит более {limit_rows} строк. "
+                    f"Максимальный лимит для одного импорта: {limit_rows} строк."
+                )
             rows.append(
                 normalize_import_row_values(
                     [str(cell) if cell is not None else "" for cell in row],
@@ -674,7 +698,17 @@ def read_import_file_rows(
             raise ValueError("CSV file must contain a header row.")
             
         headers = normalize_import_headers(headers)
-        rows = [normalize_import_row_values(row, len(headers)) for row in csv_reader]
+        rows = []
+        for row in csv_reader:
+            # Игнорируем полностью пустые строки
+            if not any(str(cell).strip() for cell in row):
+                continue
+            if len(rows) >= limit_rows:
+                raise ValueError(
+                    f"Файл содержит более {limit_rows} строк. "
+                    f"Максимальный лимит для одного импорта: {limit_rows} строк."
+                )
+            rows.append(normalize_import_row_values(row, len(headers)))
         return headers, rows, delimiter
 
 
@@ -697,8 +731,19 @@ def suggest_import_mapping(headers: list[str]) -> dict[str, str]:
     return mapping
 
 
-def preview_import_file(file_name: str, content: bytes) -> ImportPreviewResult:
-    headers, rows, _ = read_import_file_rows(file_name, content)
+def preview_import_file(
+    file_name: str,
+    content: bytes,
+    *,
+    max_rows: int | None = None,
+    max_file_size_bytes: int | None = None,
+) -> ImportPreviewResult:
+    headers, rows, _ = read_import_file_rows(
+        file_name,
+        content,
+        max_rows=max_rows,
+        max_file_size_bytes=max_file_size_bytes,
+    )
     suggested_mapping = suggest_import_mapping(headers)
     return ImportPreviewResult(
         headers=headers,
@@ -713,8 +758,15 @@ async def execute_import_file(
     file_name: str,
     content: bytes,
     mapping: dict[str, str],
+    max_rows: int | None = None,
+    max_file_size_bytes: int | None = None,
 ) -> DatabaseImportResult:
-    headers, all_rows, delimiter = read_import_file_rows(file_name, content)
+    headers, all_rows, delimiter = read_import_file_rows(
+        file_name,
+        content,
+        max_rows=max_rows,
+        max_file_size_bytes=max_file_size_bytes,
+    )
     
     file_format = "xlsx" if file_name.lower().endswith(".xlsx") else "csv"
     
@@ -927,9 +979,18 @@ def build_lead_search_filter(query: str) -> Any:
             MessengerIdentity.external_user_id.ilike(like_query),
         )
     )
+    utm_match = select(LeadUtm.lead_id).where(
+        or_(
+            LeadUtm.search_query.ilike(like_query),
+            LeadUtm.utm_term.ilike(like_query),
+            LeadUtm.utm_campaign.ilike(like_query),
+            LeadUtm.utm_source.ilike(like_query),
+        )
+    )
     return or_(
         Lead.id.in_(contact_match),
         Lead.id.in_(identity_match),
+        Lead.id.in_(utm_match),
         *lead_filters,
         false(),
     )
@@ -1022,11 +1083,25 @@ def lead_export_row(lead: DatabaseLeadSummary) -> dict[str, Any]:
     }
 
 
+def format_search_or_keyword(search_query: Any, utm_term: Any) -> str | None:
+    if search_query:
+        return str(search_query).strip()
+    if utm_term:
+        term_clean = str(utm_term).strip()
+        if term_clean.startswith("-"):
+            return "Автотаргетинг"
+        return term_clean
+    return None
+
+
 def xlsx_export_row(detail: DatabaseLeadDetail) -> dict[str, Any]:
     lead = detail.lead
     profile = detail_profile_dict(detail.profile_fields)
     custom = detail_custom_field_dict(detail.custom_fields)
     form_utm = latest_utm_snapshot(detail.utm_snapshots, "form")
+    search_keyword_val = format_search_or_keyword(
+        form_utm.get("search_query"), form_utm.get("utm_term")
+    )
     return {
         "lead_id": str(lead.id),
         "getcourse_user_id": lead.getcourse_user_id,
@@ -1045,7 +1120,8 @@ def xlsx_export_row(detail: DatabaseLeadDetail) -> dict[str, Any]:
         "utm_source": form_utm.get("utm_source"),
         "utm_medium": form_utm.get("utm_medium"),
         "utm_campaign": form_utm.get("utm_campaign"),
-        "utm_term": form_utm.get("utm_term"),
+        "search_query": search_keyword_val,
+        "utm_term": search_keyword_val,
         "utm_content": form_utm.get("utm_content"),
         "utm_group": form_utm.get("utm_group"),
         "yclid": form_utm.get("yclid"),

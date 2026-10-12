@@ -1,7 +1,7 @@
 {
   "project": "FunnelHub & Infrastructure Security",
   "version": "1.0.0",
-  "last_updated": "2026-10-13T00:44:00+03:00",
+  "last_updated": "2026-10-13T00:52:00+03:00",
   "active_feature_id": null,
   "features": [
     {
@@ -102,10 +102,10 @@
       "title": "Лимиты на импорт контактов (Import Caps)",
       "description": "Установка жестких лимитов на размер загружаемых файлов и максимальное количество строк (до 5000) при импорте лидов через XLSX и CSV.",
       "user_visible_behavior": "Сервер защищен от падения по памяти (OOM) и DoS при загрузке аномально больших таблиц контактов; пользователю возвращается информативная ошибка.",
-      "status": "not-started",
+      "status": "passing",
       "dependencies": [],
       "verification": "1. Тест на отклонение файлов превышающих лимит строк. 2. Тест на корректную работу импорта в пределах лимита.",
-      "evidence": "",
+      "evidence": "1. Введены лимиты MAX_IMPORT_FILE_SIZE_BYTES (10 МБ) и MAX_IMPORT_ROWS (5000 строк) в inbox_database.py. 2. Реализована отсечка в read_import_file_rows для XLSX и CSV до накопления избыточных строк в памяти с игнорированием пустых хвостовых строк. 3. В api/inbox.py внедрен возврат HTTP 413 при превышении размера файла и HTTP 422 при превышении лимита строк с информативным описанием. 4. Разработан tests/test_import_caps.py (10 unit-тестов, включая изолированное тестирование API через ASGITransport). 5. Все 28 тестов проекта и init.ps1 пройдены (код 0).",
       "notes": "Защита ресурсов сервера от исчерпания памяти."
     },
     {
@@ -141,10 +141,10 @@
       "title": "Тактильный отклик интерактивных элементов (:active & Focus)",
       "description": "Добавление мгновенного сжатия :active scale(0.97) для кнопок, табов и чипов, настройка доступных фокус-колец :focus-visible и точных таймингов перехода.",
       "user_visible_behavior": "Интерфейс живо и тактильно реагирует на каждый клик и нажатие клавиши, кнопки ощущаются физическими объектами.",
-      "status": "not-started",
+      "status": "passing",
       "dependencies": ["UI-001"],
       "verification": "1. npm run build. 2. Проверка :active и :focus-visible состояний кнопок и переключателей.",
-      "evidence": "",
+      "evidence": "1. Внедрен мгновенный тактильный отклик :active { transform: scale(0.97) } для кнопок (.icon-button, .back-button, .soft-button, .send-button, .login-button, .export-quick-btn), табов (.view-tab), чипов (.filter-chip). 2. Добавлен отклик :active scale(0.99) для элементов списка диалогов (.conversation-item) и reply-target. 3. Настроена доступная фокус-система: подавление контура при клике мыши (:focus:not(:focus-visible)) и четкий высококонтрастный контур outline: 2px solid var(--plum) при навигации с клавиатуры. 4. Настроен подсвет полей поиска :focus-within. 5. npm run build в inbox-app успешен (2.18s), init.ps1 пройден (28 тестов, код 0).",
       "notes": "Соблюдение правил Emil Kowalski из Design Taste."
     },
     {

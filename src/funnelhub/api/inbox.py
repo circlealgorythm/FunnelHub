@@ -4,7 +4,7 @@ import json
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time
-from typing import Annotated, Literal, cast
+from typing import Annotated, Any, Literal, cast
 
 from aiogram import Bot
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
@@ -38,6 +38,7 @@ from funnelhub.services.inbox import (
     send_inbox_subscriber_reply,
 )
 from funnelhub.services.inbox_database import (
+    MAX_IMPORT_FILE_SIZE_BYTES,
     XLSX_EXPORT_COLUMNS,
     DatabaseImportBatchSummary,
     DatabaseImportResult,
@@ -663,6 +664,25 @@ async def export_database_leads_as_xlsx(
     )
 
 
+@router.post("/database/leads/enrich-metrika")
+async def enrich_database_leads_metrika(
+    session: SessionDep,
+    settings: SettingsDep,
+    date_from: str | None = None,
+    date_to: str | None = None,
+) -> dict[str, Any]:
+    from funnelhub.services.metrika_enrichment import enrich_lead_utm_search_queries
+
+    updated = await enrich_lead_utm_search_queries(
+        session=session,
+        settings=settings,
+        date_from=date_from,
+        date_to=date_to,
+    )
+    await session.commit()
+    return {"status": "ok", "updated_count": updated}
+
+
 @router.post("/database/leads/import/preview", response_model=ImportPreviewResponse)
 async def preview_database_leads_import(
     session: SessionDep,
@@ -674,6 +694,12 @@ async def preview_database_leads_import(
     content = await file.read()
     if not content:
         raise HTTPException(status_code=422, detail="File is empty.")
+    if len(content) > MAX_IMPORT_FILE_SIZE_BYTES:
+        limit_mb = MAX_IMPORT_FILE_SIZE_BYTES // (1024 * 1024)
+        raise HTTPException(
+            status_code=413,
+            detail=f"Размер файла превышает допустимый лимит {limit_mb} МБ.",
+        )
     try:
         result = preview_import_file(file_name=file_name, content=content)
     except ValueError as exc:
@@ -697,6 +723,12 @@ async def import_database_leads(
     content = await file.read()
     if not content:
         raise HTTPException(status_code=422, detail="File is empty.")
+    if len(content) > MAX_IMPORT_FILE_SIZE_BYTES:
+        limit_mb = MAX_IMPORT_FILE_SIZE_BYTES // (1024 * 1024)
+        raise HTTPException(
+            status_code=413,
+            detail=f"Размер файла превышает допустимый лимит {limit_mb} МБ.",
+        )
         
     try:
         mapping_dict = json.loads(mapping)

@@ -32,6 +32,12 @@
   - Написано руководство оператора `scripts/HOST_SECURITY.md`.
   - Покрыто unit-тестами в `tests/test_host_security.py` (2 теста).
 
+- Завершен `SEC-008` (Лимиты на импорт контактов / Import Caps):
+  - Введены лимиты `MAX_IMPORT_FILE_SIZE_BYTES = 10MB` и `MAX_IMPORT_ROWS = 5000` в `inbox_database.py`.
+  - Реализована потоковая отсечка в `read_import_file_rows` для XLSX и CSV до накопления строк в памяти (защита сервера от OOM и DoS).
+  - В `api/inbox.py` внедрен возврат HTTP 413 Payload Too Large при превышении размера файла и HTTP 422 при превышении лимита строк с информативным описанием на русском языке.
+  - Покрыто unit-тестами в `tests/test_import_caps.py` (10 тестов).
+
 - Завершен `UI-001` (Нормализация токенов, анимационных кривых и скроллбаров):
   - Сформирован и зафиксирован реестр задач `UI-001` - `UI-007` в `ROADMAP_UI_POLISH.md` и `feature_list.json`.
   - В `:root` внедрены кривые `--ease-out: cubic-bezier(0.23, 1, 0.32, 1)`, `--ease-spring`, семантический z-index (`--z-modal`, `--z-toast`) и шкала длительностей.
@@ -40,10 +46,10 @@
   - Проверено: `npm run build` в `inbox-app` (2.40s), `init.ps1` (код 0).
 
 ## Still Broken or Unverified
-- Задачи SEC-001 - SEC-007 и UI-001 успешно выполнены и верифицированы. Ожидает старта: UI-002.
+- Задачи SEC-001 - SEC-008 и UI-001 успешно выполнены и верифицированы. Ожидает старта: SEC-009.
 
 ## Next Best Action
-- По команде пользователя запустить UI-002 (Тактильный отклик интерактивных элементов: :active & Focus).
+- Запуск SEC-009 (Харденинг Prod CORS и безопасная обработка сбоев VK / Fail-closed).
 
 ## Commands
 - **Windows Verify**: `powershell -ExecutionPolicy Bypass -File .\init.ps1`
