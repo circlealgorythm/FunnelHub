@@ -130,11 +130,16 @@
   - Перезапущены и активны все контейнеры: `funnelhub-app-1`, `funnelhub-funnel-worker-1`, `funnelhub-most-funnel-worker-1`, `funnelhub-most-telegram-bot-1`, `funnelhub-most-vk-funnel-worker-1`, `funnelhub-telegram-bot-1`.
   - Эмпирическая проверка: эндпоинт `/inbox/` вернул HTTP 200 OK.
 
+- [x] **Очистка интерфейса Inbox и карточки лида (2026-10-15)**:
+  - Удалена плашка-заглушка статуса (`new`) из карточки лида (`detail-stats`), сетка переведена на 2 колонки («Диалоги» и «Сообщения»).
+  - Скрыты из навигационной панели `ViewSwitch` неиспользуемые вкладки «Рассылки», «Автопостинг», «Фоллоу-ап» (код компонентов и воркспейсов полностью сохранен).
+  - Сборка фронтенда `inbox-app` (`tsc -b && vite build`) успешно завершена.
+
 ### What's In Progress
-*None (all features and production deployment complete!)*
+*None (UI cleanup complete, ready for deploy)*
 
 ### What's Next
-1. Программа UI Polish и все сопутствующие задачи полностью завершены, задеплоены на боевой сервер и запушены в GitHub.
+1. Выполнить синхронизацию и деплой на боевой контур `bot.aisukam.ru`.
 2. Ожидание указаний пользователя по дальнейшим задачам.
 
 ---

@@ -1412,6 +1412,7 @@ function ViewSwitch({
         <DatabaseIcon aria-hidden="true" size={16} />
         <span>База</span>
       </button>
+      {/* Вкладки скрыты из навигации по запросу (функционал сохранен в системе)
       <button
         className={activeView === "broadcasts" ? "view-tab is-active" : "view-tab"}
         onClick={() => onSwitchView("broadcasts")}
@@ -1436,6 +1437,7 @@ function ViewSwitch({
         <Send aria-hidden="true" size={16} />
         <span>Фоллоу-ап</span>
       </button>
+      */}
     </nav>
   );
 }
@@ -2137,10 +2139,6 @@ function LeadDatabaseDetail({
         <div>
           <span>Сообщения</span>
           <strong>{detail.lead.messages_count}</strong>
-        </div>
-        <div>
-          <span>Статус</span>
-          <strong>{detail.lead.status}</strong>
         </div>
       </div>
 
