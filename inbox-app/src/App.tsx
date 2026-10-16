@@ -1412,6 +1412,14 @@ function ViewSwitch({
         <DatabaseIcon aria-hidden="true" size={16} />
         <span>База</span>
       </button>
+      <button
+        className={activeView === "followups" ? "view-tab is-active" : "view-tab"}
+        onClick={() => onSwitchView("followups")}
+        type="button"
+      >
+        <Send aria-hidden="true" size={16} />
+        <span>Фоллоу-ап</span>
+      </button>
       {/* Вкладки скрыты из навигации по запросу (функционал сохранен в системе)
       <button
         className={activeView === "broadcasts" ? "view-tab is-active" : "view-tab"}
@@ -1428,14 +1436,6 @@ function ViewSwitch({
       >
         <CalendarClock aria-hidden="true" size={16} />
         <span>Автопостинг</span>
-      </button>
-      <button
-        className={activeView === "followups" ? "view-tab is-active" : "view-tab"}
-        onClick={() => onSwitchView("followups")}
-        type="button"
-      >
-        <Send aria-hidden="true" size={16} />
-        <span>Фоллоу-ап</span>
       </button>
       */}
     </nav>
