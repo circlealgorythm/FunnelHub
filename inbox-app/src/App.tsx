@@ -1418,7 +1418,7 @@ function ViewSwitch({
         type="button"
       >
         <Send aria-hidden="true" size={16} />
-        <span>Фоллоу-ап</span>
+        <span>Авторассылка</span>
       </button>
       {/* Вкладки скрыты из навигации по запросу (функционал сохранен в системе)
       <button
@@ -4190,7 +4190,7 @@ function FollowupPostsWorkspace({
       <header className="panel-header">
         <div>
           <p className="eyebrow">FunnelHub</p>
-          <h1>Фоллоу-ап</h1>
+          <h1>Авторассылка</h1>
           <ViewSwitch activeView={activeView} onSwitchView={onSwitchView} />
         </div>
         <div className="panel-actions">
@@ -4230,7 +4230,7 @@ function FollowupPostsWorkspace({
               ) : posts.length === 0 ? (
                 <tr>
                   <td colSpan={6} style={{ textAlign: "center", padding: "2rem" }}>
-                    Нет follow-up постов
+                    Нет сообщений авторассылки
                   </td>
                 </tr>
               ) : (
@@ -4335,7 +4335,7 @@ function FollowupCreateModal({
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!title.trim()) {
-      setError("Введите название follow-up поста");
+      setError("Введите название сообщения авторассылки");
       return;
     }
     if (!body.trim()) {
@@ -4380,7 +4380,7 @@ function FollowupCreateModal({
     <div className="modal-overlay">
       <div className="modal-dialog">
         <header className="modal-header">
-          <h2>{isEditing ? "Редактировать follow-up" : "Новый follow-up пост"}</h2>
+          <h2>{isEditing ? "Редактировать авторассылку" : "Новое сообщение авторассылки"}</h2>
           <button className="icon-button soft-button" onClick={onClose} type="button">
             <LogOut aria-hidden="true" size={18} />
           </button>
@@ -4543,7 +4543,7 @@ function FollowupDetailModal({
   };
 
   const deletePost = async () => {
-    if (!window.confirm("Удалить follow-up пост?")) {
+    if (!window.confirm("Удалить сообщение авторассылки?")) {
       return;
     }
     setActionLoading(true);
@@ -4578,7 +4578,7 @@ function FollowupDetailModal({
     <div className="modal-overlay">
       <div className="modal-dialog" style={{ maxWidth: 900 }}>
         <header className="modal-header">
-          <h2>{post?.title || "Follow-up пост"}</h2>
+          <h2>{post?.title || "Сообщение авторассылки"}</h2>
           <button className="icon-button soft-button" onClick={onClose} type="button">
             <LogOut aria-hidden="true" size={18} />
           </button>
@@ -4671,7 +4671,7 @@ function FollowupDetailModal({
                     onClick={() => void cancelPost()}
                     disabled={actionLoading}
                   >
-                    Отменить follow-up
+                    Отменить авторассылку
                   </button>
                 ) : null}
               </footer>

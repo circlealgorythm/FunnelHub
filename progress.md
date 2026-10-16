@@ -130,11 +130,11 @@
   - Перезапущены и активны все контейнеры: `funnelhub-app-1`, `funnelhub-funnel-worker-1`, `funnelhub-most-funnel-worker-1`, `funnelhub-most-telegram-bot-1`, `funnelhub-most-vk-funnel-worker-1`, `funnelhub-telegram-bot-1`.
   - Эмпирическая проверка: эндпоинт `/inbox/` вернул HTTP 200 OK.
 
-- [x] **Возврат вкладки «Фоллоу-ап» (авторассылка) в админку (2026-10-16)**:
-  - Раскомментирована вкладка `followups` («Фоллоу-ап») в компоненте `ViewSwitch` для доступа к управлению цепочками автодожима.
-  - Сборка фронтенда `inbox-app` (`tsc -b && vite build`) успешно выполнена без ошибок.
-  - Верификация `verify.ps1` и тесты `init.ps1` (33 passed, mypy passed, ruff passed) успешно завершены.
-  - Выполнен деплой на боевой сервер `bot.aisukam.ru` через `deploy_files.py` (контейнеры активны, эндпоинт `/inbox/` возвращает HTTP 200 с обновленным бандлом).
+- [x] **Переименование вкладки и разделов в «Авторассылка» (2026-10-16)**:
+  - Вкладка навигации, шапка раздела, модальные окна создания и редактирования переименованы в «Авторассылка».
+  - Сборка фронтенда `inbox-app` (`tsc -b && vite build`) успешно выполнена (2.31s, бандл `index-MHbuRc-_.js`).
+  - Верификация `verify.ps1` пройдена (8 passed, mypy passed, ruff passed).
+  - Выкатан деплой на боевой сервер `bot.aisukam.ru` через `deploy_files.py`. Live-проверка подтвердила отдачу бандла с новым названием (HTTP 200).
 
 ### What's In Progress
 *None (all features and production deployment complete)*
