@@ -3,6 +3,9 @@
 This repository is governed by the **Harness Engineering** methodology.
 The repository is the **Single System of Record**.
 
+> **Сквозные стандарты школы:** Перед реализацией общих стандартов безопасности и инфраструктуры сверяться с [.harness/lessons.md](file:///./.harness/lessons.md).  
+> **Локальный журнал прогресса:** [progress.md](file:///./projects/funnel-hub/progress.md)
+
 ---
 
 ## 🚀 Startup Workflow
