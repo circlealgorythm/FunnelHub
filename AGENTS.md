@@ -84,3 +84,11 @@ The repository is the **Single System of Record**.
    - **Воронки (PostgreSQL):** перевод всех активных `FunnelState` (`channel="email"`) в `status="paused"`, сброс `next_run_at = None`, фиксация `paused_reason="user_requested_unsubscribe"`.
    - **Аудит (PostgreSQL):** запись события `Event(event_type="email.unsubscribed", source="manual_admin")`.
 
+### SOP-OPS-002 | Деактивация архивных сервисов (Мост ценностей)
+Проект «Мост ценностей» признан неиспользуемым и архивирован.
+1. Сервисы профиля `most` в `docker-compose.prod.yml`:
+   - `most-telegram-bot` (`@most_cennostei_bot`)
+   - `most-funnel-worker`
+   - `most-vk-funnel-worker`
+2. **Инвариант эксплуатации:** Сервисы с профилем `--profile most` остановлены и **не должны** запускаться при штатном развертывании. Токен `MOST_TELEGRAM_BOT_TOKEN` отозван/недействителен и при запуске вызывает циклический перезапуск (401 Unauthorized). При перезапуске стека запускать строго базовые сервисы: `docker compose -f docker-compose.prod.yml up -d` (без флага `--profile most`).
+

@@ -140,6 +140,11 @@
   - В базе данных FunnelHub на проде запись `EmailSubscription` переведена в статус `unsubscribed` с фиксацией `unsubscribed_at`, активная воронка `aisu_email_sequence` (`step=day_09`) переведена в `paused` со сбросом `next_run_at=None`, залогировано системное событие `email.unsubscribed`.
   - Разработан стандартный CLI-скрипт `scripts/unsubscribe-lead.py` и операционный регламент `SOP-EMAIL-001` в `AGENTS.md` для автоматизации последующих аналогичных операций.
   - Верификация: `scripts/verify.ps1 -Subproject funnel-hub` успешно пройден (8 passed, ruff passed, mypy passed, 0 ошибок).
+- [x] **Деактивация архивных сервисов проекта «Мост ценностей» (2026-10-17)**:
+  - Устранен циклический перезапуск контейнера `funnelhub-most-telegram-bot-1` (ошибка 401 Unauthorized из-за отозванного токена).
+  - По согласованию с пользователем остановлены все сервисы профиля `most`: `funnelhub-most-telegram-bot-1`, `funnelhub-most-funnel-worker-1` и `funnelhub-most-vk-funnel-worker-1`.
+  - Зафиксирован регламент `SOP-OPS-002` в `AGENTS.md`: сервисы профиля `most` архивированы и не должны запускаться в штатном режиме.
+  - На боевом сервере оставлены только активные сервисы школы «Сатья-Юга» (`app`, `telegram-bot`, `funnel-worker`, `redis`, `postgres`).
 
 ### What's In Progress
 *None (all features and production deployment complete)*
@@ -161,3 +166,8 @@
 - **2026-10-16 23:01** | docs(funnel-hub): add context bridge to harness standards
 
 - **2026-10-17 13:19** | feat(funnel-hub): add unsubscribe-lead script and record SOP-EMAIL-001
+
+- **2026-10-17 16:35** | ops(funnel-hub): stop and archive Most Tsennostey services (SOP-OPS-002)
+
+
+- **2026-10-17 16:35** | ops(funnel-hub): archive most-tsennostey services and record SOP-OPS-002
