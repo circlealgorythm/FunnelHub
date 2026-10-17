@@ -134,7 +134,12 @@
   - Вкладка навигации, шапка раздела, модальные окна создания и редактирования переименованы в «Авторассылка».
   - Сборка фронтенда `inbox-app` (`tsc -b && vite build`) успешно выполнена (2.31s, бандл `index-MHbuRc-_.js`).
   - Верификация `verify.ps1` пройдена (8 passed, mypy passed, ruff passed).
-  - Выкатан деплой на боевой сервер `bot.aisukam.ru` через `deploy_files.py`. Live-проверка подтвердила отдачу бандла с новым названием (HTTP 200).
+- [x] **Ручная отписка лида от рассылки Unisender Go & FunnelHub (2026-10-17)**:
+  - Обработано обращение по отписке лида Денис Трефелов (`GC 519650619`, `denistrefelov868@gmail.com`).
+  - В Unisender Go через API endpoint `suppression/set.json` email занесен в `suppression list` (`cause: unsubscribed`, `source: user`), гарантируя блокировку любых последующих отправок на уровне почтового провайдера.
+  - В базе данных FunnelHub на проде запись `EmailSubscription` переведена в статус `unsubscribed` с фиксацией `unsubscribed_at`, активная воронка `aisu_email_sequence` (`step=day_09`) переведена в `paused` со сбросом `next_run_at=None`, залогировано системное событие `email.unsubscribed`.
+  - Разработан стандартный CLI-скрипт `scripts/unsubscribe-lead.py` и операционный регламент `SOP-EMAIL-001` в `AGENTS.md` для автоматизации последующих аналогичных операций.
+  - Верификация: `scripts/verify.ps1 -Subproject funnel-hub` успешно пройден (8 passed, ruff passed, mypy passed, 0 ошибок).
 
 ### What's In Progress
 *None (all features and production deployment complete)*
@@ -154,3 +159,5 @@
 - **2026-10-12**: Добавлено строгое правило №7 в `AGENTS.md`: обязательный атомарный Git-коммит сразу после верификации каждой фичи в соответствующем репозитории до отчета пользователю.
 
 - **2026-10-16 23:01** | docs(funnel-hub): add context bridge to harness standards
+
+- **2026-10-17 13:19** | feat(funnel-hub): add unsubscribe-lead script and record SOP-EMAIL-001

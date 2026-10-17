@@ -65,3 +65,22 @@ The repository is the **Single System of Record**.
 - `progress.md` — непрерывный журнал сессий и прогресса.
 - `session-handoff.md` — протокол передачи контекста между сессиями.
 - `init.ps1` / `init.sh` — стартовые скрипты верификации окружения.
+
+---
+
+## 🛠️ Операционные регламенты (SOP)
+
+### SOP-EMAIL-001 | Ручная отписка лида от email-рассылок (Unisender Go & FunnelHub)
+При обращении лида с просьбой отписать его от рассылки («удалить из Unisender / почтовой рассылки»):
+1. **Единая точка входа:** запускать стандартный CLI-скрипт:
+   ```bash
+   python scripts/unsubscribe-lead.py --email <EMAIL>
+   # или по UUID лида:
+   python scripts/unsubscribe-lead.py --lead-id <UUID>
+   ```
+2. **Атомарные инварианты отписки:**
+   - **Провайдер (Unisender Go):** отправка в `https://goapi.unisender.ru/ru/transactional/api/v1/suppression/set.json` параметров `{"email": email, "cause": "unsubscribed"}` с проверкой через `suppression/get.json`.
+   - **Подписка (PostgreSQL):** перевод `EmailSubscription.status` в `"unsubscribed"` и установка `unsubscribed_at = UTC now`.
+   - **Воронки (PostgreSQL):** перевод всех активных `FunnelState` (`channel="email"`) в `status="paused"`, сброс `next_run_at = None`, фиксация `paused_reason="user_requested_unsubscribe"`.
+   - **Аудит (PostgreSQL):** запись события `Event(event_type="email.unsubscribed", source="manual_admin")`.
+
