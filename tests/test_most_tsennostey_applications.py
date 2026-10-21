@@ -108,7 +108,7 @@ async def test_landing_application_creates_isolated_inbox_conversation() -> None
     assert tags == ["заявка с сайта"]
 
 
-async def test_existing_main_lead_is_available_in_both_database_segments() -> None:
+async def test_existing_lead_submitting_most_is_isolated_to_most_segment() -> None:
     shared_email = "most-shared@example.com"
     shared_phone = "+79990000003"
     existing_lead_id = uuid.uuid4()
@@ -166,7 +166,7 @@ async def test_existing_main_lead_is_available_in_both_database_segments() -> No
         )
 
     assert existing_lead_id in [item.id for item in most_leads.items]
-    assert existing_lead_id in [item.id for item in main_leads.items]
+    assert existing_lead_id not in [item.id for item in main_leads.items]
     assert most_conversation is not None
 
 

@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from funnelhub.db.models import (
     Conversation,
     EmailSubscription,
+    Event,
     Lead,
     LeadContact,
     Message,
@@ -276,9 +277,24 @@ async def list_inbox_subscribers(
 ) -> list[InboxConversationSummary]:
     statement = build_subscriber_summary_query()
     if source:
-        statement = statement.where(Lead.source == source)
+        source_event_exists = (
+            select(Event.id)
+            .where(Event.lead_id == Lead.id, Event.source == source)
+            .correlate(Lead)
+            .exists()
+        )
+        statement = statement.where((Lead.source == source) | source_event_exists)
     if exclude_source:
-        statement = statement.where((Lead.source.is_(None)) | (Lead.source != exclude_source))
+        source_event_exists = (
+            select(Event.id)
+            .where(Event.lead_id == Lead.id, Event.source == exclude_source)
+            .correlate(Lead)
+            .exists()
+        )
+        statement = statement.where(
+            ((Lead.source.is_(None)) | (Lead.source != exclude_source))
+            & (~source_event_exists)
+        )
     rows = (
         await session.execute(
             statement.order_by(

@@ -41,8 +41,6 @@ services:
     restart: unless-stopped
 
   most-telegram-bot:
-    profiles:
-      - most
     build: .
     command: python -m funnelhub.most_telegram_bot
     env_file:
@@ -59,8 +57,6 @@ services:
     restart: unless-stopped
 
   most-funnel-worker:
-    profiles:
-      - most
     build: .
     command: python -m funnelhub.most_funnel_worker
     env_file:
@@ -77,8 +73,6 @@ services:
     restart: unless-stopped
 
   most-vk-funnel-worker:
-    profiles:
-      - most
     build: .
     command: python -m funnelhub.most_vk_funnel_worker
     env_file:

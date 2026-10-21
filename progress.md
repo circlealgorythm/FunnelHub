@@ -171,3 +171,5 @@
 
 
 - **2026-10-17 16:35** | ops(funnel-hub): archive most-tsennostey services and record SOP-OPS-002
+
+- **2026-10-21 14:26** | feat(funnel-hub): restore most-tsennostey segment and bot services

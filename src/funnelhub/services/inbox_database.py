@@ -9,7 +9,7 @@ from typing import Any, Literal
 
 from openpyxl import Workbook, load_workbook  # type: ignore[import-untyped]
 from openpyxl.styles import Alignment, Font, PatternFill  # type: ignore[import-untyped]
-from sqlalchemy import Select, false, func, or_, select
+from sqlalchemy import Select, and_, false, func, not_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from funnelhub.db.models import (
@@ -227,7 +227,7 @@ async def list_database_leads(
         base_statement = base_statement.where(source_filter)
         count_statement = count_statement.where(source_filter)
     if exclude_source:
-        source_filter = (Lead.source.is_(None)) | (Lead.source != exclude_source)
+        source_filter = lead_exclude_source_filter(exclude_source)
         base_statement = base_statement.where(source_filter)
         count_statement = count_statement.where(source_filter)
 
@@ -1004,6 +1004,19 @@ def lead_source_filter(source: str) -> Any:
         .exists()
     )
     return or_(Lead.source == source, source_event_exists)
+
+
+def lead_exclude_source_filter(exclude_source: str) -> Any:
+    source_event_exists = (
+        select(Event.id)
+        .where(Event.lead_id == Lead.id, Event.source == exclude_source)
+        .correlate(Lead)
+        .exists()
+    )
+    return and_(
+        (Lead.source.is_(None)) | (Lead.source != exclude_source),
+        not_(source_event_exists),
+    )
 
 
 def lead_contact_subquery(contact_type: str) -> Any:

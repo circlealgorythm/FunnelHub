@@ -24,10 +24,10 @@ import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useState } fro
 import type { ReactNode } from "react";
 
 type ConversationStatus = "open" | "needs_reply" | "replied" | "closed";
-type ReplyChannel = "telegram" | "vk" | "email";
-type InboxSegment = "main";
+type ReplyChannel = "telegram" | "telegram_most" | "vk" | "vk_most" | "email";
+type InboxSegment = "main" | "most-tsennostey";
 type InboxListMode = "conversations" | "subscribers";
-type DatabaseSegment = "main";
+type DatabaseSegment = "main" | "most-tsennostey";
 
 type Conversation = {
   id: string;
@@ -421,8 +421,8 @@ const statusLabels: Record<ConversationStatus, string> = {
 
 const channelLabels: Record<string, string> = {
   telegram: "Telegram",
-  telegram_most: "Telegram",
-  vk_most: "VK",
+  telegram_most: "Telegram — Мост ценностей",
+  vk_most: "ВКонтакте — Мост ценностей",
   vk: "VK",
   email: "Email",
 };
@@ -470,6 +470,16 @@ const filters: Array<{ value: ConversationStatus | "all"; label: string }> = [
   { value: "open", label: "Открытые" },
   { value: "replied", label: "Отвеченные" },
   { value: "closed", label: "Закрытые" },
+];
+
+const inboxSegments: Array<{ value: InboxSegment; label: string }> = [
+  { value: "main", label: "Основной Inbox" },
+  { value: "most-tsennostey", label: "Мост ценностей" },
+];
+
+const databaseSegments: Array<{ value: DatabaseSegment; label: string }> = [
+  { value: "main", label: "Общая база" },
+  { value: "most-tsennostey", label: "Мост ценностей" },
 ];
 
 
@@ -552,6 +562,11 @@ export function App() {
     try {
       const params = new URLSearchParams();
       if (filter !== "all") params.set("status", filter);
+      if (inboxSegment === "most-tsennostey") {
+        params.set("source", "most-tsennostey");
+      } else {
+        params.set("exclude_source", "most-tsennostey");
+      }
       const queryString = params.toString();
       const endpoint = inboxListMode === "subscribers" ? "subscribers" : "conversations";
       const response = await fetch(`${API_BASE_URL}/api/inbox/${endpoint}${queryString ? `?${queryString}` : ""}`, {
@@ -644,6 +659,11 @@ export function App() {
       });
       if (databaseQuery.trim()) {
         params.set("q", databaseQuery.trim());
+      }
+      if (databaseSegment === "most-tsennostey") {
+        params.set("source", "most-tsennostey");
+      } else {
+        params.set("exclude_source", "most-tsennostey");
       }
       const response = await fetch(`${API_BASE_URL}/api/inbox/database/leads?${params}`, {
         credentials: "include",
@@ -877,6 +897,11 @@ export function App() {
       const params = new URLSearchParams();
       if (databaseQuery.trim()) {
         params.set("q", databaseQuery.trim());
+      }
+      if (databaseSegment === "most-tsennostey") {
+        params.set("source", "most-tsennostey");
+      } else {
+        params.set("exclude_source", "most-tsennostey");
       }
       if (options?.dateFrom) {
         params.set("date_from", options.dateFrom);
@@ -1164,6 +1189,22 @@ export function App() {
             placeholder="Имя, контакт, сообщение"
           />
         </div>
+
+        <nav className="view-switch inbox-source-tabs" aria-label="Разделы Inbox">
+          {inboxSegments.map((segment) => (
+            <button
+              className={inboxSegment === segment.value ? "view-tab is-active" : "view-tab"}
+              key={segment.value}
+              onClick={() => {
+                setSelectedId(null);
+                setInboxSegment(segment.value);
+              }}
+              type="button"
+            >
+              {segment.label}
+            </button>
+          ))}
+        </nav>
 
         <nav className="filter-row" aria-label="Тип списка Inbox">
           <button className={inboxListMode === "conversations" ? "filter-chip is-active" : "filter-chip"} onClick={() => { setSelectedId(null); setInboxListMode("conversations"); }} type="button">
@@ -1918,6 +1959,18 @@ function DatabaseWorkspace({
 
       <section className="database-grid">
         <div className="database-list-panel">
+          <nav className="view-switch database-source-tabs" aria-label="Разделы базы">
+            {databaseSegments.map((segment) => (
+              <button
+                className={databaseSegment === segment.value ? "view-tab is-active" : "view-tab"}
+                key={segment.value}
+                onClick={() => onSegmentChange(segment.value)}
+                type="button"
+              >
+                {segment.label}
+              </button>
+            ))}
+          </nav>
           <form className="database-search" onSubmit={onSearch}>
             <Search aria-hidden="true" size={18} />
             <input
