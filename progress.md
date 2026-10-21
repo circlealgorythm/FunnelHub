@@ -145,6 +145,16 @@
   - По согласованию с пользователем остановлены все сервисы профиля `most`: `funnelhub-most-telegram-bot-1`, `funnelhub-most-funnel-worker-1` и `funnelhub-most-vk-funnel-worker-1`.
   - Зафиксирован регламент `SOP-OPS-002` в `AGENTS.md`: сервисы профиля `most` архивированы и не должны запускаться в штатном режиме.
   - На боевом сервере оставлены только активные сервисы школы «Сатья-Юга» (`app`, `telegram-bot`, `funnel-worker`, `redis`, `postgres`).
+- [x] **Реактивация проекта «Мост ценностей» и строгая изоляция базы (2026-10-21)**:
+  - В админке `inbox-app` восстановлены сегменты «Основной Inbox» / «Мост ценностей» и «Общая база» / «Мост ценностей», добавлены бейджи каналов `telegram_most` и `vk_most` и поддержка ответов из карточки.
+  - В `inbox_database.py` и `inbox.py` внедрен `lead_exclude_source_filter`: лиды, оставившие заявку на «Мост ценностей» (включая лидов со склейкой GetCourse ID), строго исключаются из «Общей базы» школы и отображаются только в сегменте «Мост ценностей» (`STD-FUNNEL-001`).
+  - В `docker-compose.prod.yml` сервисы `most-telegram-bot`, `most-funnel-worker` и `most-vk-funnel-worker` возвращены в штатный запуск.
+  - Боевой деплой на Beget VPS (`31.129.110.56`): обновлены переменные `MOST_TELEGRAM_BOT_TOKEN` и `MOST_TELEGRAM_BOT_USERNAME=most_cannostei_bot`, контейнеры пересобраны и запущены.
+  - **Доказательство (Evidence):**
+    - `tests/test_most_tsennostey_applications.py`: обновлен контракт `test_existing_lead_submitting_most_is_isolated_to_most_segment` (`assert existing_lead_id not in [item.id for item in main_leads.items]`).
+    - Логи контейнеров на проде: `funnelhub-most-telegram-bot-1` (Up, polling для `@most_cannostei_bot`, обработаны `Update id=839195251`, `839195252`), `funnelhub-most-funnel-worker-1` (`Most funnel runner pass completed`), `funnelhub-most-vk-funnel-worker-1` (`Most VK funnel runner pass completed`).
+    - `https://bot.aisukam.ru/inbox/` — HTTP 200 OK.
+    - `scripts/verify.ps1 -Subproject funnel-hub` — 8 passed, ruff passed, mypy passed.
 
 ### What's In Progress
 *None (all features and production deployment complete)*
@@ -175,3 +185,5 @@
 - **2026-10-21 14:26** | feat(funnel-hub): restore most-tsennostey segment and bot services
 
 - **2026-10-21 14:34** | docs(funnel-hub): update SOP-OPS-002 for most-tsennostey reactivation
+
+- **2026-10-21 14:38** | docs(funnel-hub): record STD-FUNNEL-001 and production reactivation evidence
