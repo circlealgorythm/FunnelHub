@@ -114,4 +114,17 @@ The repository is the **Single System of Record**.
   - Unit-тесты `tests/test_blog_segmentation.py` (6 тестов: Pydantic-схема, мульти-фильтрация SQL, экспортные колонки) — `14 passed in 5.74s`.
   - Успешный боевой деплой на Beget VPS (`deploy_files.py`), HTTP 200 на `https://bot.aisukam.ru/inbox/`.
 
-
+### STD-SEC-001 | Защита от спуфинга IP в Rate Limiter и харденинг VK вебхуков (HARNESS-002)
+* **Проблема:**
+  1. `get_request_ip` брал первый IP из `X-Forwarded-For`. Злоумышленник мог передавать поддельные IP в заголовке (`X-Forwarded-For: <fake_ip>, <real_ip>`), обходя лимит попыток входа в админку `/api/auth/login`.
+  2. `InMemoryRateLimiter` накапливал корзины IP в памяти без очистки устаревших ключей (риск разрастания памяти).
+  3. Проверка секрета VK использовала оператор `!=` (теоретический риск timing-атак).
+* **Стандарт:**
+  1. В `get_request_ip` доверять строго последнему IP в списке `X-Forwarded-For` (`ips[-1]`), который гарантированно дописывается доверенным реверс-прокси Caddy на сервере.
+  2. В `InMemoryRateLimiter` при превышении порога в 500 ключей автоматически удалять устаревшие и пустые корзины.
+  3. В `validate_vk_secret` использовать `secrets.compare_digest` и валидировать `group_id` по доверенным группам (`vk_group_id`, `most_vk_group_id`).
+* **Доказательство (Evidence):**
+  - Unit-тест `test_login_rate_limiting_ip_spoofing_prevention` в `tests/test_auth.py`: запросы с поддельными клиентскими IP при одинаковом прокси-IP блокируются с кодом 429 (GREEN).
+  - Unit-тест `test_rate_limiter_memory_pruning`: 550 устаревших корзин очищаются до 1 свежей при добавлении нового ключа (GREEN).
+  - Unit-тест `test_validate_vk_secret_constant_time` в `tests/test_cors_and_vk_failclosed.py` (GREEN).
+  - `pwsh -ExecutionPolicy Bypass -File scripts/verify.ps1 -Subproject funnel-hub` успешно пройден (код 0 за 10.3s).

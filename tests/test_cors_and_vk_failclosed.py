@@ -209,3 +209,23 @@ async def test_pause_funnel_state_fail_closed_logic() -> None:
     assert state2.status == "paused"
     assert state2.next_run_at is None
     assert state2.metadata_["paused_reason"] == "vk_token_invalid"
+
+def test_validate_vk_secret_constant_time() -> None:
+    from fastapi import HTTPException
+
+    from funnelhub.api.webhooks import validate_vk_secret
+
+    settings_with_secret = Settings(VK_CALLBACK_SECRET="super_secret_vk_key")
+    validate_vk_secret("super_secret_vk_key", settings_with_secret)
+
+    with pytest.raises(HTTPException) as exc_wrong:
+        validate_vk_secret("wrong_secret", settings_with_secret)
+    assert exc_wrong.value.status_code == 403
+
+    with pytest.raises(HTTPException) as exc_none:
+        validate_vk_secret(None, settings_with_secret)
+    assert exc_none.value.status_code == 403
+
+    settings_no_secret = Settings(VK_CALLBACK_SECRET=None)
+    validate_vk_secret(None, settings_no_secret)
+    validate_vk_secret("any", settings_no_secret)

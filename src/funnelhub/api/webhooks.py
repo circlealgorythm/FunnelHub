@@ -456,6 +456,11 @@ async def vk_callback_webhook(
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> Response:
     validate_vk_secret(event.secret, settings)
+    valid_group_ids = {
+        g for g in (settings.vk_group_id, settings.most_vk_group_id) if g is not None
+    }
+    if valid_group_ids and event.group_id is not None and event.group_id not in valid_group_ids:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid VK group_id.")
     log_vk_callback_event(event)
 
     if event.type == "confirmation":
@@ -572,8 +577,9 @@ def log_vk_callback_event(event: VkCallbackEvent) -> None:
 
 
 def validate_vk_secret(secret: str | None, settings: Settings) -> None:
-    if settings.vk_callback_secret and secret != settings.vk_callback_secret:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid VK secret.")
+    if settings.vk_callback_secret:
+        if not secret or not secrets.compare_digest(secret, settings.vk_callback_secret):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid VK secret.")
 
 
 async def _extract_payload(request: Request) -> dict[str, Any]:

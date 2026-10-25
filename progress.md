@@ -15,6 +15,12 @@
 ## Status
 
 ### What's Done
+- [x] **`SEC-007 / Feature 2` (Защита от спуфинга IP в Rate Limiter и харденинг VK вебхуков)** (passing):
+  - В `src/funnelhub/services/ingestion_guard.py` исправлена функция `get_request_ip`: парсинг `X-Forwarded-For` теперь берет последний IP (`ips[-1]`), добавленный доверенным локальным реверс-прокси Caddy, вместо первого (клиентского), исключая обход лимитов авторизации `/api/auth/login` спуфингом заголовка.
+  - В `InMemoryRateLimiter` внедрена очистка устаревших корзин при превышении лимита размера (>500 записей), предотвращая утечку RAM при длительной работе сервиса (Slow DoS).
+  - В `src/funnelhub/api/webhooks.py` валидация секрета VK переведена на `secrets.compare_digest` (защита от тайминг-атак) и добавлена валидация `group_id` при наличии настроенных групп.
+  - Сохранен 100% контракт работы GetCourse вебхуков и форм заявок без блокировок.
+  - Верификация: добавлены тесты `test_login_rate_limiting_ip_spoofing_prevention`, `test_rate_limiter_memory_pruning`, `test_validate_vk_secret_constant_time`; `scripts/verify.ps1 -Subproject funnel-hub` успешно пройден (ruff OK, mypy OK, pytest 16 passed).
 - [x] Развернут каркас Harness Engineering (`AGENTS.md`, `feature_list.json`, `progress.md`, `session-handoff.md`, `init.ps1`, `init.sh`).
 - [x] Сформирован реестр задач безопасности (`SEC-001` - `SEC-006`) с приоритетами, критериями верификации и зависимостями.
 - [x] **`SEC-001` (Устранение критических утечек секретов и логов PII)** (passing):
@@ -206,3 +212,5 @@
 - **2026-10-25 14:08** | feat(funnel-hub): support blog lead segmentation, article display and multi-source exclusion
 
 - **2026-10-25 14:20** | docs(funnel-hub): update harness artifacts, record STD-FUNNEL-002 and SEG-001
+
+- **2026-10-26 01:59** | security(funnel-hub): fix IP spoofing in rate limiter and harden VK webhook validation

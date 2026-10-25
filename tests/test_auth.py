@@ -136,3 +136,47 @@ async def test_login_rate_limiting(monkeypatch) -> None:  # type: ignore[no-unty
     finally:
         auth_login_rate_limiter.reset()
         get_settings.cache_clear()
+
+async def test_login_rate_limiting_ip_spoofing_prevention(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    from funnelhub.services.ingestion_guard import auth_login_rate_limiter
+
+    configure_auth(monkeypatch)
+    monkeypatch.setenv("INBOX_LOGIN_RATE_LIMIT_PER_MINUTE", "2")
+    get_settings.cache_clear()
+    auth_login_rate_limiter.reset()
+
+    try:
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://127.0.0.1:8000",
+        ) as client:
+            headers_1 = {"x-forwarded-for": "1.1.1.1, 192.168.1.50"}
+            headers_2 = {"x-forwarded-for": "2.2.2.2, 192.168.1.50"}
+            headers_3 = {"x-forwarded-for": "3.3.3.3, 192.168.1.50"}
+
+            payload = {"username": "aisu", "password": "wrong"}
+            res1 = await client.post("/api/auth/login", json=payload, headers=headers_1)
+            assert res1.status_code == 401
+
+            res2 = await client.post("/api/auth/login", json=payload, headers=headers_2)
+            assert res2.status_code == 401
+
+            res3 = await client.post("/api/auth/login", json=payload, headers=headers_3)
+            assert res3.status_code == 429
+    finally:
+        auth_login_rate_limiter.reset()
+        get_settings.cache_clear()
+
+
+def test_rate_limiter_memory_pruning() -> None:
+    from funnelhub.services.ingestion_guard import InMemoryRateLimiter
+
+    limiter = InMemoryRateLimiter()
+    for i in range(550):
+        limiter.check(f"ip_{i}", limit=10, window_seconds=60, now=100.0)
+
+    assert len(limiter.buckets) == 550
+
+    limiter.check("ip_fresh", limit=10, window_seconds=60, now=200.0)
+    assert len(limiter.buckets) == 1
+    assert "ip_fresh" in limiter.buckets

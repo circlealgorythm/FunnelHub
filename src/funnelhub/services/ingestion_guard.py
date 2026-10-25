@@ -50,6 +50,12 @@ class InMemoryRateLimiter:
             )
         bucket.append(current)
 
+        # Hardening 3.3: Prune stale buckets to avoid unbounded memory growth
+        if len(self.buckets) > 500:
+            stale_keys = [k for k, b in self.buckets.items() if not b or b[-1] <= cutoff]
+            for k in stale_keys:
+                del self.buckets[k]
+
     def reset(self) -> None:
         self.buckets.clear()
 
@@ -155,9 +161,9 @@ def clean_secret_value(value: Any) -> str | None:
 def get_request_ip(request: Request) -> str:
     forwarded_for = request.headers.get("x-forwarded-for")
     if forwarded_for:
-        first_ip = forwarded_for.split(",", maxsplit=1)[0].strip()
-        if first_ip:
-            return first_ip
+        ips = [ip.strip() for ip in forwarded_for.split(",") if ip.strip()]
+        if ips:
+            return ips[-1]
     if request.client is not None and request.client.host:
         return request.client.host
     return "unknown"
