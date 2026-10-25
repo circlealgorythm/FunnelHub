@@ -551,7 +551,7 @@ def sanitize_spreadsheet_cell(value: Any) -> Any:
         if stripped.startswith(DANGEROUS_FORMULA_PREFIXES):
             return f"'{value}"
         if stripped.startswith(("+", "-")):
-            rest = stripped[1:].replace(" ", "").replace("-", "").replace(".", "").replace(",", "")
+            rest = stripped[1:].translate(str.maketrans("", "", " -.,()"))
             if not rest or not rest.isdigit():
                 return f"'{value}"
     return value

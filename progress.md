@@ -229,3 +229,5 @@
 - **2026-10-26 02:05** | security(funnel-hub): sanitize CSV/Excel exports and add session revocation
 
 - **2026-10-26 02:25** | security(funnel-hub): configure CSP in Caddyfile and fix inbox-app dependencies
+
+- **2026-10-26 02:34** | fix(funnel-hub): support parentheses in phone number formula sanitization

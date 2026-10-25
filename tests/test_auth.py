@@ -234,6 +234,7 @@ def test_sanitize_spreadsheet_cell_formula_injection() -> None:
     assert sanitize_spreadsheet_cell("test@example.com") == "test@example.com"
     assert sanitize_spreadsheet_cell("+79991234567") == "+79991234567"
     assert sanitize_spreadsheet_cell("+7 999 123-45-67") == "+7 999 123-45-67"
+    assert sanitize_spreadsheet_cell("+7 (999) 123-45-67") == "+7 (999) 123-45-67"
     assert sanitize_spreadsheet_cell("-500") == "-500"
     assert sanitize_spreadsheet_cell(12345) == 12345
     assert sanitize_spreadsheet_cell(None) is None
