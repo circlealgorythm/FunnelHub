@@ -128,3 +128,15 @@ The repository is the **Single System of Record**.
   - Unit-тест `test_rate_limiter_memory_pruning`: 550 устаревших корзин очищаются до 1 свежей при добавлении нового ключа (GREEN).
   - Unit-тест `test_validate_vk_secret_constant_time` в `tests/test_cors_and_vk_failclosed.py` (GREEN).
   - `pwsh -ExecutionPolicy Bypass -File scripts/verify.ps1 -Subproject funnel-hub` успешно пройден (код 0 за 10.3s).
+
+### STD-SEC-002 | Защита от Formula Injection в экспорте таблиц и отзыв сессий (HARNESS-002)
+* **Проблема:**
+  1. Пользовательский ввод в формах (имя, город, комментарии, UTM-метки) при экспорте в CSV или Excel (`inbox_database.py`) мог содержать формульные префиксы (`=cmd|...`, `@SUM(...)`), вызывая Formula Injection при открытии файла в Microsoft Excel.
+  2. Сессионные куки JWT после нажатия кнопки «Выход» в админке оставались валидными по криптоподписи до истечения TTL (Hardening 3.1).
+* **Стандарт:**
+  1. В `inbox_database.py` функция `sanitize_spreadsheet_cell` обязана экранировать префиксы `=`, `@`, `\t`, `\r`, а также `+` и `-` (если за ними не следует валидный числовой телефон/число) одинарной кавычкой `'`. Экранирование применяется ко всем ячейкам при экспорте CSV и XLSX.
+  2. В `auth.py` сессионные куки содержат `jti`. При логауте токен регистрируется в хранилище отозванных сессий `REVOKED_SESSIONS` с автоочисткой по истечении TTL.
+* **Доказательство (Evidence):**
+  - Unit-тест `test_sanitize_spreadsheet_cell_formula_injection`: опасные формулы экранируются, телефоны `+79991234567` и числа `-500` не искажаются (GREEN).
+  - Unit-тест `test_logout_revokes_session_cookie`: попытка повторного использования куки после логаута завершается HTTP 401 (GREEN).
+  - `pwsh -ExecutionPolicy Bypass -File scripts/verify.ps1 -Subproject funnel-hub` (18 passed, ruff passed, mypy passed).

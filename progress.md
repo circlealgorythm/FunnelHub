@@ -15,6 +15,12 @@
 ## Status
 
 ### What's Done
+- [x] **`SEC-008 / Feature 3` (Санитизация экспорта CSV/Excel от Formula Injection и отзыв сессий при логауте)** (passing):
+  - В `src/funnelhub/services/inbox_database.py` внедрена функция `sanitize_spreadsheet_cell` (CWE-1236 / OWASP Formula Injection). Все формульные триггеры (`=`, `@`, `\t`, `\r`, а также `+` и `-` без последующих чисел) экранируются одинарной кавычкой `'`, при этом стандартные телефонные номера (`+7999...`) и отрицательные числа сохраняются в исходном виде.
+  - Санитизация интегрирована в функции экспорта базы лидов `export_database_leads_csv` и `xlsx_cell_value` (в `export_database_leads_xlsx`).
+  - В `src/funnelhub/services/auth.py` в сессионные токены добавлен криптографический идентификатор `jti` (16 байт) и реализован механизм отзыва сессий `revoke_session` с автоочисткой устаревших записей.
+  - В `src/funnelhub/api/auth.py` в эндпоинт `POST /api/auth/logout` добавлена инвалидация сессионного токена (повторный replay украденной куки после логаута возвращает 401).
+  - Верификация: добавлены тесты `test_sanitize_spreadsheet_cell_formula_injection` и `test_logout_revokes_session_cookie` в `tests/test_auth.py`; `scripts/verify.ps1 -Subproject funnel-hub` успешно пройден (ruff OK, mypy OK, pytest 18 passed).
 - [x] **`SEC-007 / Feature 2` (Защита от спуфинга IP в Rate Limiter и харденинг VK вебхуков)** (passing):
   - В `src/funnelhub/services/ingestion_guard.py` исправлена функция `get_request_ip`: парсинг `X-Forwarded-For` теперь берет последний IP (`ips[-1]`), добавленный доверенным локальным реверс-прокси Caddy, вместо первого (клиентского), исключая обход лимитов авторизации `/api/auth/login` спуфингом заголовка.
   - В `InMemoryRateLimiter` внедрена очистка устаревших корзин при превышении лимита размера (>500 записей), предотвращая утечку RAM при длительной работе сервиса (Slow DoS).
@@ -214,3 +220,5 @@
 - **2026-10-25 14:20** | docs(funnel-hub): update harness artifacts, record STD-FUNNEL-002 and SEG-001
 
 - **2026-10-26 01:59** | security(funnel-hub): fix IP spoofing in rate limiter and harden VK webhook validation
+
+- **2026-10-26 02:05** | security(funnel-hub): sanitize CSV/Excel exports and add session revocation

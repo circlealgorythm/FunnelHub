@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
 
 from funnelhub.config import Settings, get_settings
@@ -13,6 +13,7 @@ from funnelhub.services.auth import (
     create_session_cookie,
     is_auth_configured,
     require_admin_session,
+    revoke_session,
     safe_auth_status,
     should_use_secure_cookie,
 )
@@ -81,7 +82,12 @@ async def me(
 
 
 @router.post("/logout", response_model=AuthStatusResponse)
-async def logout(response: Response) -> AuthStatusResponse:
+async def logout(
+    response: Response,
+    session_cookie: Annotated[str | None, Cookie(alias=SESSION_COOKIE_NAME)] = None,
+) -> AuthStatusResponse:
+    if session_cookie:
+        revoke_session(session_cookie)
     response.delete_cookie(
         key=SESSION_COOKIE_NAME,
         httponly=True,

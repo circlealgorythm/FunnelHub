@@ -80,6 +80,7 @@ def create_session_cookie(settings: Settings, username: str, now: int | None = N
     issued_at = int(now if now is not None else time.time())
     expires_at = issued_at + settings.inbox_session_ttl_seconds
     payload = {
+        "jti": secrets.token_hex(16),
         "username": username,
         "iat": issued_at,
         "exp": expires_at,
@@ -87,6 +88,45 @@ def create_session_cookie(settings: Settings, username: str, now: int | None = N
     encoded_payload = encode_base64url(json.dumps(payload, separators=(",", ":")).encode("utf-8"))
     signature = sign_value(secret, encoded_payload)
     return f"{encoded_payload}.{signature}"
+
+
+REVOKED_SESSIONS: dict[str, float] = {}
+
+
+def revoke_session(cookie_value: str | None) -> None:
+    if not cookie_value:
+        return
+    try:
+        encoded_payload, signature = cookie_value.split(".", maxsplit=1)
+        payload = json.loads(decode_base64url(encoded_payload))
+        jti = payload.get("jti") or signature
+        exp = float(payload.get("exp", time.time() + 3600))
+        REVOKED_SESSIONS[jti] = exp
+        now = time.time()
+        if len(REVOKED_SESSIONS) > 500:
+            expired = [k for k, v in REVOKED_SESSIONS.items() if v <= now]
+            for k in expired:
+                del REVOKED_SESSIONS[k]
+    except Exception:
+        pass
+
+
+def is_session_revoked(jti: str, signature: str) -> bool:
+    now = time.time()
+    if jti and jti in REVOKED_SESSIONS:
+        if REVOKED_SESSIONS[jti] > now:
+            return True
+        del REVOKED_SESSIONS[jti]
+    if signature in REVOKED_SESSIONS:
+        if REVOKED_SESSIONS[signature] > now:
+            return True
+        del REVOKED_SESSIONS[signature]
+    return False
+
+
+def reset_revoked_sessions() -> None:
+    REVOKED_SESSIONS.clear()
+
 
 
 def verify_session_cookie(
@@ -120,6 +160,10 @@ def verify_session_cookie(
     if expires_at < time.time():
         return None
     if not secrets.compare_digest(username, settings.inbox_admin_username or ""):
+        return None
+
+    jti = str(payload.get("jti") or "")
+    if is_session_revoked(jti, signature):
         return None
 
     return AuthenticatedAdmin(username=username)

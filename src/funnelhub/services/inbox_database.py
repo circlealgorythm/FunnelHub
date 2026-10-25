@@ -541,6 +541,23 @@ def normalize_vk_external_id(vk_id: str) -> str:
     return cleaned
 
 
+DANGEROUS_FORMULA_PREFIXES = ("=", "@", "\t", "\r")
+
+
+def sanitize_spreadsheet_cell(value: Any) -> Any:
+    """Escape formula injection characters in spreadsheet exports (CWE-1236 / OWASP)."""
+    if isinstance(value, str):
+        stripped = value.lstrip()
+        if stripped.startswith(DANGEROUS_FORMULA_PREFIXES):
+            return f"'{value}"
+        if stripped.startswith(("+", "-")):
+            rest = stripped[1:].replace(" ", "").replace("-", "").replace(".", "").replace(",", "")
+            if not rest or not rest.isdigit():
+                return f"'{value}"
+    return value
+
+
+
 async def export_database_leads_csv(
     session: AsyncSession,
     *,
@@ -567,7 +584,9 @@ async def export_database_leads_csv(
     writer = csv.DictWriter(output, fieldnames=CSV_EXPORT_COLUMNS, lineterminator="\n")
     writer.writeheader()
     for lead in lead_list.items:
-        writer.writerow(lead_export_row(lead))
+        row = lead_export_row(lead)
+        sanitized_row = {k: sanitize_spreadsheet_cell(v) for k, v in row.items()}
+        writer.writerow(sanitized_row)
     return output.getvalue()
 
 
@@ -1208,7 +1227,7 @@ def xlsx_export_row(detail: DatabaseLeadDetail) -> dict[str, Any]:
 def xlsx_cell_value(value: Any) -> Any:
     if isinstance(value, datetime):
         return value.isoformat()
-    return value
+    return sanitize_spreadsheet_cell(value)
 
 
 def decode_csv_content(content: bytes) -> str:

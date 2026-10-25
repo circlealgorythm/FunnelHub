@@ -180,3 +180,60 @@ def test_rate_limiter_memory_pruning() -> None:
     limiter.check("ip_fresh", limit=10, window_seconds=60, now=200.0)
     assert len(limiter.buckets) == 1
     assert "ip_fresh" in limiter.buckets
+
+async def test_logout_revokes_session_cookie(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    configure_auth(monkeypatch)
+    try:
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://127.0.0.1:8000",
+        ) as client:
+            login_res = await client.post(
+                "/api/auth/login",
+                json={"username": "aisu", "password": "secret"},
+            )
+            assert login_res.status_code == 200
+            cookie_val = login_res.cookies.get(SESSION_COOKIE_NAME)
+            assert cookie_val is not None
+
+            # Authenticated check
+            me_res = await client.get("/api/auth/me")
+            assert me_res.status_code == 200
+
+            # Logout
+            logout_res = await client.post("/api/auth/logout")
+            assert logout_res.status_code == 200
+
+            # Attacker attempts replay of the previous session cookie
+            replay_client = AsyncClient(
+                transport=ASGITransport(app=app),
+                base_url="http://127.0.0.1:8000",
+                cookies={SESSION_COOKIE_NAME: cookie_val},
+            )
+            async with replay_client:
+                replay_res = await replay_client.get("/api/auth/me")
+                assert replay_res.status_code == 401
+    finally:
+        get_settings.cache_clear()
+
+
+def test_sanitize_spreadsheet_cell_formula_injection() -> None:
+    from funnelhub.services.inbox_database import sanitize_spreadsheet_cell
+
+    # Dangerous formulas must be escaped with prepended single quote
+    assert sanitize_spreadsheet_cell("=cmd|'/C calc'!A0") == "'=cmd|'/C calc'!A0"
+    assert sanitize_spreadsheet_cell("  =1+1") == "'  =1+1"
+    assert sanitize_spreadsheet_cell("@SUM(A1:A10)") == "'@SUM(A1:A10)"
+    assert sanitize_spreadsheet_cell("+cmd|...") == "'+cmd|..."
+    assert sanitize_spreadsheet_cell("-2+3*cmd|...") == "'-2+3*cmd|..."
+    assert sanitize_spreadsheet_cell("\t=test") == "'\t=test"
+    assert sanitize_spreadsheet_cell("\r=test") == "'\r=test"
+
+    # Normal values must remain untouched
+    assert sanitize_spreadsheet_cell("Иван Иванов") == "Иван Иванов"
+    assert sanitize_spreadsheet_cell("test@example.com") == "test@example.com"
+    assert sanitize_spreadsheet_cell("+79991234567") == "+79991234567"
+    assert sanitize_spreadsheet_cell("+7 999 123-45-67") == "+7 999 123-45-67"
+    assert sanitize_spreadsheet_cell("-500") == "-500"
+    assert sanitize_spreadsheet_cell(12345) == 12345
+    assert sanitize_spreadsheet_cell(None) is None
