@@ -25,9 +25,9 @@ import type { ReactNode } from "react";
 
 type ConversationStatus = "open" | "needs_reply" | "replied" | "closed";
 type ReplyChannel = "telegram" | "telegram_most" | "vk" | "vk_most" | "email";
-type InboxSegment = "main" | "most-tsennostey";
+type InboxSegment = "main" | "blog" | "most-tsennostey";
 type InboxListMode = "conversations" | "subscribers";
-type DatabaseSegment = "main" | "most-tsennostey";
+type DatabaseSegment = "main" | "blog" | "most-tsennostey";
 
 type Conversation = {
   id: string;
@@ -98,6 +98,8 @@ const DEFAULT_EXPORT_COLUMNS: ExportColumnOption[] = [
   { key: "country", label: "Страна" },
   { key: "city", label: "Город" },
   { key: "source", label: "Источник" },
+  { key: "article_title", label: "Статья блога" },
+  { key: "article_url", label: "Ссылка на статью" },
   { key: "registration_type", label: "Тип регистрации" },
   { key: "getcourse_created_at", label: "Создан в GetCourse" },
   { key: "getcourse_last_activity_at", label: "Последняя активность GetCourse" },
@@ -340,6 +342,8 @@ type DatabaseLead = {
   city: string | null;
   country: string | null;
   source: string | null;
+  article_title?: string | null;
+  article_url?: string | null;
   status: string;
   created_at: string;
   updated_at: string;
@@ -474,11 +478,13 @@ const filters: Array<{ value: ConversationStatus | "all"; label: string }> = [
 
 const inboxSegments: Array<{ value: InboxSegment; label: string }> = [
   { value: "main", label: "Основной Inbox" },
+  { value: "blog", label: "Блог" },
   { value: "most-tsennostey", label: "Мост ценностей" },
 ];
 
 const databaseSegments: Array<{ value: DatabaseSegment; label: string }> = [
   { value: "main", label: "Общая база" },
+  { value: "blog", label: "Блог" },
   { value: "most-tsennostey", label: "Мост ценностей" },
 ];
 
@@ -564,8 +570,10 @@ export function App() {
       if (filter !== "all") params.set("status", filter);
       if (inboxSegment === "most-tsennostey") {
         params.set("source", "most-tsennostey");
+      } else if (inboxSegment === "blog") {
+        params.set("source", "blog");
       } else {
-        params.set("exclude_source", "most-tsennostey");
+        params.set("exclude_source", "most-tsennostey,blog");
       }
       const queryString = params.toString();
       const endpoint = inboxListMode === "subscribers" ? "subscribers" : "conversations";
@@ -662,8 +670,10 @@ export function App() {
       }
       if (databaseSegment === "most-tsennostey") {
         params.set("source", "most-tsennostey");
+      } else if (databaseSegment === "blog") {
+        params.set("source", "blog");
       } else {
-        params.set("exclude_source", "most-tsennostey");
+        params.set("exclude_source", "most-tsennostey,blog");
       }
       const response = await fetch(`${API_BASE_URL}/api/inbox/database/leads?${params}`, {
         credentials: "include",
@@ -900,8 +910,10 @@ export function App() {
       }
       if (databaseSegment === "most-tsennostey") {
         params.set("source", "most-tsennostey");
+      } else if (databaseSegment === "blog") {
+        params.set("source", "blog");
       } else {
-        params.set("exclude_source", "most-tsennostey");
+        params.set("exclude_source", "most-tsennostey,blog");
       }
       if (options?.dateFrom) {
         params.set("date_from", options.dateFrom);
@@ -2064,6 +2076,11 @@ function DatabaseWorkspace({
                     <td>
                       <strong>{lead.name ?? "Без имени"}</strong>
                       <span>{lead.getcourse_user_id ? `GC ${lead.getcourse_user_id}` : lead.status}</span>
+                      {lead.article_title ? (
+                        <span className="lead-article-badge" title={lead.article_title}>
+                          📄 {lead.article_title}
+                        </span>
+                      ) : null}
                     </td>
                     <td>
                       <span>{lead.email ?? "email нет"}</span>
@@ -2165,9 +2182,27 @@ function LeadDatabaseDetail({
           </div>
           <div>
             <h2>{detail.lead.name ?? "Без имени"}</h2>
-            <p>{detail.lead.source ?? "источник не указан"}</p>
+            <p>{detail.lead.source === "blog" ? "Блог Айсу Кам" : detail.lead.source ?? "Источник не указан"}</p>
           </div>
         </div>
+        {detail.lead.article_title || detail.lead.article_url ? (
+          <div className="lead-blog-article-card">
+            <span className="lead-blog-article-label">Статья обращения:</span>
+            {detail.lead.article_url ? (
+              <a
+                href={detail.lead.article_url.startsWith("http") ? detail.lead.article_url : `https://aisukam.ru${detail.lead.article_url}`}
+                target="_blank"
+                rel="noreferrer"
+                className="lead-blog-article-link"
+              >
+                <span>{detail.lead.article_title || detail.lead.article_url}</span>
+                <ExternalLink size={14} aria-hidden="true" />
+              </a>
+            ) : (
+              <span className="lead-blog-article-title">{detail.lead.article_title}</span>
+            )}
+          </div>
+        ) : null}
         <div className="lead-detail-actions">
           <button className="soft-button" onClick={() => onOpenInbox(detail.lead.id)} type="button">
             <MessageCircle aria-hidden="true" size={16} />

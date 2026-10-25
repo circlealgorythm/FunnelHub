@@ -9,7 +9,7 @@ from typing import Any, Literal
 
 from openpyxl import Workbook, load_workbook  # type: ignore[import-untyped]
 from openpyxl.styles import Alignment, Font, PatternFill  # type: ignore[import-untyped]
-from sqlalchemy import Select, and_, false, func, not_, or_, select
+from sqlalchemy import Select, and_, false, func, not_, or_, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from funnelhub.db.models import (
@@ -47,6 +47,8 @@ CSV_EXPORT_COLUMNS = [
     "city",
     "country",
     "source",
+    "article_title",
+    "article_url",
     "status",
     "telegram",
     "vk",
@@ -64,6 +66,8 @@ XLSX_EXPORT_COLUMNS = [
     ("country", "Страна"),
     ("city", "Город"),
     ("source", "Источник"),
+    ("article_title", "Статья блога"),
+    ("article_url", "Ссылка на статью"),
     ("registration_type", "Тип регистрации"),
     ("getcourse_created_at", "Создан в GetCourse"),
     ("getcourse_last_activity_at", "Последняя активность GetCourse"),
@@ -139,6 +143,8 @@ class DatabaseLeadSummary:
     vk: str | None
     conversations_count: int
     messages_count: int
+    article_title: str | None = None
+    article_url: str | None = None
 
 
 @dataclass(frozen=True)
@@ -940,6 +946,26 @@ def build_lead_summary_query() -> Select[tuple[Any, ...]]:
         .correlate(Lead)
         .scalar_subquery()
     )
+    article_title = (
+        select(LeadCustomField.value)
+        .where(
+            LeadCustomField.lead_id == Lead.id,
+            LeadCustomField.field_key == "article_title",
+        )
+        .correlate(Lead)
+        .limit(1)
+        .scalar_subquery()
+    )
+    article_url = (
+        select(LeadCustomField.value)
+        .where(
+            LeadCustomField.lead_id == Lead.id,
+            LeadCustomField.field_key == "article_url",
+        )
+        .correlate(Lead)
+        .limit(1)
+        .scalar_subquery()
+    )
     return select(
         Lead.id,
         Lead.getcourse_user_id,
@@ -958,6 +984,8 @@ def build_lead_summary_query() -> Select[tuple[Any, ...]]:
         vk.label("vk"),
         conversations_count.label("conversations_count"),
         messages_count.label("messages_count"),
+        article_title.label("article_title"),
+        article_url.label("article_url"),
     )
 
 
@@ -1007,15 +1035,30 @@ def lead_source_filter(source: str) -> Any:
 
 
 def lead_exclude_source_filter(exclude_source: str) -> Any:
-    source_event_exists = (
+    sources = [s.strip() for s in exclude_source.split(",") if s.strip()]
+    if not sources:
+        return true()
+    if len(sources) == 1:
+        single_source = sources[0]
+        source_event_exists = (
+            select(Event.id)
+            .where(Event.lead_id == Lead.id, Event.source == single_source)
+            .correlate(Lead)
+            .exists()
+        )
+        return and_(
+            (Lead.source.is_(None)) | (Lead.source != single_source),
+            not_(source_event_exists),
+        )
+    source_events_exist = (
         select(Event.id)
-        .where(Event.lead_id == Lead.id, Event.source == exclude_source)
+        .where(Event.lead_id == Lead.id, Event.source.in_(sources))
         .correlate(Lead)
         .exists()
     )
     return and_(
-        (Lead.source.is_(None)) | (Lead.source != exclude_source),
-        not_(source_event_exists),
+        (Lead.source.is_(None)) | (~Lead.source.in_(sources)),
+        not_(source_events_exist),
     )
 
 
@@ -1064,6 +1107,8 @@ def row_to_lead_summary(row: Any) -> DatabaseLeadSummary:
         city=row.city,
         country=row.country,
         source=row.source,
+        article_title=getattr(row, "article_title", None),
+        article_url=getattr(row, "article_url", None),
         status=row.status,
         created_at=row.created_at,
         updated_at=row.updated_at,
@@ -1086,6 +1131,8 @@ def lead_export_row(lead: DatabaseLeadSummary) -> dict[str, Any]:
         "city": lead.city,
         "country": lead.country,
         "source": lead.source,
+        "article_title": lead.article_title or "",
+        "article_url": lead.article_url or "",
         "status": lead.status,
         "telegram": lead.telegram,
         "vk": lead.vk,
@@ -1124,6 +1171,8 @@ def xlsx_export_row(detail: DatabaseLeadDetail) -> dict[str, Any]:
         "country": lead.country,
         "city": lead.city,
         "source": lead.source,
+        "article_title": custom.get("article_title") or lead.article_title or "",
+        "article_url": custom.get("article_url") or lead.article_url or "",
         "registration_type": profile.get("registration_type"),
         "getcourse_created_at": profile.get("getcourse_created_at"),
         "getcourse_last_activity_at": profile.get("getcourse_last_activity_at"),

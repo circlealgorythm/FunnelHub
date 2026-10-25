@@ -145,6 +145,17 @@
   - По согласованию с пользователем остановлены все сервисы профиля `most`: `funnelhub-most-telegram-bot-1`, `funnelhub-most-funnel-worker-1` и `funnelhub-most-vk-funnel-worker-1`.
   - Зафиксирован регламент `SOP-OPS-002` в `AGENTS.md`: сервисы профиля `most` архивированы и не должны запускаться в штатном режиме.
   - На боевом сервере оставлены только активные сервисы школы «Сатья-Юга» (`app`, `telegram-bot`, `funnel-worker`, `redis`, `postgres`).
+- [x] **Сегментация заявок «Сайт vs Блог» и учет статьи обращения (2026-10-25)**:
+  - В webhooks.py добавлены поля rticle_title и rticle_url в AisuLandingApplicationRequest, с сохранением в LeadCustomField («Статья блога», «Ссылка на статью») и фиксацией source='blog' в задачах лида.
+  - В getcourse_webhook.py зарегистрированы алиасы rticle_title и rticle_url в KNOWN_ADDITIONAL_FIELD_ALIASES и ADDITIONAL_FIELD_LABELS.
+  - В inbox_database.py и inbox.py функция lead_exclude_source_filter и list_inbox_conversations обновлены для поддержки мульти-источников через запятую (xclude_source='most-tsennostey,blog').
+  - Поля rticle_title и rticle_url включены в DatabaseLeadSummary, ответ DatabaseLeadResponse, а также в колонки экспорта XLSX_EXPORT_COLUMNS и CSV_EXPORT_COLUMNS.
+  - В inbox-app/src/App.tsx добавлены сегменты log в databaseSegments и inboxSegments. В таблице лидов выводится бейдж 📄 <Статья>, в детальной панели лида выводится интерактивная карточка со статьей и прямой ссылкой, а запросы фильтруются: main исключает most-tsennostey,blog, а log запрашивает source=blog.
+  - **Доказательство (Evidence):**
+    - Создан набор unit-тестов 	ests/test_blog_segmentation.py (6 тестов: Pydantic валидация, компиляция SQL фильтров исключения и источников, экспортные колонки, формирование модели лида).
+    - scripts/verify.ps1 -Subproject funnel-hub — 14 passed (100%), ruff passed, mypy (54 файла) passed, код выхода 0 (9.29s).
+    - inbox-app собран: 	sc -b && vite build — exit code 0 (2.58s).
+
 - [x] **Реактивация проекта «Мост ценностей» и строгая изоляция базы (2026-10-21)**:
   - В админке `inbox-app` восстановлены сегменты «Основной Inbox» / «Мост ценностей» и «Общая база» / «Мост ценностей», добавлены бейджи каналов `telegram_most` и `vk_most` и поддержка ответов из карточки.
   - В `inbox_database.py` и `inbox.py` внедрен `lead_exclude_source_filter`: лиды, оставившие заявку на «Мост ценностей» (включая лидов со склейкой GetCourse ID), строго исключаются из «Общей базы» школы и отображаются только в сегменте «Мост ценностей» (`STD-FUNNEL-001`).
@@ -187,3 +198,5 @@
 - **2026-10-21 14:34** | docs(funnel-hub): update SOP-OPS-002 for most-tsennostey reactivation
 
 - **2026-10-21 14:38** | docs(funnel-hub): record STD-FUNNEL-001 and production reactivation evidence
+
+- **2026-10-25 14:08** | feat(funnel-hub): support blog lead segmentation, article display and multi-source exclusion

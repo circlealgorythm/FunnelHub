@@ -1151,6 +1151,58 @@ h2 {
   overflow-wrap: anywhere;
   font-variant-numeric: tabular-nums;
 }
+.lead-article-badge {
+  display: inline-flex !important;
+  align-items: center;
+  margin-top: 5px !important;
+  padding: 2px 7px;
+  background: rgba(36, 72, 60, 0.08);
+  color: var(--green-deep, #1a332a) !important;
+  border: 1px solid rgba(36, 72, 60, 0.18);
+  border-radius: 6px;
+  font-size: 11.5px !important;
+  font-weight: 500;
+  white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lead-blog-article-card {
+  margin: 10px 0 14px 0;
+  padding: 10px 14px;
+  background: rgba(36, 72, 60, 0.05);
+  border: 1px solid rgba(36, 72, 60, 0.14);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.lead-blog-article-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+
+.lead-blog-article-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--primary, #24483c);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  word-break: break-word;
+}
+
+.lead-blog-article-link:hover {
+  color: var(--primary-hover, #1a332a);
+}
+
 
 /* Tabular numerals for clean vertical data alignment */
 .conversation-meta,

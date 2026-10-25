@@ -254,13 +254,24 @@ async def list_inbox_conversations(
             | ((Conversation.source.is_(None)) & (Lead.source == source))
         )
     if exclude_source:
-        statement = statement.where(
-            (Conversation.source.is_not(None) & (Conversation.source != exclude_source))
-            | (
-                Conversation.source.is_(None)
-                & ((Lead.source.is_(None)) | (Lead.source != exclude_source))
+        exclude_sources = [s.strip() for s in exclude_source.split(",") if s.strip()]
+        if len(exclude_sources) == 1:
+            single_exclude = exclude_sources[0]
+            statement = statement.where(
+                (Conversation.source.is_not(None) & (Conversation.source != single_exclude))
+                | (
+                    Conversation.source.is_(None)
+                    & ((Lead.source.is_(None)) | (Lead.source != single_exclude))
+                )
             )
-        )
+        elif len(exclude_sources) > 1:
+            statement = statement.where(
+                (Conversation.source.is_not(None) & (~Conversation.source.in_(exclude_sources)))
+                | (
+                    Conversation.source.is_(None)
+                    & ((Lead.source.is_(None)) | (~Lead.source.in_(exclude_sources)))
+                )
+            )
     statement = statement.order_by(
         Conversation.last_message_at.desc().nullslast(),
         Conversation.updated_at.desc(),
@@ -285,16 +296,30 @@ async def list_inbox_subscribers(
         )
         statement = statement.where((Lead.source == source) | source_event_exists)
     if exclude_source:
-        source_event_exists = (
-            select(Event.id)
-            .where(Event.lead_id == Lead.id, Event.source == exclude_source)
-            .correlate(Lead)
-            .exists()
-        )
-        statement = statement.where(
-            ((Lead.source.is_(None)) | (Lead.source != exclude_source))
-            & (~source_event_exists)
-        )
+        exclude_sources = [s.strip() for s in exclude_source.split(",") if s.strip()]
+        if len(exclude_sources) == 1:
+            single_exclude = exclude_sources[0]
+            source_event_exists = (
+                select(Event.id)
+                .where(Event.lead_id == Lead.id, Event.source == single_exclude)
+                .correlate(Lead)
+                .exists()
+            )
+            statement = statement.where(
+                ((Lead.source.is_(None)) | (Lead.source != single_exclude))
+                & (~source_event_exists)
+            )
+        elif len(exclude_sources) > 1:
+            source_events_exist = (
+                select(Event.id)
+                .where(Event.lead_id == Lead.id, Event.source.in_(exclude_sources))
+                .correlate(Lead)
+                .exists()
+            )
+            statement = statement.where(
+                ((Lead.source.is_(None)) | (~Lead.source.in_(exclude_sources)))
+                & (~source_events_exist)
+            )
     rows = (
         await session.execute(
             statement.order_by(

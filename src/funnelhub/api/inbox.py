@@ -141,6 +141,8 @@ class DatabaseLeadResponse(BaseModel):
     city: str | None
     country: str | None
     source: str | None
+    article_title: str | None = None
+    article_url: str | None = None
     status: str
     created_at: datetime
     updated_at: datetime
@@ -262,8 +264,8 @@ class ApiInboxSendClients:
 async def get_conversations(
     session: SessionDep,
     status: ConversationStatus | None = None,
-    source: Literal["most-tsennostey"] | None = None,
-    exclude_source: Literal["most-tsennostey"] | None = None,
+    source: str | None = None,
+    exclude_source: str | None = None,
 ) -> list[InboxConversationResponse]:
     summaries = await list_inbox_conversations(
         session,
@@ -277,8 +279,8 @@ async def get_conversations(
 @router.get("/subscribers", response_model=list[InboxConversationResponse])
 async def get_subscribers(
     session: SessionDep,
-    source: Literal["most-tsennostey"] | None = None,
-    exclude_source: Literal["most-tsennostey"] | None = None,
+    source: str | None = None,
+    exclude_source: str | None = None,
 ) -> list[InboxConversationResponse]:
     subscribers = await list_inbox_subscribers(
         session,
@@ -571,8 +573,8 @@ async def patch_conversation_status(
 async def get_database_leads(
     session: SessionDep,
     q: str | None = None,
-    source: Literal["most-tsennostey"] | None = None,
-    exclude_source: Literal["most-tsennostey"] | None = None,
+    source: str | None = None,
+    exclude_source: str | None = None,
     limit: int = 50,
     offset: int = 0,
 ) -> DatabaseLeadListResponse:
@@ -603,8 +605,8 @@ async def get_database_export_columns() -> list[ExportColumnOption]:
 async def export_database_leads(
     session: SessionDep,
     q: str | None = None,
-    source: Literal["most-tsennostey"] | None = None,
-    exclude_source: Literal["most-tsennostey"] | None = None,
+    source: str | None = None,
+    exclude_source: str | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
     date_field: Literal["created_at", "getcourse_created_at"] = "created_at",
@@ -632,8 +634,8 @@ async def export_database_leads(
 async def export_database_leads_as_xlsx(
     session: SessionDep,
     q: str | None = None,
-    source: Literal["most-tsennostey"] | None = None,
-    exclude_source: Literal["most-tsennostey"] | None = None,
+    source: str | None = None,
+    exclude_source: str | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
     date_field: Literal["created_at", "getcourse_created_at"] = "created_at",
@@ -912,6 +914,8 @@ def database_lead_response(lead: DatabaseLeadSummary) -> DatabaseLeadResponse:
         city=lead.city,
         country=lead.country,
         source=lead.source,
+        article_title=lead.article_title,
+        article_url=lead.article_url,
         status=lead.status,
         created_at=lead.created_at,
         updated_at=lead.updated_at,

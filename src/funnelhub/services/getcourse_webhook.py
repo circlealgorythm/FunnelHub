@@ -63,6 +63,8 @@ KNOWN_ADDITIONAL_FIELD_ALIASES = {
         "id групп пользователя/дата добавления",
     ),
     "mailing_categories": ("mailing_categories", "Категории рассылок"),
+    "article_title": ("article_title", "Статья блога"),
+    "article_url": ("article_url", "Ссылка на статью"),
 }
 ADDITIONAL_FIELD_LABELS = {
     "birth_date": "Дата рождения",
@@ -77,6 +79,8 @@ ADDITIONAL_FIELD_LABELS = {
     "vk_id": "VK-ID",
     "getcourse_groups": "Группы GetCourse",
     "mailing_categories": "Категории рассылок",
+    "article_title": "Статья блога",
+    "article_url": "Ссылка на статью",
 }
 PRIVACY_POLICY_URL = "https://shamanaisu.getcourse.ru/politica"
 CONSENT_CUSTOM_FIELD_MAPPING = {

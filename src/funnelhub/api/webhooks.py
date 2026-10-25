@@ -124,6 +124,8 @@ class AisuLandingApplicationRequest(BaseModel):
     smartcaptcha_token: str = Field(min_length=1, max_length=4096)
     smartcaptcha_ip: str | None = Field(default=None, max_length=64)
     source: str | None = Field(default=None, max_length=500)
+    article_title: str | None = Field(default=None, max_length=255)
+    article_url: str | None = Field(default=None, max_length=512)
     utm_source: str | None = Field(default=None, max_length=255)
     utm_medium: str | None = Field(default=None, max_length=255)
     utm_campaign: str | None = Field(default=None, max_length=255)
@@ -339,6 +341,8 @@ async def aisu_landing_application(
             "email": application.email,
             "custom_10616540": "Да",
             "source": application.source,
+            "article_title": application.article_title,
+            "article_url": application.article_url,
             "utm_source": application.utm_source,
             "utm_medium": application.utm_medium,
             "utm_campaign": application.utm_campaign,
@@ -365,7 +369,7 @@ async def aisu_landing_application(
         settings=settings,
         lead_id=result.lead_id,
         created=result.created,
-        source="landing-applications/aisu",
+        source=application.source or "landing-applications/aisu",
         notify_admin=True,
     )
     await enqueue_getcourse_consultation_submission(
