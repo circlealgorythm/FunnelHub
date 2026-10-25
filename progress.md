@@ -146,15 +146,19 @@
   - Зафиксирован регламент `SOP-OPS-002` в `AGENTS.md`: сервисы профиля `most` архивированы и не должны запускаться в штатном режиме.
   - На боевом сервере оставлены только активные сервисы школы «Сатья-Юга» (`app`, `telegram-bot`, `funnel-worker`, `redis`, `postgres`).
 - [x] **Сегментация заявок «Сайт vs Блог» и учет статьи обращения (2026-10-25)**:
-  - В webhooks.py добавлены поля rticle_title и rticle_url в AisuLandingApplicationRequest, с сохранением в LeadCustomField («Статья блога», «Ссылка на статью») и фиксацией source='blog' в задачах лида.
-  - В getcourse_webhook.py зарегистрированы алиасы rticle_title и rticle_url в KNOWN_ADDITIONAL_FIELD_ALIASES и ADDITIONAL_FIELD_LABELS.
-  - В inbox_database.py и inbox.py функция lead_exclude_source_filter и list_inbox_conversations обновлены для поддержки мульти-источников через запятую (xclude_source='most-tsennostey,blog').
-  - Поля rticle_title и rticle_url включены в DatabaseLeadSummary, ответ DatabaseLeadResponse, а также в колонки экспорта XLSX_EXPORT_COLUMNS и CSV_EXPORT_COLUMNS.
-  - В inbox-app/src/App.tsx добавлены сегменты log в databaseSegments и inboxSegments. В таблице лидов выводится бейдж 📄 <Статья>, в детальной панели лида выводится интерактивная карточка со статьей и прямой ссылкой, а запросы фильтруются: main исключает most-tsennostey,blog, а log запрашивает source=blog.
+  - В `webhooks.py` добавлены поля `article_title` и `article_url` в `AisuLandingApplicationRequest`, с сохранением в `LeadCustomField` («Статья блога», «Ссылка на статью») и фиксацией `source='blog'` в задачах лида.
+  - В `getcourse_webhook.py` зарегистрированы алиасы `article_title` и `article_url` в `KNOWN_ADDITIONAL_FIELD_ALIASES` и `ADDITIONAL_FIELD_LABELS`.
+  - В `inbox_database.py` и `inbox.py` функция `lead_exclude_source_filter` и `list_inbox_conversations` обновлены для поддержки мульти-источников через запятую (`exclude_source='most-tsennostey,blog'`).
+  - Поля `article_title` и `article_url` включены в `DatabaseLeadSummary`, ответ `DatabaseLeadResponse`, а также в колонки экспорта `XLSX_EXPORT_COLUMNS` и `CSV_EXPORT_COLUMNS`.
+  - В `inbox-app/src/App.tsx` добавлены сегменты `blog` в `databaseSegments` и `inboxSegments`. В таблице лидов выводится бейдж 📄 <Статья>, в детальной панели лида выводится интерактивная карточка со статьей и прямой ссылкой, а запросы фильтруются: `main` исключает `most-tsennostey,blog`, а `blog` запрашивает `source=blog`.
+  - В `inbox-app/src/styles.css` добавлены стили `.lead-article-badge` и `.lead-blog-article-card`.
+  - Выполнен боевой деплой на Beget VPS (`31.129.110.56`) через `deploy_files.py`: `docker compose build`, `alembic upgrade head`, перезапуск сервисов (`app`, `funnel-worker`, боты).
   - **Доказательство (Evidence):**
-    - Создан набор unit-тестов 	ests/test_blog_segmentation.py (6 тестов: Pydantic валидация, компиляция SQL фильтров исключения и источников, экспортные колонки, формирование модели лида).
-    - scripts/verify.ps1 -Subproject funnel-hub — 14 passed (100%), ruff passed, mypy (54 файла) passed, код выхода 0 (9.29s).
-    - inbox-app собран: 	sc -b && vite build — exit code 0 (2.58s).
+    - Создан набор unit-тестов `tests/test_blog_segmentation.py` (6 тестов: Pydantic-валидация, компиляция SQL-фильтров исключения и источников, экспортные колонки, формирование модели лида).
+    - `scripts/verify.ps1 -Subproject funnel-hub` — 14 passed (100%), ruff passed, mypy (54 файла) passed, код выхода 0 (9.29s).
+    - `inbox-app` собран: `tsc -b && vite build` — exit code 0 (2.35s).
+    - Боевой HTTP статус: `curl.exe -s -o NUL -w "%{http_code}" https://bot.aisukam.ru/inbox/` — **200 OK**.
+    - Боевой статус сайта: `curl.exe -s -o NUL -w "%{http_code}" https://aisukam.ru/blog/` — **200 OK**.
 
 - [x] **Реактивация проекта «Мост ценностей» и строгая изоляция базы (2026-10-21)**:
   - В админке `inbox-app` восстановлены сегменты «Основной Inbox» / «Мост ценностей» и «Общая база» / «Мост ценностей», добавлены бейджи каналов `telegram_most` и `vk_most` и поддержка ответов из карточки.
@@ -200,3 +204,5 @@
 - **2026-10-21 14:38** | docs(funnel-hub): record STD-FUNNEL-001 and production reactivation evidence
 
 - **2026-10-25 14:08** | feat(funnel-hub): support blog lead segmentation, article display and multi-source exclusion
+
+- **2026-10-25 14:20** | docs(funnel-hub): update harness artifacts, record STD-FUNNEL-002 and SEG-001

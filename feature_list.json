@@ -211,6 +211,19 @@
       "verification": "1. Поиск по проекту на отсутствие U+2014. 2. npm run build. 3. init.ps1.",
       "evidence": "1. Проведен полный аудит кодовой базы frontend: устранены все 11 символов длинного тире U+2014 в пользу аккуратных дефисов '-' в плейсхолдерах и профессиональных заголовков ('Непокупатели: два сценария коммуникации', 'Миграция: база непокупателей', 'TG: ... / VK: ...'). 2. Повторный поиск подтвердил 0 вхождений U+2014 в inbox-app/src. 3. Проверен Pre-Flight чек-лист Design Taste: контрастность, читаемость, сохранение теплой брендовой палитры. 4. npm run build собран успешно (2.38s, 0 ошибок). 5. init.ps1 пройден (33 теста).",
       "notes": "Финальная полировка Anti-Slop."
+    },
+    {
+      "id": "SEG-001",
+      "priority": 17,
+      "area": "blog-leads-segmentation",
+      "title": "Сегментация заявок блога и захват статьи обращения",
+      "description": "Разделение входящих лидов основного сайта и блога в Funnel Hub. Добавление сегмента blog в админку, отображение статьи обращения (article_title, article_url) с внешней ссылкой и экспорт в CSV/XLSX.",
+      "user_visible_behavior": "В админке Funnel Hub появляется вкладка 'Блог'. В таблице лидов виден бейдж статьи, в карточке лида кликабельная ссылка на статью, из 'Общей базы' исключены лиды блога и Моста ценностей.",
+      "status": "passing",
+      "dependencies": [],
+      "verification": "1. pytest tests/test_blog_segmentation.py. 2. npm run build (inbox-app). 3. scripts/verify.ps1 -Subproject funnel-hub. 4. curl /inbox/.",
+      "evidence": "1. Pydantic-схема и вебхуки расширены полями article_title и article_url. 2. Реализована мульти-фильтрация exclude_source='most-tsennostey,blog'. 3. В inbox-app добавлен сегмент blog, бейдж 📄 и блок статьи со ссылкой. 4. tests/test_blog_segmentation.py (6 тестов) пройден. 5. verify.ps1 -Subproject funnel-hub пройден (14 passed, ruff clean, mypy 54 clean). 6. inbox-app собран (2.35s). 7. Выкачен на Beget VPS, HTTP 200 на /inbox/.",
+      "notes": "STD-FUNNEL-002"
     }
   ]
 }
