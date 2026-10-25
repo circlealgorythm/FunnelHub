@@ -140,3 +140,14 @@ The repository is the **Single System of Record**.
   - Unit-тест `test_sanitize_spreadsheet_cell_formula_injection`: опасные формулы экранируются, телефоны `+79991234567` и числа `-500` не искажаются (GREEN).
   - Unit-тест `test_logout_revokes_session_cookie`: попытка повторного использования куки после логаута завершается HTTP 401 (GREEN).
   - `pwsh -ExecutionPolicy Bypass -File scripts/verify.ps1 -Subproject funnel-hub` (18 passed, ruff passed, mypy passed).
+
+### STD-SEC-003 | Защита периметра через Content-Security-Policy в Caddyfile (HARNESS-002)
+* **Проблема:**
+  В заголовках безопасности реверс-прокси Caddy отсутствовала директива `Content-Security-Policy`, что снижало защиту от атак XSS и кликджекинга при работе с веб-интерфейсом FunnelHub (`bot.aisukam.ru`).
+* **Стандарт:**
+  В блоке `header` конфигурации `Caddyfile` задавать строгую политику CSP:
+  `Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https://bot.aisukam.ru; frame-ancestors 'self';"`
+  Обязательно покрывать наличие CSP и балансировку скобок тестом в `tests/test_caddyfile.py`.
+* **Доказательство (Evidence):**
+  - Unit-тест `tests/test_caddyfile.py` проверяет директиву `Content-Security-Policy` и сбалансированность фигурных скобок (PASS).
+  - Прогон `scripts/verify.ps1 -Subproject funnel-hub` (ruff, mypy, 18 unit-тестов) успешно завершен с кодом 0.

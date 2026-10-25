@@ -15,6 +15,11 @@
 ## Status
 
 ### What's Done
+- [x] **\SEC-009 / Feature 5\ (Внедрение Content-Security-Policy в Caddyfile и устранение уязвимостей npm)** (passing):
+  - В \Caddyfile\ добавлена строгая директива \Content-Security-Policy\ с доверенными источниками для скриптов, стилей, изображений и подключений WebSocket/API (\ot.aisukam.ru\, \cdn.jsdelivr.net\).
+  - В \	ests/test_caddyfile.py\ добавлен тест наличия \Content-Security-Policy\.
+  - В \inbox-app\ выполнен аудит и безопасное обновление npm-зависимостей (pm audit fix\), устранивший 6 уязвимостей (найдено 0 уязвимостей).
+  - Верификация: \scripts/verify.ps1 -Subproject funnel-hub\ успешно пройден (ruff OK, mypy OK, pytest 18 passed); сборка \inbox-app\ завершилась с кодом 0 за 2.62s.
 - [x] **`SEC-008 / Feature 3` (Санитизация экспорта CSV/Excel от Formula Injection и отзыв сессий при логауте)** (passing):
   - В `src/funnelhub/services/inbox_database.py` внедрена функция `sanitize_spreadsheet_cell` (CWE-1236 / OWASP Formula Injection). Все формульные триггеры (`=`, `@`, `\t`, `\r`, а также `+` и `-` без последующих чисел) экранируются одинарной кавычкой `'`, при этом стандартные телефонные номера (`+7999...`) и отрицательные числа сохраняются в исходном виде.
   - Санитизация интегрирована в функции экспорта базы лидов `export_database_leads_csv` и `xlsx_cell_value` (в `export_database_leads_xlsx`).
@@ -222,3 +227,5 @@
 - **2026-10-26 01:59** | security(funnel-hub): fix IP spoofing in rate limiter and harden VK webhook validation
 
 - **2026-10-26 02:05** | security(funnel-hub): sanitize CSV/Excel exports and add session revocation
+
+- **2026-10-26 02:25** | security(funnel-hub): configure CSP in Caddyfile and fix inbox-app dependencies

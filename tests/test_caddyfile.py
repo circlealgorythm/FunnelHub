@@ -26,6 +26,7 @@ def test_caddyfile_security_configuration() -> None:
     assert "SAMEORIGIN" in content
     assert "Referrer-Policy" in content
     assert "Permissions-Policy" in content
+    assert "Content-Security-Policy" in content
     assert "-Server" in content
 
     # Braces balancing check

@@ -24,6 +24,9 @@ bot.aisukam.ru {
 		# Отключение неиспользуемых браузерных API
 		Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()"
 
+		# Защита от межсайтового скриптинга (XSS) и кликджекинга
+		Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https://bot.aisukam.ru; frame-ancestors 'self';"
+
 		# Скрытие сигнатуры сервера
 		-Server
 	}
