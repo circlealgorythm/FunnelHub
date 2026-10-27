@@ -15,6 +15,13 @@
 ## Status
 
 ### What's Done
+- [x] **`UI-010 / Fix` (Полировка карточки лида: удаление фейк-аватарки, скрытие пустого источника и выравнивание кнопок действий в 2 колонки)** (passing):
+  - В `inbox-app/src/App.tsx` удалена дефолтная иконка-заглушка пользователя (`<div className="avatar"><UserRound size={22} /></div>`) в карточке `LeadDatabaseDetail`.
+  - Устранена избыточная надпись «Источник не указан»: блок источника переведен на условный рендеринг `{detail.lead.source ? <p>...</p> : null}`, отображаясь только когда источник реально задан (например, «Блог Айсу Кам»).
+  - Кнопки действий («Написать в Inbox» и «Удалить лида») выровнены в аккуратную 2-колоночную сетку по 50% ширины (`display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; width: 100%`), идеально совпадающую с сеткой блоков статистики «Диалоги» и «Сообщения» непосредственно под ними.
+  - Устранен визуальный перекос кнопок вправо из-за `justify-content: flex-end`, стандартизирована высота (38px), отступы и добавлен `text-overflow: ellipsis`.
+  - Устранены ошибки форматирования E501 в `deploy_files.py`.
+  - Верификация: `npm run build` (inbox-app) успешно завершен (код 0, 2.62s); `scripts/verify.ps1 -Subproject funnel-hub` успешно пройден (ruff OK, mypy 54 OK, pytest 18 passed); боевой деплой на Beget VPS (`deploy_files.py`) выполнен, эндпоинт `https://bot.aisukam.ru/inbox/` возвращает HTTP 200 OK.
 - [x] **\SEC-009 / Feature 5\ (Внедрение Content-Security-Policy в Caddyfile и устранение уязвимостей npm)** (passing):
   - В \Caddyfile\ добавлена строгая директива \Content-Security-Policy\ с доверенными источниками для скриптов, стилей, изображений и подключений WebSocket/API (\ot.aisukam.ru\, \cdn.jsdelivr.net\).
   - В \	ests/test_caddyfile.py\ добавлен тест наличия \Content-Security-Policy\.
@@ -231,3 +238,5 @@
 - **2026-10-26 02:25** | security(funnel-hub): configure CSP in Caddyfile and fix inbox-app dependencies
 
 - **2026-10-26 02:34** | fix(funnel-hub): support parentheses in phone number formula sanitization
+
+- **2026-10-27 14:36** | fix(funnel-hub): polish lead detail card layout, remove default avatar and align action buttons

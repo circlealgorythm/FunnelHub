@@ -1249,45 +1249,55 @@ h2 {
 
 .lead-detail-head {
   display: flex;
-  align-items: center;
-  gap: 12px;
-  justify-content: space-between;
-  align-items: flex-start;
-  flex-wrap: wrap;
-}
-
-.lead-detail-identity,
-.lead-detail-actions {
-  display: flex;
-  min-width: 0;
+  flex-direction: column;
   gap: 12px;
 }
 
 .lead-detail-identity {
-  align-items: center;
-  flex: 1 1 160px;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  width: 100%;
 }
 
-.lead-detail-identity > div:last-child {
-  min-width: 0;
+.lead-detail-identity h2 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 800;
+  line-height: 1.25;
+  color: var(--ink);
+  word-break: break-word;
+}
+
+.lead-detail-identity p,
+.lead-detail-head p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 13px;
 }
 
 .lead-detail-actions {
-  flex: 1 1 100%;
-  flex-wrap: wrap;
-  justify-content: flex-end;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
+  width: 100%;
 }
 
 .lead-detail-actions .soft-button {
   min-height: 38px;
-  padding: 0 10px;
-  font-size: 13px;
+  height: 38px;
+  padding: 0 6px;
+  font-size: 12.5px;
+  gap: 6px;
+  width: 100%;
+  justify-content: center;
+  white-space: nowrap;
 }
 
-.lead-detail-head p {
-  margin: 6px 0 0;
-  color: var(--muted);
+.lead-detail-actions .soft-button span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .detail-stats {

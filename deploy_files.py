@@ -10,7 +10,13 @@ import paramiko
 PROJECT_ROOT = Path(__file__).resolve().parent
 REMOTE_ROOT = "/opt/funnelhub"
 UPLOAD_DIRS = ("src", "migrations", "content", "tests", "inbox-app/dist")
-UPLOAD_FILES = ("Dockerfile", "docker-compose.prod.yml", "pyproject.toml", "alembic.ini")
+UPLOAD_FILES = (
+    "Dockerfile",
+    "docker-compose.prod.yml",
+    "pyproject.toml",
+    "alembic.ini",
+    "Caddyfile",
+)
 CLEAN_REMOTE_DIRS = {"inbox-app/dist"}
 SKIP_DIRS = {"__pycache__", ".venv", ".pytest_cache", "node_modules"}
 SKIP_FILES = {".DS_Store"}
@@ -114,13 +120,17 @@ def main() -> None:
         finally:
             sftp.close()
 
+        caddy_reload = (
+            "(command -v caddy >/dev/null 2>&1 && sudo systemctl reload caddy 2>/dev/null "
+            "|| caddy reload --config Caddyfile 2>/dev/null || true)"
+        )
         command = (
             f"cd {REMOTE_ROOT} && "
             "docker compose -f docker-compose.prod.yml build app funnel-worker telegram-bot "
             "most-telegram-bot most-funnel-worker most-vk-funnel-worker && "
             "docker compose -f docker-compose.prod.yml run --rm app alembic upgrade head && "
             "docker compose -f docker-compose.prod.yml up -d app funnel-worker telegram-bot "
-            "most-telegram-bot most-funnel-worker most-vk-funnel-worker"
+            f"most-telegram-bot most-funnel-worker most-vk-funnel-worker && {caddy_reload}"
         )
         _, stdout, stderr = ssh.exec_command(command)
         out = stdout.read().decode("utf-8", errors="replace")

@@ -6,6 +6,13 @@
 - Установлен и инициализирован шаблон Harness Engineering.
 
 ## Changes This Session
+- Завершен `UI-010` (Полировка карточки лида в базе Inbox):
+  - Удалена иконка-заглушка аватара (`<UserRound />`) из `LeadDatabaseDetail`.
+  - Устранена строка «Источник не указан» — теперь выводится только существующий источник (`source`).
+  - Кнопки «Написать в Inbox» и «Удалить лида» выровнены в 2 колонки по 50% ширины по единой сетке со статистикой карточки.
+  - Проверено: `npm run build` в `inbox-app` (2.62s, код 0), `scripts/verify.ps1 -Subproject funnel-hub` (ruff OK, mypy OK, pytest 18 passed, код 0).
+  - Выполнен боевой деплой на Beget VPS (`deploy_files.py`), проверен статус `https://bot.aisukam.ru/inbox/` (HTTP 200 OK).
+
 - Завершен `SEC-001` (Устранение критических утечек секретов и логов PII).
 - Завершен `SEC-002` (Харденинг базы данных PostgreSQL и Redis в Docker):
   - Устранен жесткий хардкод кредов БД во всех сервисах `docker-compose.prod.yml`, добавлена параметризация через `.env` с безопасным fallback.

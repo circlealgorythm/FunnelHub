@@ -2177,13 +2177,10 @@ function LeadDatabaseDetail({
     <div className="lead-detail">
       <div className="lead-detail-head">
         <div className="lead-detail-identity">
-          <div className="avatar" aria-hidden="true">
-            <UserRound size={22} />
-          </div>
-          <div>
-            <h2>{detail.lead.name ?? "Без имени"}</h2>
-            <p>{detail.lead.source === "blog" ? "Блог Айсу Кам" : detail.lead.source ?? "Источник не указан"}</p>
-          </div>
+          <h2>{detail.lead.name ?? "Без имени"}</h2>
+          {detail.lead.source ? (
+            <p>{detail.lead.source === "blog" ? "Блог Айсу Кам" : detail.lead.source}</p>
+          ) : null}
         </div>
         {detail.lead.article_title || detail.lead.article_url ? (
           <div className="lead-blog-article-card">
@@ -2214,7 +2211,7 @@ function LeadDatabaseDetail({
             style={{ color: "#d94242", boxShadow: "inset 0 0 0 1px #d94242" }}
             onClick={() => setShowDeleteConfirm(true)}
           >
-            Удалить лида
+            <span>Удалить лида</span>
           </button>
         </div>
       </div>
