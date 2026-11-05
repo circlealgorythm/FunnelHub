@@ -297,10 +297,10 @@
       "title": "Запуск воркеров, ботов и переключение DNS bot.aisukam.ru",
       "description": "Запуск воркеров воронок и Telegram-ботов, переключение DNS A-записи на 85.143.175.148, получение SSL-сертификата Let's Encrypt в Caddy.",
       "user_visible_behavior": "Админка https://bot.aisukam.ru/inbox/ работает по HTTPS, боты отвечают, рассылка возобновляется штатно.",
-      "status": "pending",
+      "status": "passing",
       "dependencies": ["MIG-003", "MIG-004"],
       "verification": "1. curl -I https://bot.aisukam.ru/inbox/ (200 OK). 2. Проверка polling ботов в логах. 3. Тестовая отправка сообщения в бот.",
-      "evidence": "",
+      "evidence": "1. Все 8 контейнеров Docker успешно запущены (Up): app, postgres, redis, telegram-bot, funnel-worker, most-telegram-bot, most-funnel-worker, most-vk-funnel-worker. 2. В логах telegram-bot и most-telegram-bot зафиксирован 'Start polling'. 3. В логах funnel-worker зафиксирована успешная отправка сообщений воронки ВК и обогащение Метрики. 4. https://bot.aisukam.ru/inbox/ и /health возвращают HTTP 200 с доверенным сертификатом Let's Encrypt.",
       "notes": "Точка полного восстановления проекта под ключ."
     },
     {

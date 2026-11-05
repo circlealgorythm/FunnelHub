@@ -289,8 +289,29 @@
       - `bot_link_tokens`: 90
     - `scripts/verify.ps1 -Subproject funnel-hub` — 18 passed, ruff clean, mypy clean (код 0).
 
+- [x] **Запуск воркеров, ботов и переключение DNS bot.aisukam.ru (2026-11-06, MIG-005)**:
+  - На Simplecloud VPS (`85.143.175.148`) запущен полный боевой стек сервисов через `docker compose up -d`:
+    - `funnelhub-app-1` (Up)
+    - `funnelhub-postgres-1` (Up)
+    - `funnelhub-redis-1` (Up)
+    - `funnelhub-telegram-bot-1` (Up, polling активен)
+    - `funnelhub-funnel-worker-1` (Up, рассылка ВК и обогащение Метрики активны)
+    - `funnelhub-most-telegram-bot-1` (Up, polling активен)
+    - `funnelhub-most-funnel-worker-1` (Up)
+    - `funnelhub-most-vk-funnel-worker-1` (Up)
+  - Caddy автоматически выпустил боевой SSL-сертификат Let's Encrypt для домена `bot.aisukam.ru`.
+  - Эндпоинты `https://bot.aisukam.ru/inbox/` и `https://bot.aisukam.ru/health` возвращают HTTP 200 OK.
+  - В логах `telegram-bot` зафиксирован запуск polling (`aiogram.dispatcher: Start polling`).
+  - В логах `funnel-worker` зафиксирована штатная отправка сообщений воронки ВКонтакте (`POST https://api.vk.com/method/messages.send HTTP/1.1 200 OK`).
+  - **Доказательство (Evidence):**
+    - `docker compose ps` — все 8 контейнеров со статусом `Up`.
+    - `curl -s -o /dev/null -w "%{http_code}\n" https://bot.aisukam.ru/inbox/` — **200 OK**.
+    - `scripts/verify.ps1 -Subproject funnel-hub` — 18 passed, ruff clean, mypy clean (код 0).
+
 - **2026-10-27 14:36** | fix(funnel-hub): polish lead detail card layout, remove default avatar and align action buttons
 
 - **2026-11-05 23:05** | recovery(MIG-003): recover 417 VK funnel states from VK API into PostgreSQL
 
 - **2026-11-06 00:35** | recovery(MIG-004): import 87 CRM leads from Google Sheets into PostgreSQL
+
+- **2026-11-06 01:15** | ops(MIG-005): launch all 8 services, verify bots polling, worker dispatch and SSL
