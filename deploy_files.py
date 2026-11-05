@@ -9,7 +9,7 @@ import paramiko
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 REMOTE_ROOT = "/opt/funnelhub"
-UPLOAD_DIRS = ("src", "migrations", "content", "tests", "inbox-app/dist")
+UPLOAD_DIRS = ("src", "migrations", "content", "tests", "inbox-app/dist", "public")
 UPLOAD_FILES = (
     "Dockerfile",
     "docker-compose.prod.yml",

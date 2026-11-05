@@ -15,6 +15,14 @@
 ## Status
 
 ### What's Done
+- [x] **`MIG-002` (Деплой сервисов FunnelHub, Caddy и инициализация PostgreSQL)** (passing):
+  - Сгенерирован боевой `/opt/funnelhub/.env` на базе шаблона восстановления: хост БД переведен на `postgres:5432`, брокер на `redis:6379`, экранированы спецсимволы `$$` в хеше пароля админки, обновлены валидные токены.
+  - В `deploy_files.py` включен каталог `public/` (критично для сборки Dockerfile).
+  - На хосте установлен и настроен веб-сервер Caddy (`/etc/caddy/Caddyfile`), проверен редирект на HTTPS.
+  - Собраны Docker-образы и запущены сервисы хранилища и бэкенда (`postgres`, `redis`, `app`).
+  - Выполнены миграции `alembic upgrade head`: в базе созданы все 24 таблицы (`leads`, `lead_contacts`, `messenger_identities`, `funnel_states`, `conversations`, `messages`, `email_subscriptions` и др.).
+  - Сервисы ботов и воркеров воронок намеренно удержаны в остановленном состоянии до выполнения восстановления данных (Anti-Spam Invariant).
+  - Верификация: `curl http://127.0.0.1:8000/health` вернул `{"status":"ok","service":"FunnelHub"}` (HTTP 200 OK); `inbox-app` возвращает собранный HTML; Postgres подтвердил наличие 24 таблиц.
 - [x] **`MIG-001` (Базовая подготовка сервера Simplecloud: Docker, Swap, UFW, fail2ban)** (passing):
   - Выделен и активирован `/swapfile` размером 4.0 ГБ с `vm.swappiness = 20` (критично для защиты от OOM в условиях 1 CPU / 4GB RAM).
   - Установлены `Docker Engine 29.9.3` и `Docker Compose v5.7.0` из официального репозитория Docker.
