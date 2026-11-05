@@ -17,3 +17,5 @@ backups/
 *.sql
 *.sql.gz
 *.sql.gz.gpg
+data/
+*.csv

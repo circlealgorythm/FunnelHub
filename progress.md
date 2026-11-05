@@ -273,6 +273,24 @@
       - `funnel_states`: active = 16, completed = 401
     - Команда `scripts/verify.ps1 -Subproject funnel-hub` завершилась с кодом 0 (18 passed, ruff clean, mypy clean).
 
+- [x] **Импорт лидов Telegram и CRM из Google Sheets CRM (2026-11-06, MIG-004)**:
+  - Разработан и отлажен скрипт `scripts/recover_crm_leads.py` для парсинга выгрузки таблицы Google Sheets CRM («Лиды из Базы - Лиды.csv»).
+  - Обработана 91 запись заявок на консультацию с сайта (`aisukam.ru`):
+    - Дедупликация по нормализованному номеру телефона (86 уникальных телефонов).
+    - Разделение статусов CRM: спам переведен в `status='archived'` с тегом `спам`, целевые заявки получили тег `таргет`.
+    - Сохранение связок с Яндекс.Метрикой (`metrika_client_id` в `LeadUtm`).
+    - Генерация токенов авторизации `BotLinkToken` для последующей склейки с ботами Telegram.
+  - На боевом сервере Simplecloud (`85.143.175.148`) в PostgreSQL добавлено 87 новых лидов (всего в базе 504 лида), 86 проверенных номеров телефонов, 85 записей атрибуции UTM и 90 токенов бота.
+  - **Доказательство (Evidence):**
+    - `psql -c 'SELECT count(*) FROM leads; SELECT status, count(*) FROM leads GROUP BY status; SELECT contact_type, count(*) FROM lead_contacts GROUP BY contact_type;'`:
+      - `total_leads`: 504 (417 VK + 87 CRM)
+      - `status`: active = 469, archived = 35
+      - `lead_contacts`: phone = 86
+      - `bot_link_tokens`: 90
+    - `scripts/verify.ps1 -Subproject funnel-hub` — 18 passed, ruff clean, mypy clean (код 0).
+
 - **2026-10-27 14:36** | fix(funnel-hub): polish lead detail card layout, remove default avatar and align action buttons
 
 - **2026-11-05 23:05** | recovery(MIG-003): recover 417 VK funnel states from VK API into PostgreSQL
+
+- **2026-11-06 00:35** | recovery(MIG-004): import 87 CRM leads from Google Sheets into PostgreSQL
