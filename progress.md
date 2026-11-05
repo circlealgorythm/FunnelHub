@@ -308,6 +308,17 @@
     - `curl -s -o /dev/null -w "%{http_code}\n" https://bot.aisukam.ru/inbox/` — **200 OK**.
     - `scripts/verify.ps1 -Subproject funnel-hub` — 18 passed, ruff clean, mypy clean (код 0).
 
+- [x] **Настройка автоматических внешних бэкапов БД (2026-11-06, MIG-006)**:
+  - Доработан скрипт `scripts/backup-db.sh` и `scripts/restore-db.sh` для надежной работы с шифрованием GPG AES256 в headless/cron окружении (`--pinentry-mode loopback`, `--passphrase-fd 0`).
+  - Реализован контур непрерывной внешней репликации бэкапов (Defense-in-depth): каждый зашифрованный дамп автоматически выгружается по FTP на независимый сервер Reg.ru (`31.31.197.49`) в защищенный каталог `backups/`.
+  - На сервере Simplecloud (`85.143.175.148`) настроен ежедневный cron-джоба `/etc/cron.d/funnelhub-backup` на 03:00 МСК с ротацией локальных архивов старше 14 дней.
+  - **Доказательство (Evidence):**
+    - Тестовый запуск `backup-db.sh` завершился успешно (код 0).
+    - Создан локальный зашифрованный дамп: `/opt/funnelhub/backups/funnelhub_backup_20261106_020859.sql.gz.gpg` (136 515 байт).
+    - Дамп успешно отправлен и верифицирован на Reg.ru FTP (`ftp://31.31.197.49/backups/funnelhub_backup_20261106_020859.sql.gz.gpg`, 136 515 байт).
+    - `tests/test_backup_scripts.py` пройден (4/4 passed).
+    - `scripts/verify.ps1 -Subproject funnel-hub` — 18 passed, ruff clean, mypy clean (код 0).
+
 - **2026-10-27 14:36** | fix(funnel-hub): polish lead detail card layout, remove default avatar and align action buttons
 
 - **2026-11-05 23:05** | recovery(MIG-003): recover 417 VK funnel states from VK API into PostgreSQL
@@ -315,3 +326,5 @@
 - **2026-11-06 00:35** | recovery(MIG-004): import 87 CRM leads from Google Sheets into PostgreSQL
 
 - **2026-11-06 01:15** | ops(MIG-005): launch all 8 services, verify bots polling, worker dispatch and SSL
+
+- **2026-11-06 02:10** | ops(MIG-006): configure daily encrypted backups with off-site Reg.ru FTP replication

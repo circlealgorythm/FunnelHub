@@ -86,9 +86,10 @@ fi
 if [[ -n "${BACKUP_ENCRYPTION_PASSPHRASE}" ]]; then
     FINAL_FILE="${BACKUP_DIR}/${BASE_NAME}.sql.gz.gpg"
     echo "Encrypting dump with GPG (AES256)..."
-    gpg --batch --yes --symmetric \
+    printf '%s' "${BACKUP_ENCRYPTION_PASSPHRASE}" | gpg --batch --yes --symmetric \
+        --pinentry-mode loopback \
         --cipher-algo AES256 \
-        --passphrase "${BACKUP_ENCRYPTION_PASSPHRASE}" \
+        --passphrase-fd 0 \
         -o "${FINAL_FILE}" "${TMP_DUMP}"
     rm -f "${TMP_DUMP}"
 else
@@ -101,7 +102,22 @@ chmod 600 "${FINAL_FILE}"
 FINAL_SIZE="$(wc -c < "${FINAL_FILE}" | tr -d ' ')"
 echo "Backup successfully created: ${FINAL_FILE} (${FINAL_SIZE} bytes)"
 
-# 5. Retention Rotation (Delete backups older than RETENTION_DAYS)
+# 5. Remote Sync to External FTP Storage (Defense-in-depth)
+FTP_HOST="${BACKUP_FTP_HOST:-${REGRU_FTP_HOST:-}}"
+FTP_USER="${BACKUP_FTP_USER:-${FTP_MAIN_SITE_USER:-}}"
+FTP_PASS="${BACKUP_FTP_PASS:-${FTP_MAIN_SITE_PASS:-}}"
+
+if [[ -n "${FTP_HOST}" && -n "${FTP_USER}" && -n "${FTP_PASS}" ]]; then
+    echo "Uploading backup to external FTP storage (${FTP_HOST})..."
+    FILE_NAME="$(basename "${FINAL_FILE}")"
+    if curl -s -S -T "${FINAL_FILE}" -u "${FTP_USER}:${FTP_PASS}" --ftp-create-dirs "ftp://${FTP_HOST}/backups/${FILE_NAME}"; then
+        echo "Remote FTP upload successful: ftp://${FTP_HOST}/backups/${FILE_NAME}"
+    else
+        echo "WARNING: Remote FTP upload failed, local backup is preserved." >&2
+    fi
+fi
+
+# 6. Retention Rotation (Delete backups older than RETENTION_DAYS)
 echo "Rotating backups older than ${RETENTION_DAYS} days..."
 DELETED_COUNT=0
 while IFS= read -r old_backup; do

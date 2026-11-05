@@ -68,7 +68,7 @@ fi
 if [[ "${BACKUP_FILE}" == *.gpg ]]; then
     echo "Decrypting and restoring GPG backup..."
     if [[ -n "${BACKUP_ENCRYPTION_PASSPHRASE}" ]]; then
-        gpg --batch --quiet --decrypt --passphrase "${BACKUP_ENCRYPTION_PASSPHRASE}" "${BACKUP_FILE}" \
+        printf '%s' "${BACKUP_ENCRYPTION_PASSPHRASE}" | gpg --batch --yes --pinentry-mode loopback --quiet --decrypt --passphrase-fd 0 "${BACKUP_FILE}" \
             | gzip -d \
             | docker compose -f "${COMPOSE_FILE}" exec -T postgres psql -U "${POSTGRES_USER}" -d "${POSTGRES_DB}"
     else
