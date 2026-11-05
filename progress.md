@@ -259,4 +259,20 @@
 
 - **2026-10-26 02:34** | fix(funnel-hub): support parentheses in phone number formula sanitization
 
+- [x] **Восстановление состояния VK-воронки из истории переписок VK API (2026-11-05, MIG-003)**:
+  - Разработан и отлажен скрипт `scripts/recover_vk_funnel.py` для автоматического извлечения истории переписок через VK API (`messages.getConversations`, `messages.getHistory`).
+  - Проанализировано 418 диалогов: 1 групповой чат пропущен, 417 пользователей классифицированы.
+  - Применен строгий Anti-Spam инвариант:
+    - 401 пользователь переведен в статус `completed` (`day_18`, ручные консультации, завершенные вещания, архивные диалоги) — защищены от повторного запуска.
+    - 16 активных пользователей поставлены в очередь со своими текущими шагами и безопасным интервалом `next_run_at`.
+  - В базу данных PostgreSQL на Simplecloud (`85.143.175.148`) загружено 417 лидов (`leads`), 417 идентификаторов мессенджера (`messenger_identities`), 417 открытых диалогов (`conversations`) и 417 состояний воронок (`funnel_states`).
+  - **Доказательство (Evidence):**
+    - `psql -c 'SELECT count(*) FROM leads; SELECT count(*) FROM messenger_identities; SELECT status, count(*) FROM funnel_states GROUP BY status;'`:
+      - `leads`: 417
+      - `messenger_identities`: 417
+      - `funnel_states`: active = 16, completed = 401
+    - Команда `scripts/verify.ps1 -Subproject funnel-hub` завершилась с кодом 0 (18 passed, ruff clean, mypy clean).
+
 - **2026-10-27 14:36** | fix(funnel-hub): polish lead detail card layout, remove default avatar and align action buttons
+
+- **2026-11-05 23:05** | recovery(MIG-003): recover 417 VK funnel states from VK API into PostgreSQL

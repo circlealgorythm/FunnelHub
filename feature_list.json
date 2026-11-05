@@ -1,7 +1,7 @@
 {
   "project": "FunnelHub & Infrastructure Security",
   "version": "1.0.0",
-  "last_updated": "2026-10-13T01:41:00+03:00",
+  "last_updated": "2026-11-05T23:05:00+03:00",
   "active_feature_id": null,
   "features": [
     {
@@ -271,10 +271,10 @@
       "title": "Восстановление состояния VK-воронки из истории переписок VK API",
       "description": "Разработка и прогон скрипта recover_vk_funnel.py: сбор диалогов через messages.getConversations, парсинг последнего шага и генерация FunnelState.",
       "user_visible_behavior": "Пользователи воронки ВКонтакте восстанавливаются в базе без дублей, рассылка продолжается со следующего шага.",
-      "status": "pending",
+      "status": "passing",
       "dependencies": ["MIG-002"],
       "verification": "1. Запуск с флагом --dry-run (аудит распознанных шагов). 2. Запуск в БД: проверка записей в funnel_states и messenger_identities.",
-      "evidence": "",
+      "evidence": "1. Скрипт recover_vk_funnel.py успешно выгрузил 418 диалогов через VK API. 2. 401 пользователь классифицирован как завершивший воронку (completed) — спам исключен. 3. 16 активных пользователей поставлены в очередь со своими шагами. 4. В PostgreSQL создано 417 leads, 417 messenger_identities, 417 conversations, 417 funnel_states. Проверено запросом к БД. Код возврата 0.",
       "notes": "Исключает повторные приветствия и спам старым подписчикам."
     },
     {
