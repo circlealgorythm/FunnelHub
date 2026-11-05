@@ -15,6 +15,13 @@
 ## Status
 
 ### What's Done
+- [x] **`MIG-001` (Базовая подготовка сервера Simplecloud: Docker, Swap, UFW, fail2ban)** (passing):
+  - Выделен и активирован `/swapfile` размером 4.0 ГБ с `vm.swappiness = 20` (критично для защиты от OOM в условиях 1 CPU / 4GB RAM).
+  - Установлены `Docker Engine 29.9.3` и `Docker Compose v5.7.0` из официального репозитория Docker.
+  - Настроен межсетевой экран `UFW`: запрет входящих подключений по умолчанию, открыты строго порты `22/tcp` (SSH), `80/tcp` (HTTP) и `443/tcp` (HTTPS).
+  - Активирован и запущен демон `fail2ban` для защиты от брутфорса SSH.
+  - Создан целевой каталог `/opt/funnelhub` с правами `0755`.
+  - Верификация: `docker --version`, `docker compose version`, `ufw status verbose`, `free -h` — все службы активны, код возврата 0.
 - [x] **`MIG-000` (Подготовка нового VDS Simplecloud и настройка SSH по Ed25519-ключу)** (passing):
   - В `C:\Users\circlealgorythm\Documents\VDS\` сгенерирована пара ключей `Simplecloud_ed25519` и `Simplecloud_ed25519.pub`.
   - Публичный ключ установлен в `~/.ssh/authorized_keys` на хосте `85.143.175.148` (права `0700` / `0600`).

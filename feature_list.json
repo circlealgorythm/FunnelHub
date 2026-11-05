@@ -245,10 +245,10 @@
       "title": "Базовая подготовка сервера Simplecloud (Docker, Swap, UFW)",
       "description": "Установка Docker Engine, Docker Compose, фаервола UFW (22, 80, 443), fail2ban и выделение 4GB swap для стабильности 1 CPU.",
       "user_visible_behavior": "Сервер аппаратно и сетевым образом готов к запуску боевых контейнеров, защищен от OOM и брутфорса.",
-      "status": "pending",
+      "status": "passing",
       "dependencies": ["MIG-000"],
       "verification": "docker --version, docker compose version, ufw status, free -h (swap >= 2GB).",
-      "evidence": "",
+      "evidence": "1. Выделен и активирован /swapfile 4.0Gi (vm.swappiness=20). 2. Установлен Docker Engine v29.9.3 и Docker Compose v5.7.0. 3. Настроен UFW (22, 80, 443 ALLOW, default deny incoming). 4. Запущены службы docker и fail2ban. 5. Создан каталог /opt/funnelhub (0755). Терминальный код возврата 0.",
       "notes": "Критично для сервера с 1 ядром."
     },
     {
