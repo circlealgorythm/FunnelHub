@@ -224,6 +224,97 @@
       "verification": "1. pytest tests/test_blog_segmentation.py. 2. npm run build (inbox-app). 3. scripts/verify.ps1 -Subproject funnel-hub. 4. curl /inbox/.",
       "evidence": "1. Pydantic-схема и вебхуки расширены полями article_title и article_url. 2. Реализована мульти-фильтрация exclude_source='most-tsennostey,blog'. 3. В inbox-app добавлен сегмент blog, бейдж 📄 и блок статьи со ссылкой. 4. tests/test_blog_segmentation.py (6 тестов) пройден. 5. verify.ps1 -Subproject funnel-hub пройден (14 passed, ruff clean, mypy 54 clean). 6. inbox-app собран (2.35s). 7. Выкачен на Beget VPS, HTTP 200 на /inbox/.",
       "notes": "STD-FUNNEL-002"
+    },
+    {
+      "id": "MIG-000",
+      "priority": 18,
+      "area": "server-migration",
+      "title": "Подготовка нового VDS Simplecloud и настройка SSH по Ed25519-ключу",
+      "description": "Генерация защищенной пары ключей Simplecloud_ed25519, авторизация на хосте 85.143.175.148 и параметризация .env.",
+      "user_visible_behavior": "Обеспечен беспарольный защищенный SSH-доступ к резервному серверу для автоматического деплоя.",
+      "status": "passing",
+      "dependencies": [],
+      "verification": "1. Проверка ssh.exe с Ed25519-ключом. 2. Успешный возврат lsb_release и uptime.",
+      "evidence": "1. Сгенерирован ключ Simplecloud_ed25519 в VDS/. 2. Публичный ключ прописан в ~/.ssh/authorized_keys на 85.143.175.148 (0600). 3. Тест ssh.exe вернул Ubuntu 24.04.5 LTS с кодом 0. 4. .env обновлен.",
+      "notes": "Базовый доступ к новому VDS готов."
+    },
+    {
+      "id": "MIG-001",
+      "priority": 19,
+      "area": "server-migration",
+      "title": "Базовая подготовка сервера Simplecloud (Docker, Swap, UFW)",
+      "description": "Установка Docker Engine, Docker Compose, фаервола UFW (22, 80, 443), fail2ban и выделение 4GB swap для стабильности 1 CPU.",
+      "user_visible_behavior": "Сервер аппаратно и сетевым образом готов к запуску боевых контейнеров, защищен от OOM и брутфорса.",
+      "status": "pending",
+      "dependencies": ["MIG-000"],
+      "verification": "docker --version, docker compose version, ufw status, free -h (swap >= 2GB).",
+      "evidence": "",
+      "notes": "Критично для сервера с 1 ядром."
+    },
+    {
+      "id": "MIG-002",
+      "priority": 20,
+      "area": "server-migration",
+      "title": "Деплой сервисов FunnelHub и инициализация PostgreSQL",
+      "description": "Синхронизация кодовой базы и фронтенда через deploy_files.py, сборка образов, запуск БД, Redis, Caddy, app и накат миграций Alembic.",
+      "user_visible_behavior": "Бэкенд FunnelHub и админка запускаются в контейнерах, база данных разворачивает актуальную схему таблиц.",
+      "status": "pending",
+      "dependencies": ["MIG-001"],
+      "verification": "docker compose ps (все контейнеры Up), alembic upgrade head (успешно), curl 127.0.0.1:8000/api/health (200 OK).",
+      "evidence": "",
+      "notes": "Боты и воркеры пока не запускаются до восстановления состояний."
+    },
+    {
+      "id": "MIG-003",
+      "priority": 21,
+      "area": "data-recovery",
+      "title": "Восстановление состояния VK-воронки из истории переписок VK API",
+      "description": "Разработка и прогон скрипта recover_vk_funnel.py: сбор диалогов через messages.getConversations, парсинг последнего шага и генерация FunnelState.",
+      "user_visible_behavior": "Пользователи воронки ВКонтакте восстанавливаются в базе без дублей, рассылка продолжается со следующего шага.",
+      "status": "pending",
+      "dependencies": ["MIG-002"],
+      "verification": "1. Запуск с флагом --dry-run (аудит распознанных шагов). 2. Запуск в БД: проверка записей в funnel_states и messenger_identities.",
+      "evidence": "",
+      "notes": "Исключает повторные приветствия и спам старым подписчикам."
+    },
+    {
+      "id": "MIG-004",
+      "priority": 22,
+      "area": "data-recovery",
+      "title": "Импорт лидов Telegram и CRM из Google Sheets CRM",
+      "description": "Разработка и запуск скрипта recover_crm_leads.py: парсинг таблицы Google Sheets, регистрация лидов, вычисление шагов Telegram-воронки по дате заявки.",
+      "user_visible_behavior": "База лидов восстанавливается, Telegram-пользователи получают корректные статусы без сброса на начало воронки.",
+      "status": "pending",
+      "dependencies": ["MIG-002"],
+      "verification": "1. Проверка количества импортированных лидов из Google Sheets. 2. Дедупликация по телефону/username.",
+      "evidence": "",
+      "notes": "Позволяет боту мгновенно узнавать старых пользователей."
+    },
+    {
+      "id": "MIG-005",
+      "priority": 23,
+      "area": "infrastructure-cutover",
+      "title": "Запуск воркеров, ботов и переключение DNS bot.aisukam.ru",
+      "description": "Запуск воркеров воронок и Telegram-ботов, переключение DNS A-записи на 85.143.175.148, получение SSL-сертификата Let's Encrypt в Caddy.",
+      "user_visible_behavior": "Админка https://bot.aisukam.ru/inbox/ работает по HTTPS, боты отвечают, рассылка возобновляется штатно.",
+      "status": "pending",
+      "dependencies": ["MIG-003", "MIG-004"],
+      "verification": "1. curl -I https://bot.aisukam.ru/inbox/ (200 OK). 2. Проверка polling ботов в логах. 3. Тестовая отправка сообщения в бот.",
+      "evidence": "",
+      "notes": "Точка полного восстановления проекта под ключ."
+    },
+    {
+      "id": "MIG-006",
+      "priority": 24,
+      "area": "backup-resilience",
+      "title": "Настройка автоматических внешних бэкапов БД",
+      "description": "Настройка cron-скрипта ежедневного шифрованного дампа базы PostgreSQL с отправкой на внешний сервер/хранилище.",
+      "user_visible_behavior": "В случае падения любого хостинга свежий дамп базы данных всегда доступен автономно.",
+      "status": "pending",
+      "dependencies": ["MIG-005"],
+      "verification": "1. Тестовый запуск backup-db.sh на новом сервере. 2. Проверка успешного создания дампа и отправки в архив.",
+      "evidence": "",
+      "notes": "Защита от повторения инцидента Beget."
     }
   ]
 }
