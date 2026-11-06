@@ -250,9 +250,16 @@ async def list_database_leads(
         count_statement = count_statement.where(target_date_col <= date_to)
 
     total = int(await session.scalar(count_statement) or 0)
+    # Хронологический порядок базы: новые сверху, старые на задних страницах.
+    # Для лидов из GetCourse реальная дата — регистрация в GC (getcourse_created_at),
+    # иначе импортированные сгрудом вставали бы на дату импорта.
     rows = (
         await session.execute(
-            base_statement.order_by(Lead.updated_at.desc(), Lead.created_at.desc())
+            base_statement.order_by(
+                func.coalesce(Lead.getcourse_created_at, Lead.created_at).desc(),
+                Lead.created_at.desc(),
+                Lead.id.asc(),
+            )
             .limit(limit)
             .offset(offset)
         )

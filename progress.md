@@ -401,3 +401,5 @@
 - **2026-11-06 20:42** | fix(funnel-hub): scope GC import to FunnelHub launch period — delete 698 pre-2026-05-27 imported leads, final 624; STD-DATA-004 scope rule
 
 - **2026-11-06 20:53** | feat(funnel-hub): deploy GC badge to prod (verified in served bundle) + SOP-BACKUP-001 Beget backup merge plan
+
+- **2026-11-06 21:04** | feat(funnel-hub): chronological lead database ordering — newest first by coalesced GC registration date, old leads on last pages
