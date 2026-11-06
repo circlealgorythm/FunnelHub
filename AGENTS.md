@@ -307,3 +307,14 @@ The repository is the **Single System of Record**.
   - RED-A: прод-симптом в тесте `test_consultation_form_client_does_not_follow_funnelhub_redirect` — `httpx.HTTPStatusError: Client error '403 Forbidden' for url 'https://bot.aisukam.ru/join/getcourse?...'` (exit 1) → GREEN: запросов ровно 2 (GET формы + POST), цепочка не открывается.
   - RED-B: прод-проба `curl https://bot.aisukam.ru/join/getcourse` → 403; тест `test_join_getcourse_renders_join_page_without_secret` — 403 → GREEN 200 + join-страница с `t.me/...?start=`; неверный секрет по-прежнему 403 (`test_join_getcourse_rejects_invalid_secret`), вебхук без секрета 403 (`test_getcourse_webhook_rejects_missing_secret_in_required_mode`).
   - Полный прогон DB-тестов (локальный postgres 16 в docker, `DATABASE_URL=localhost`): мои тесты зелёные; 10 падений всех доказаны pre-existing на чистом дереве (4×vk_callback — сеть VK API, 2×join_page — прод-PUBLIC_BASE_URL из локального .env, 4×webhook/enrich — дрейф тестов от кода и прод-ENV). `verify.ps1 -Subproject funnel-hub` — 18 passed, mypy 54 файлов OK.
+
+### SOP-OPS-003 | Профилактика раздувания docker build cache на Simplecloud (2026-11-07)
+* **Контекст:** Каждый прогон `deploy_files.py` выполняет `docker compose build` всех 6 app-сервисов; старые слои остаются в build cache. За ~2 недели деплоев cache вырос до 2.7 ГБ (66 записей, 0 активных) на диске VPS.
+* **Процедура:** Раз в 1–2 месяца (или после серии деплоев) на сервере:
+  1. Диагностика: `docker system df` (строка Build Cache = объём + Reclaimable) и `df -h /`.
+  2. Чистка: `docker builder prune -af` — удаляет ТОЛЬКО кэш сборки.
+  3. ЗАПРЕЩЕНО: `docker system prune --volumes` (сносит том с боевой БД `postgres_data`); любая чистка томов (`Local Volumes` в `docker system df`).
+* **Доказательство (Evidence):**
+  - ДО: `df -h /` → `9.3G used / 40G (25%)`; `docker system df` → `Build Cache 66 entries, 2.709GB, reclaimable 2.215GB`.
+  - ПОСЛЕ `docker builder prune -af`: Build Cache `0 entries, 0B`; `df -h /` → `6.9G used (19%)`, освобождено ~2.4 ГБ.
+  - Инварианты подтверждены: `Local Volumes 3 / 71.29MB / 0B (0%)` — не изменились; 7 контейнеров продолжают работать (`docker ps`).

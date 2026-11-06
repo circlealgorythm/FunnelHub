@@ -440,3 +440,5 @@
 6. **Деплой на Simplecloud** (по явной команде пользователя): `deploy_files.py` exit 0, все 6 app-контейнеров Up, alembic чисто. Боевые пробы: `/join/getcourse` без секрета **403→400** (guard прошёл), неверный секрет **403**, `/webhooks/getcourse` без секрета **403**, `/inbox/` **200**. Транзиентный 502 после reload Caddy самоустранился (uvicorn стартовал).
 
 - **2026-11-06 23:25** | fix(funnel-hub): STD-FUNNEL-005 — 403-луп getcourse_consultation_submission устранён, join/getcourse guard ослаблен для браузерного редиректа GC (вебхук строго); деплой на Simplecloud, пробы 403→400/403/403/200
+
+- **2026-11-07** | ops(funnel-hub): профилактика docker build cache на Simplecloud — builder prune освободил 2.4 ГБ (9.3G→6.9G used), тома БД/образы/контейнеры не тронуты; SOP-OPS-003 в AGENTS.md (повторять раз в 1–2 месяца, --volumes запрещён)
