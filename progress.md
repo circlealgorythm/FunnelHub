@@ -442,3 +442,5 @@
 - **2026-11-06 23:25** | fix(funnel-hub): STD-FUNNEL-005 — 403-луп getcourse_consultation_submission устранён, join/getcourse guard ослаблен для браузерного редиректа GC (вебхук строго); деплой на Simplecloud, пробы 403→400/403/403/200
 
 - **2026-11-07** | ops(funnel-hub): профилактика docker build cache на Simplecloud — builder prune освободил 2.4 ГБ (9.3G→6.9G used), тома БД/образы/контейнеры не тронуты; SOP-OPS-003 в AGENTS.md (повторять раз в 1–2 месяца, --volumes запрещён)
+
+- **2026-11-07 00:24** | ops(funnel-hub): SOP-OPS-003 — профилактика docker build cache на Simplecloud, builder prune освободил 2.4 ГБ (тома БД не тронуты)
