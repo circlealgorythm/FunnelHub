@@ -152,7 +152,6 @@ class DatabaseLeadResponse(BaseModel):
     messages_count: int
     has_telegram: bool = False
     has_vk: bool = False
-    has_max: bool = False
 
 
 class DatabaseLeadListResponse(BaseModel):
@@ -926,7 +925,6 @@ def database_lead_response(lead: DatabaseLeadSummary) -> DatabaseLeadResponse:
         vk=lead.vk,
         has_telegram=lead.has_telegram,
         has_vk=lead.has_vk,
-        has_max=lead.has_max,
         conversations_count=lead.conversations_count,
         messages_count=lead.messages_count,
     )

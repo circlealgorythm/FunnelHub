@@ -351,7 +351,6 @@ type DatabaseLead = {
   vk: string | null;
   has_telegram?: boolean;
   has_vk?: boolean;
-  has_max?: boolean;
   conversations_count: number;
   messages_count: number;
 };
@@ -431,7 +430,6 @@ const channelLabels: Record<string, string> = {
   telegram_most: "Telegram — Мост ценностей",
   vk_most: "ВКонтакте — Мост ценностей",
   vk: "VK",
-  max: "MAX",
   email: "Email",
 };
 
@@ -2093,15 +2091,8 @@ function DatabaseWorkspace({
                     <td>
                       {leadMessengerLabels(lead).length > 0 ? (
                         leadMessengerLabels(lead).map((label) => <span key={label}>{label}</span>)
-                      ) : lead.getcourse_user_id ? (
-                        <span
-                          className="lead-channel-gc-badge"
-                          title="Импортирован из GetCourse: диалога с ботом пока не было"
-                        >
-                          GC
-                        </span>
                       ) : (
-                        <span>мессенджер нет</span>
+                        <span>нет подписок</span>
                       )}
                     </td>
                     <td>
@@ -2631,7 +2622,6 @@ function leadMessengerLabels(lead: DatabaseLead) {
   return [
     lead.has_telegram || lead.telegram ? "TG" : null,
     lead.has_vk || lead.vk ? "VK" : null,
-    lead.has_max ? "MAX" : null,
   ].filter((label): label is string => label !== null);
 }
 

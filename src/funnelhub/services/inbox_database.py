@@ -145,7 +145,6 @@ class DatabaseLeadSummary:
     messages_count: int
     has_telegram: bool = False
     has_vk: bool = False
-    has_max: bool = False
     article_title: str | None = None
     article_url: str | None = None
 
@@ -965,7 +964,6 @@ def build_lead_summary_query() -> Select[tuple[Any, ...]]:
     vk = messenger_identity_subquery("vk", "vk_most")
     has_telegram = channel_presence_subquery("telegram", "telegram_most")
     has_vk = channel_presence_subquery("vk", "vk_most")
-    has_max = channel_presence_subquery("max")
     conversations_count = (
         select(func.count(Conversation.id))
         .where(Conversation.lead_id == Lead.id)
@@ -1016,7 +1014,6 @@ def build_lead_summary_query() -> Select[tuple[Any, ...]]:
         vk.label("vk"),
         has_telegram.label("has_telegram"),
         has_vk.label("has_vk"),
-        has_max.label("has_max"),
         conversations_count.label("conversations_count"),
         messages_count.label("messages_count"),
         article_title.label("article_title"),
@@ -1181,7 +1178,6 @@ def row_to_lead_summary(row: Any) -> DatabaseLeadSummary:
         vk=row.vk,
         has_telegram=bool(row.has_telegram),
         has_vk=bool(row.has_vk),
-        has_max=bool(row.has_max),
         conversations_count=int(row.conversations_count or 0),
         messages_count=int(row.messages_count or 0),
     )
