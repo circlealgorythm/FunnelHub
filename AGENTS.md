@@ -218,10 +218,12 @@ The repository is the **Single System of Record**.
   2. В raw-SQL вставках UUID-первичные ключи без server_default (lead_tags) задавать явно: `SELECT gen_random_uuid(), ...`.
   3. Обязательный пайплайн боевого импорта: dry-run (BEGIN…ROLLBACK, отчёт на ревью) → pg_dump на сервере + копия локально + скрипт отката → commit-прогон → POST-IMPORT VERIFY.
   4. GetCourse API: без фильтра `error_code 908` («Должен быть передан хотя бы один фильтр»); полная выгрузка = `created_at[from]=YYYY-MM-DD&created_at[to]=...`; группы = `idgrouplist=id_date` (формат `idgrouplist=id` отдаёт пустую колонку); ключ — `GETCOURSE_API_KEY` из `.env.recovery.template`; технические email `@vktech.gc` отсекать (`is_getcourse_technical_email`), их VK-ID извлекать из префикса `id<N>`.
+  5. Объём импорта ограничен датой запуска FunnelHub (создан 2026-05-20): в базу входят только лиды GC, зарегистрированные с 2026-05-27 (согласовано с пользователем). Полная выгрузка «всей базы GC» избыточна — GC существовал с 2024, и лиды до запуска FunnelHub в базу не нужны. Если импорт уже выполнен шире границы, чистка = `DELETE FROM leads WHERE raw_getcourse_data->>'origin'=<маркер> AND getcourse_created_at < <граница>` (каскад сносит контакты/UTM/теги/идентичности; dialogs/funnel_states у импортированных отсутствуют).
 * **Доказательство (Evidence):**
   - RED-1: `psql -v commit=1 -f import_gc_users.sql` ➔ `ERROR: duplicate key ... (Key (getcourse_user_id)=(504948483))`, авто-ROLLBACK (leads 500, gc-linked 1).
   - RED-2: повтор ➔ `UPDATE 363, INSERT 823 ... ERROR: null value in column "id" of relation "lead_tags"`, авто-ROLLBACK (leads 500).
   - GREEN: guard-версия ➔ `UPDATE 363; INSERT 0 823; INSERT 0 1020 (email); INSERT 0 823 (phone); INSERT 0 784 (utm); INSERT 0 794 (tags); INSERT 0 1033 (custom); INSERT 0 1186+313 (ext ids); COMMIT`. POST-IMPORT VERIFY: leads 1323, leads_with_gc_id 1188, emails 1025, phones 913, utm 872, gc_tags 794.
+  - Чистка объёма: `DELETE 698` (регистрации 2024-10-16…2026-05-19) ➔ leads 624, gc_linked 490, min gc_created оставшихся импортированных = 2026-05-27.
   - Контейнеры Up, `https://bot.aisukam.ru/inbox/` HTTP 200, ошибок в логах app за 10 мин нет.
 
 ### STD-DATA-005 | Импорт VK-идентичностей из GetCourse: только is_subscribed=false (HARNESS-002)

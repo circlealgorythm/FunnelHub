@@ -22,6 +22,7 @@
   - Сопоставление с базой (приоритет vk > email > phone, 1:1): 363 склейки (297 vk / 1 email / 66 phone), 823 новых лидов, 2 пропущены как созданные вебхуками во время импорта (guard от гонки — STD-DATA-004).
   - Боевой импорт на Simplecloud через dry-run (BEGIN/ROLLBACK) → pg_dump (`pre_gc_import_20261106.dump`, сервер + локальная копия, md5 сверены) + скрипт отката `/tmp/gc_import/rollback_gc_import.sh` → COMMIT: leads 500→1323, gc-linked 1188, email-контактов 1025, телефонов 913, UTM 872 (source_kind='import'), тегов групп 794, кастомных полей Да/Нет 1033, external_ids 1186 getcourse + 313 vk.
   - Импортированным VK-лидам добавлены 15 идентичностей со `is_subscribed=false` (STD-DATA-005) — колонка КАНАЛ показывает VK, боты им не пишут.
+  - **Корректировка объёма (решение пользователя 2026-11-06):** база FunnelHub должна содержать только лидов с момента запуска проекта (создан 20.05.2026 — дата папки и первого коммита). Выполнена чистка: удалены 698 импортированных лидов с регистрацией в GC ранее 2026-05-27 (каскадно их контакты/UTM/теги/идентичности); dry-run каскада подтвердил 0 диалогов и 0 воронок у удаляемых. Граница сверена: min gc_created среди оставшихся импортированных = 2026-05-27. **Итог базы: 624 лида** (vk_recovery 408, getcourse 125, landing_consultation 78, landing_consultation+vk 8, blog 2, прочие 3). Дамп до чистки `pre_gc_cleanup_20261106.dump` (сервер + локально) + скрипт отката `/tmp/gc_import/rollback_gc_cleanup.sh`.
   - Два сбоя в процессе (гонка вебхуков duplicate key gc_id 504948483; lead_tags.id без server_default) оба авто-откатились с нулевыми изменениями и устранены guard-ами; вебхуки и воронки в момент импорта не прерывались, массовые рассылки не запускались (email_subscriptions сознательно не создавались — решение пользователя).
 
 - [x] **`UI-GC-BADGE` (Серый бейдж GC в колонке КАНАЛ базы лидов Inbox)** (passing, деплой ожидает команды):
@@ -392,3 +393,5 @@
 - **2026-11-06 20:17** | feat(funnel-hub): TG-PROXY-001 Cloudflare Worker Telegram proxy, VK-CONFIRM-001 and STD-FUNNEL-004
 
 - **2026-11-06 20:22** | feat(funnel-hub): import 1188 GetCourse users via API (823 new leads, contacts/UTM/tags/external-ids), GC badge in inbox channel column, webhook-race guards, STD-DATA-004/005 lessons
+
+- **2026-11-06 20:42** | fix(funnel-hub): scope GC import to FunnelHub launch period — delete 698 pre-2026-05-27 imported leads, final 624; STD-DATA-004 scope rule
