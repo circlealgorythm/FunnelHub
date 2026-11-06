@@ -25,11 +25,12 @@
   - **Корректировка объёма (решение пользователя 2026-11-06):** база FunnelHub должна содержать только лидов с момента запуска проекта (создан 20.05.2026 — дата папки и первого коммита). Выполнена чистка: удалены 698 импортированных лидов с регистрацией в GC ранее 2026-05-27 (каскадно их контакты/UTM/теги/идентичности); dry-run каскада подтвердил 0 диалогов и 0 воронок у удаляемых. Граница сверена: min gc_created среди оставшихся импортированных = 2026-05-27. **Итог базы: 624 лида** (vk_recovery 408, getcourse 125, landing_consultation 78, landing_consultation+vk 8, blog 2, прочие 3). Дамп до чистки `pre_gc_cleanup_20261106.dump` (сервер + локально) + скрипт отката `/tmp/gc_import/rollback_gc_cleanup.sh`.
   - Два сбоя в процессе (гонка вебхуков duplicate key gc_id 504948483; lead_tags.id без server_default) оба авто-откатились с нулевыми изменениями и устранены guard-ами; вебхуки и воронки в момент импорта не прерывались, массовые рассылки не запускались (email_subscriptions сознательно не создавались — решение пользователя).
 
-- [x] **`UI-GC-BADGE` (Серый бейдж GC в колонке КАНАЛ базы лидов Inbox)** (passing, деплой ожидает команды):
+- [x] **`UI-GC-BADGE` (Серый бейдж GC в колонке КАНАЛ базы лидов Inbox)** (passing):
   - В `inbox-app/src/App.tsx` ячейка КАНАЛ: при отсутствии TG/VK-идентичностей и наличии `getcourse_user_id` рендерится бейдж `GC` с тултипом «Импортирован из GetCourse: диалога с ботом пока не было».
   - В `inbox-app/src/styles.css` добавлен `.lead-channel-gc-badge` в тёплой серой гамме (в тон заголовков таблицы).
   - `npm run build` — 2.50s, exit 0; `verify.ps1 -Subproject funnel-hub` — 18 passed.
   - **Боевой деплой выполнен 2026-11-06** (команда пользователя «выкатывай»; `deploy_files.py`: загрузка чистого `inbox-app/dist`, пересборка образов app/funnel-worker/telegram-bot/most-*, alembic upgrade head, up -d, caddy reload). Подтверждено: `/inbox/` HTTP 200, отдаётся бандл `assets/index-CJ539ubP.js`, класс `lead-channel-gc-badge` присутствует в отдаваемом JS (grep = 1), ошибок в логах app нет.
+  - **Итерация 2 (фидбек пользователя):** (1) бейдж больше не растягивается на всю ячейку — правило с более высокой специфичностью `.lead-table td span.lead-channel-gc-badge` + `width: fit-content` (перебивало родовое `display: block` для `td span`); (2) колонка КАНАЛ показывает реальный канал, если он есть: в `build_lead_summary_query` добавлены флаги `has_telegram/has_vk/has_max` (идентичность ИЛИ диалог, БЕЗ фильтра is_subscribed — отображение отделено от права на рассылку STD-DATA-005), канал MAX добавлен в `channelLabels`/`leadMessengerLabels`. Затронуто: 15 VK-лидов из GC (identity is_subscribed=false ранее скрывалась фильтром) и 65 лидов с диалогами в MAX. Деплой подтверждён: бандл `index-rcu3iNV1.js`, `has_max` в отдаваемом JS, HTTP 200, ошибок нет.
 
 - [x] **`SOP-BACKUP-001` (План слияния при возврате бэкапа Beget VPS)** (план согласован, исполнение по факту получения дампа):
   - Зафиксирован в `AGENTS.md`: загрузка бэкапа в отдельную схему `beget_restore`, слияние лидов по приоритету getcourse_user_id → VK → телефон → email (Phone-First), перенос переписки `conversations/messages` с дедупликацией по `external_message_id`, объём-правило (не воскрешать GC-лидов до 2026-05-27), разрешение UNIQUE-конфликтов в пользу прода, `lead_tags.id` явно, чужие VK-идентичности `is_subscribed=false`, dry-run → ревью → COMMIT → POST-MERGE VERIFY.
@@ -409,3 +410,5 @@
 - **2026-11-06 21:04** | feat(funnel-hub): chronological lead database ordering — newest first by coalesced GC registration date, old leads on last pages
 
 - **2026-11-06 21:21** | ops(funnel-hub): backup restore-test GREEN, manual post-import backup 20261106_205338, STD-SEC-004 secrets dual-storage + local vault sync
+
+- **2026-11-06 21:21** | fix(funnel-hub): compact GC badge + channel priority in lead database (has_telegram/has_vk/has_max flags, MAX channel, is_subscribed decoupled from display); deployed
