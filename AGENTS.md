@@ -253,3 +253,12 @@ The repository is the **Single System of Record**.
   - `INSERT INTO messenger_identities ... is_subscribed=false` ➔ `INSERT 0 15`; итого vk_total 432 (414 subscribed / 18 not-subscribed).
   - Фильтры-разрешения подтверждены кодом: `vk_messaging.py:297`, `funnel_runner.py:260,271,514,536` — `MessengerIdentity.is_subscribed.is_(True)`.
   - `npm run build` (inbox-app) 2.50s exit 0; `verify.ps1 -Subproject funnel-hub` — 18 passed.
+
+
+### STD-SEC-004 | Двойное хранение секретов: каждый ключ дублируется в локальный сейф (инвариант STD-022)
+* **Сигнал/Маркер (Cue):** /opt/funnelhub/.env, ключи, токены, passphrase, BACKUP_ENCRYPTION_PASSPHRASE, VPS down, DR, .env.recovery.template, Бот воронка, env drift.
+* **Проблема:** Секреты, добавленные прямо на сервере (бэкапы, GC-вебхуки, email-провайдер), существуют только там. При гибели VPS (кейс Beget 2026-11-06) они теряются: GPG-бэкапы не расшифровать, сервисы не восстановить.
+* **Стандарт и контрмера:** Канонический локальный сейф FunnelHub — `C:\Users\circlealgorythm\Documents\Бот воронка\.env.recovery.template`. Любой новый/изменённый секрет вносится в него той же сессией, что и на сервер (и в рабочую копию `projects/funnel-hub/.env`, append-only); в git — НИКОГДА. Периодическая проверка дрейфа: имена ключей «сервер vs сейф», цель 0 missing; значения секретов не печатать в чат.
+* **Доказательство (Evidence):**
+  - Дрейф 2026-11-06: сервер 81 ключ / локальный `.env` 31 → append-синк +50; сейф 76/81 → +5 → 81/81, missing=0 (GREEN).
+  - `git check-ignore -v .env.recovery.template` → `.gitignore:9:.env.*`; `ls-files --error-unmatch` → not tracked (в git не попадает).

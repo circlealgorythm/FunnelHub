@@ -1168,9 +1168,10 @@ h2 {
   text-overflow: ellipsis;
 }
 
-.lead-channel-gc-badge {
+.lead-table td span.lead-channel-gc-badge {
   display: inline-flex;
-  align-items: center;
+  width: fit-content;
+  max-width: 100%;
   padding: 2px 7px;
   background: rgba(119, 113, 102, 0.1);
   color: #777166 !important;

@@ -143,6 +143,9 @@ class DatabaseLeadSummary:
     vk: str | None
     conversations_count: int
     messages_count: int
+    has_telegram: bool = False
+    has_vk: bool = False
+    has_max: bool = False
     article_title: str | None = None
     article_url: str | None = None
 
@@ -960,6 +963,9 @@ def build_lead_summary_query() -> Select[tuple[Any, ...]]:
     # messenger column.
     telegram = messenger_identity_subquery("telegram", "telegram_most")
     vk = messenger_identity_subquery("vk", "vk_most")
+    has_telegram = channel_presence_subquery("telegram", "telegram_most")
+    has_vk = channel_presence_subquery("vk", "vk_most")
+    has_max = channel_presence_subquery("max")
     conversations_count = (
         select(func.count(Conversation.id))
         .where(Conversation.lead_id == Lead.id)
@@ -1008,6 +1014,9 @@ def build_lead_summary_query() -> Select[tuple[Any, ...]]:
         phone.label("phone"),
         telegram.label("telegram"),
         vk.label("vk"),
+        has_telegram.label("has_telegram"),
+        has_vk.label("has_vk"),
+        has_max.label("has_max"),
         conversations_count.label("conversations_count"),
         messages_count.label("messages_count"),
         article_title.label("article_title"),
@@ -1122,6 +1131,36 @@ def messenger_identity_subquery(*channels: str) -> Any:
     )
 
 
+def channel_presence_subquery(*channels: str) -> Any:
+    """Есть ли у лида канал вообще (идентичность или диалог), вне зависимости от подписки.
+
+    Отдельно от messenger_identity_subquery: тот возвращает хендл только
+    подписанных идентичностей, а колонке КАНАЛ нужно показывать канал даже
+    у лидов с is_subscribed=false (например, импортированных из GetCourse).
+    """
+    if not channels:
+        raise ValueError("At least one messenger channel is required.")
+    identity_exists = (
+        select(MessengerIdentity.id)
+        .where(
+            MessengerIdentity.lead_id == Lead.id,
+            MessengerIdentity.channel.in_(channels),
+        )
+        .correlate(Lead)
+        .exists()
+    )
+    conversation_exists = (
+        select(Conversation.id)
+        .where(
+            Conversation.lead_id == Lead.id,
+            Conversation.channel.in_(channels),
+        )
+        .correlate(Lead)
+        .exists()
+    )
+    return or_(identity_exists, conversation_exists)
+
+
 def row_to_lead_summary(row: Any) -> DatabaseLeadSummary:
     name = row.full_name or " ".join(part for part in [row.first_name, row.last_name] if part)
     return DatabaseLeadSummary(
@@ -1140,6 +1179,9 @@ def row_to_lead_summary(row: Any) -> DatabaseLeadSummary:
         updated_at=row.updated_at,
         telegram=row.telegram,
         vk=row.vk,
+        has_telegram=bool(row.has_telegram),
+        has_vk=bool(row.has_vk),
+        has_max=bool(row.has_max),
         conversations_count=int(row.conversations_count or 0),
         messages_count=int(row.messages_count or 0),
     )

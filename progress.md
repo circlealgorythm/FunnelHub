@@ -392,6 +392,10 @@
 
 - **2026-11-06 19:22** | feat(funnel-hub): email test suppression and crm vk reconciliation
 
+- **2026-11-06 20:53** | ops(SEC-005): manual post-import encrypted backup funnelhub_backup_20261106_205338.sql.gz.gpg (321 KB, состояние 624 лидов после GC-импорта) + верифицирован на Reg.ru FTP; удалены 2 legacy незашифрованных tmp-дампа
+- **2026-11-06 21:00** | ops(SEC-005): restore test GREEN — ежедневный дамп 03:00 расшифрован и развёрнут во временную БД funnelhub_verify (psql exit 0, все 24 таблицы), временная БД и файлы удалены, боевые данные не затронуты
+- **2026-11-06 21:40** | ops(STD-022/STD-SEC-004): secrets dual-storage — сервер 81 ключ vs локальный .env 31 → append-синк +50; сейф .env.recovery.template 76/81 → +5 → 81/81 (missing=0); урок зарегистрирован в .harness/lessons.md
+
 - **2026-11-06 19:46** | fix(funnel-hub): UX-VK-001 инструкция Разрешить сообщения на join-странице + диагностика автостарта VK (STD-FUNNEL-003)
 
 - **2026-11-06 20:17** | feat(funnel-hub): TG-PROXY-001 Cloudflare Worker Telegram proxy, VK-CONFIRM-001 and STD-FUNNEL-004
@@ -403,3 +407,5 @@
 - **2026-11-06 20:53** | feat(funnel-hub): deploy GC badge to prod (verified in served bundle) + SOP-BACKUP-001 Beget backup merge plan
 
 - **2026-11-06 21:04** | feat(funnel-hub): chronological lead database ordering — newest first by coalesced GC registration date, old leads on last pages
+
+- **2026-11-06 21:21** | ops(funnel-hub): backup restore-test GREEN, manual post-import backup 20261106_205338, STD-SEC-004 secrets dual-storage + local vault sync
