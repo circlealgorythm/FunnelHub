@@ -290,8 +290,16 @@ class GetCourseConsultationFormClient:
                     phone=phone,
                     email=email,
                 )
-        response.raise_for_status()
-        if "Не заполнено поле" in response.text or "Ошибка" in response.text:
+        # GetCourse подтверждает приём заявки 302-редиректом на страницу
+        # благодарности (redirect-auth -> bot.aisukam.ru/join/getcourse).
+        # Финальный редирект не открываем: он попадает в ingestion-guard
+        # FunnelHub без секрета (403), задача зацикливалась и повторно
+        # отправляла форму в GetCourse на каждой попытке.
+        if response.is_error:
+            response.raise_for_status()
+        if response.status_code < 300 and (
+            "Не заполнено поле" in response.text or "Ошибка" in response.text
+        ):
             raise RuntimeError("GetCourse consultation form rejected the submission.")
 
     async def _submit_with_client(
@@ -325,6 +333,7 @@ class GetCourseConsultationFormClient:
                 "isHtmlWidget": "1",
             },
             headers={"Referer": "https://aisukam.ru/", "Origin": "https://aisukam.ru"},
+            follow_redirects=False,
         )
 
 

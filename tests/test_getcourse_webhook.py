@@ -782,6 +782,74 @@ async def test_getcourse_redirect_join_page_rejects_unresolved_placeholders() ->
     assert "Не удалось получить данные заявки" in response.text
 
 
+async def test_join_getcourse_renders_join_page_without_secret(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Реальный пользователь после GC-формы приходит на /join/getcourse по редиректу
+    без секрета. Guard не должен требовать секрет: заявка легитимна, endpoint
+    остаётся под rate-limit, а вебхук /webhooks/getcourse — строго с секретом."""
+    monkeypatch.setenv("GETCOURSE_WEBHOOK_SECRET", "expected-secret")
+    monkeypatch.setenv("GETCOURSE_WEBHOOK_SECRET_REQUIRED", "true")
+    monkeypatch.setenv("TELEGRAM_BOT_USERNAME", "aisu_test_bot")
+    get_settings.cache_clear()
+    getcourse_rate_limiter.reset()
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get(
+            "/join/getcourse",
+            params={
+                "name": "Лид Тестовый",
+                "phone": "+7 999 000-00-01",
+                "email": TEST_EMAIL,
+            },
+        )
+
+    assert response.status_code == 200
+    assert "https://t.me/aisu_test_bot?start=" in response.text
+    assert "Не удалось получить данные заявки" not in response.text
+
+
+async def test_join_getcourse_rejects_invalid_secret(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GETCOURSE_WEBHOOK_SECRET", "expected-secret")
+    monkeypatch.setenv("GETCOURSE_WEBHOOK_SECRET_REQUIRED", "true")
+    get_settings.cache_clear()
+    getcourse_rate_limiter.reset()
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get(
+            "/join/getcourse",
+            params={
+                "name": "Лид Тестовый",
+                "phone": "+7 999 000-00-01",
+                "email": TEST_EMAIL,
+                "fh_secret": "wrong-secret",
+            },
+        )
+
+    assert response.status_code == 403
+
+
+async def test_getcourse_webhook_rejects_missing_secret_in_required_mode(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Сам вебхук остаётся строгим: без секрета в required-режиме — 403."""
+    monkeypatch.setenv("GETCOURSE_WEBHOOK_SECRET", "expected-secret")
+    monkeypatch.setenv("GETCOURSE_WEBHOOK_SECRET_REQUIRED", "true")
+    get_settings.cache_clear()
+    getcourse_rate_limiter.reset()
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get(
+            "/webhooks/getcourse",
+            params={"gc_user_id": TEST_GC_ID, "email": TEST_EMAIL},
+        )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "GetCourse webhook secret is required."
+
+
 async def test_getcourse_webhook_allows_missing_secret_in_compatibility_mode(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

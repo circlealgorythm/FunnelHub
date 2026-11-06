@@ -173,6 +173,55 @@ async def test_enrich_lead_from_getcourse_api_saves_vk_id(
         assert external_id.external_id == "321654"
 
 
+async def test_consultation_form_client_does_not_follow_funnelhub_redirect() -> None:
+    """GetCourse после обработки формы редиректит на bot.aisukam.ru/join/getcourse.
+
+    Этот финальный редирект воркер не должен открывать: запрос без секрета
+    отбивается ingestion-guard (403) и задача вечно ретраится, повторно
+    отправляя форму в GetCourse. 302 на POST уже означает, что заявка принята.
+    """
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        url = str(request.url)
+        if request.url.host == "bot.aisukam.ru":
+            # Ingestion guard на проде: запрос без секрета -> 403.
+            return httpx.Response(403)
+        if request.method == "GET" and "redirect-auth" in url:
+            return httpx.Response(
+                302,
+                headers={
+                    "Location": "https://bot.aisukam.ru/join/getcourse"
+                    "?name=%D0%9B%D0%B8%D0%B4&phone=%2B79990000000&email=api-vk%40example.com"
+                },
+            )
+        if request.method == "GET":
+            return httpx.Response(
+                200,
+                text='window.requestTime = 123456; window.requestSimpleSign = "fresh-sign";',
+            )
+        if request.method == "POST":
+            return httpx.Response(
+                302,
+                headers={
+                    "Location": "https://school.aisukam.ru/pl/system/redirect-auth?hash=abc"
+                },
+            )
+        return httpx.Response(404)
+
+    http_client = httpx.AsyncClient(transport=httpx.MockTransport(handler), follow_redirects=True)
+    try:
+        await GetCourseConsultationFormClient(http_client=http_client).submit(
+            name="Лид",
+            phone="+79990000000",
+            email=TEST_EMAIL,
+        )
+    finally:
+        await http_client.aclose()
+    assert [request.method for request in requests] == ["GET", "POST"]
+
+
 async def test_consultation_form_client_uses_fresh_getcourse_signature() -> None:
     requests: list[httpx.Request] = []
 
