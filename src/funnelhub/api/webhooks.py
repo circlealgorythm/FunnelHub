@@ -40,10 +40,6 @@ from funnelhub.services.lead_post_submit_tasks import (
     enqueue_getcourse_consultation_submission,
     enqueue_lead_post_submit_tasks,
 )
-from funnelhub.services.smartcaptcha import (
-    SmartCaptchaUnavailableError,
-    verify_smartcaptcha_token,
-)
 from funnelhub.vk_bot import handle_vk_message_allow, handle_vk_message_new
 
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
@@ -121,7 +117,7 @@ class AisuLandingApplicationRequest(BaseModel):
     phone: str = Field(min_length=10, max_length=24)
     email: str = Field(min_length=3, max_length=80)
     form_type: Literal["consultation"]
-    smartcaptcha_token: str = Field(min_length=1, max_length=4096)
+    smartcaptcha_token: str | None = Field(default=None, max_length=4096)
     smartcaptcha_ip: str | None = Field(default=None, max_length=64)
     source: str | None = Field(default=None, max_length=500)
     article_title: str | None = Field(default=None, max_length=255)
@@ -313,24 +309,6 @@ async def aisu_landing_application(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid landing token.",
-        )
-
-    try:
-        verified = await verify_smartcaptcha_token(
-            server_key=settings.aisu_smartcaptcha_server_key,
-            token=application.smartcaptcha_token,
-            client_ip=application.smartcaptcha_ip,
-        )
-    except SmartCaptchaUnavailableError as exc:
-        logger.warning("Aisu landing SmartCaptcha validation is unavailable: %s", exc)
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="SmartCaptcha validation is temporarily unavailable.",
-        ) from exc
-    if not verified:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="SmartCaptcha validation failed.",
         )
 
     result = await ingest_getcourse_webhook(

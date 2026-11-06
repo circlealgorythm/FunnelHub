@@ -15,6 +15,13 @@
 ## Status
 
 ### What's Done
+### What's Done
+- [x] **MIG-007 (Демонтаж SmartCaptcha в API, деплой на Simplecloud и обогащение 417 VK-лидов)** (passing):
+  - Из isu_landing_application в unnelhub/api/webhooks.py полностью удалена проверка SmartCaptcha; smartcaptcha_token переведен в необязательное поле (Field(default=None)).
+  - Контейнер pp пересобран и перезапущен на Simplecloud (85.143.175.148).
+  - Разработан и исполнен скрипт scripts/enrich_vk_leads.py: через VK API (users.get) все 417 VK-лидов обогащены реальными именами, фамилиями, городами и доменами (вместо 'Без имени').
+  - Верификация: live probe через форму на основном сайте создал лид в PostgreSQL и выдал персональный join_url (код 202 accepted).
+
 - [x] **`MIG-002` (Деплой сервисов FunnelHub, Caddy и инициализация PostgreSQL)** (passing):
   - Сгенерирован боевой `/opt/funnelhub/.env` на базе шаблона восстановления: хост БД переведен на `postgres:5432`, брокер на `redis:6379`, экранированы спецсимволы `$$` в хеше пароля админки, обновлены валидные токены.
   - В `deploy_files.py` включен каталог `public/` (критично для сборки Dockerfile).
