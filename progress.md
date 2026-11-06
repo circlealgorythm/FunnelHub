@@ -438,3 +438,5 @@
 4. **Тестовая инфраструктура:** DB-тесты впервые запущены локально — поднят disposable postgres 16 в docker (`fh-test-pg`, 127.0.0.1:5432); 10 падений всех доказаны pre-existing на чистом дереве (4×vk_callback — сеть VK API, 2×join_page — прод-PUBLIC_BASE_URL из локального .env, 4×webhook/enrich — дрейф тестов от эволюции кода/ENV). `verify.ps1 -Subproject funnel-hub`: 18 passed, mypy 54 файлов OK (15 ruff-ошибок в `scripts/getcourse-import/` — legacy, не гейтится).
 5. **STD-FUNNEL-005** записан в локальный AGENTS.md (сигнал/причина/стандарт/Evidence RED→GREEN).
 6. **Деплой на Simplecloud** (по явной команде пользователя): `deploy_files.py` exit 0, все 6 app-контейнеров Up, alembic чисто. Боевые пробы: `/join/getcourse` без секрета **403→400** (guard прошёл), неверный секрет **403**, `/webhooks/getcourse` без секрета **403**, `/inbox/` **200**. Транзиентный 502 после reload Caddy самоустранился (uvicorn стартовал).
+
+- **2026-11-06 23:25** | fix(funnel-hub): STD-FUNNEL-005 — 403-луп getcourse_consultation_submission устранён, join/getcourse guard ослаблен для браузерного редиректа GC (вебхук строго); деплой на Simplecloud, пробы 403→400/403/403/200
