@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import secrets
 import uuid
 from dataclasses import dataclass
@@ -14,6 +15,58 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from funnelhub.config import Settings
 from funnelhub.db.models import EmailSubscription, Event, Message
+
+ADMIN_EMAILS = frozenset({"aisukam-info@yandex.ru"})
+
+ALGORITHM_PATTERNS = (
+    re.compile(r"algor", re.IGNORECASE),
+    re.compile(r"al[go]*r[yi]t[hm]*", re.IGNORECASE),
+    re.compile(r"alory", re.IGNORECASE),
+)
+
+JOG_SPOKOEN_PATTERNS = (
+    re.compile(r"jog.*(spoko|upak)", re.IGNORECASE),
+    re.compile(r"spokoen", re.IGNORECASE),
+    re.compile(r"upakoen", re.IGNORECASE),
+)
+
+
+def is_test_email(email: str | None) -> bool:
+    """Проверяет, является ли email тестовым аккаунтом (для защиты лимита Unisender).
+
+    Правила:
+    1. Адрес администратора (aisukam-info@yandex.ru) никогда не блокируется.
+    2. Адреса со словом 'aisukam' считаются тестовыми/внутренними (например, @aisukam.ru).
+    3. Адреса jogspokoen / upakoen (тестовые аккаунты автора) считаются тестовыми.
+    4. Адреса с корнями 'algor' / 'alory' / 'algorithm' считаются тестовыми ТОЛЬКО
+       на домене @gmail.com. Если домен другой (yandex.ru, mail.ru и т.д.),
+       адрес считается боевым лидом.
+    """
+    if not email:
+        return False
+    normalized = email.strip().lower()
+    if normalized in ADMIN_EMAILS:
+        return False
+    if "@" not in normalized:
+        return False
+
+    local_part, domain_part = normalized.split("@", 1)
+
+    # Тестовый/внутренний домен или имя школы
+    if "aisukam" in domain_part or "aisukam" in local_part:
+        return True
+
+    # Тестовые аккаунты jogspokoen / jogupakoen
+    if any(p.search(local_part) for p in JOG_SPOKOEN_PATTERNS):
+        return True
+
+    # Вариации "алгоритм" блокируются строго для домена @gmail.com
+    is_gmail = domain_part == "gmail.com" or domain_part.endswith(".gmail.com")
+    if is_gmail and any(p.search(local_part) for p in ALGORITHM_PATTERNS):
+        return True
+
+    return False
+
 
 
 class EmailProviderClient(Protocol):
@@ -163,8 +216,8 @@ async def send_email_text_message(
     metadata: dict[str, Any] | None = None,
 ) -> EmailSendResult:
     subscription = await get_subscribed_email_subscription(session, lead_id)
-    if subscription is None:
-        raise ValueError("Lead has no subscribed email subscription.")
+    if subscription is None or is_test_email(subscription.email):
+        raise ValueError("Lead has no subscribed email subscription (or is test account).")
 
     await ensure_email_unsubscribe_token(session, subscription)
     unsubscribe_url = build_unsubscribe_url(public_base_url, subscription.unsubscribe_token)

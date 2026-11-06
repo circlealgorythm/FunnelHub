@@ -20,7 +20,10 @@ from funnelhub.db.models import (
     LeadUtm,
 )
 from funnelhub.services.bot_linking import create_or_get_active_bot_link_token
-from funnelhub.services.email_messaging import ensure_email_unsubscribe_token
+from funnelhub.services.email_messaging import (
+    ensure_email_unsubscribe_token,
+    is_test_email,
+)
 
 EMPTY_VALUES = {"", "(empty)", "none", "null"}
 UTM_KEYS = ("utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content", "utm_group")
@@ -479,18 +482,24 @@ async def upsert_email_subscription(
         select(EmailSubscription).where(EmailSubscription.normalized_email == normalized_email)
     )
     if subscription is None:
+        now_dt = datetime.now(UTC)
+        is_test = is_test_email(normalized_email)
         subscription = EmailSubscription(
             id=uuid.uuid4(),
             lead_id=lead.id,
             email=email,
             normalized_email=normalized_email,
-            status="subscribed",
-            subscribed_at=datetime.now(UTC),
+            status="unsubscribed" if is_test else "subscribed",
+            subscribed_at=now_dt,
+            unsubscribed_at=now_dt if is_test else None,
         )
         session.add(subscription)
         await ensure_email_unsubscribe_token(session, subscription)
     elif subscription.lead_id == lead.id:
         subscription.email = email
+        if is_test_email(normalized_email):
+            subscription.status = "unsubscribed"
+            subscription.unsubscribed_at = subscription.unsubscribed_at or datetime.now(UTC)
         await ensure_email_unsubscribe_token(session, subscription)
 
 

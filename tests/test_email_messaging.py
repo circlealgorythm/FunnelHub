@@ -370,3 +370,41 @@ def test_build_email_provider_client_debug() -> None:
     client = build_email_provider_client(Settings(EMAIL_PROVIDER="debug"))
 
     assert isinstance(client, DebugEmailProviderClient)
+
+
+def test_is_test_email_detection() -> None:
+    from funnelhub.services.email_messaging import is_test_email
+
+    # Test cases that must be detected as test emails
+    assert is_test_email("circlealgorythm@gmail.com") is True
+    assert is_test_email("pirclealgorythm@gmail.com") is True
+    assert is_test_email("circlealgoryt@gmail.com") is True
+    assert is_test_email("circlealgorypem@gmail.com") is True
+    assert is_test_email("testalorythm@gmail.com") is True
+    assert is_test_email("test-webhook@aisukam.ru") is True
+    assert is_test_email("test-autonomy-probe@aisukam.ru") is True
+    assert is_test_email("jogupakoenniy@mail.ru") is True
+    assert is_test_email("jogspokoen@mail.ru") is True
+    assert is_test_email("jogspokoen@gmail.com") is True
+
+    # Real clients that must NOT be marked as test
+    assert is_test_email("ssv80t@rambler.ru") is False
+    assert is_test_email("ksndbrnsjz@gmail.com") is False
+    assert is_test_email("zherdev88@mail.ru") is False
+    assert is_test_email("client@gmail.com") is False
+    assert is_test_email("elena.ivanova@yandex.ru") is False
+
+    # Algorithm words on non-gmail domains are NOT filtered (user rule)
+    assert is_test_email("circlealgorythm@mail.ru") is False
+    assert is_test_email("circlealgorythm@yandex.ru") is False
+    assert is_test_email("algorithm@corp.ru") is False
+    assert is_test_email("algorithm@yandex.ru") is False
+    assert is_test_email("alorythm@mail.ru") is False
+
+    # Admin email must NOT be treated as test (receives lead notifications)
+    assert is_test_email("aisukam-info@yandex.ru") is False
+
+    # Empty / None
+    assert is_test_email("") is False
+    assert is_test_email(None) is False
+

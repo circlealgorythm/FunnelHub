@@ -6,6 +6,20 @@
 - Установлен и инициализирован шаблон Harness Engineering.
 
 ## Changes This Session
+- Завершен `EMAIL-001` (Защита квоты Unisender Go: супрессия тестовых адресов и фильтрация @gmail.com):
+  - В `src/funnelhub/services/email_messaging.py` внедрена функция `is_test_email(email)`: отсечение тестовых адресов с корнем "алгоритм" (`.*al[go]r[yi]thm.*@gmail\.com`) ограничено строго доменом `@gmail.com` (корпоративные и сторонние домены реальных клиентов разрешены); ящики `jogspokoen@*`, `test-webhook@*` и `ADMIN_EMAILS` отсекаются безусловно.
+  - В `src/funnelhub/services/funnel_autostart.py` заблокирован автостарт email-воронок для тестовых ящиков.
+  - В `src/funnelhub/services/getcourse_webhook.py` при создании подписки тестовый email автоматически маркируется `unsubscribed`.
+  - В Unisender Go API через `suppression/set.json` занесены 8 тестовых адресов с причиной `unsubscribed`.
+  - В боевой PostgreSQL БД тестовые подписки переведены в `unsubscribed`, а активные воронки в `paused`.
+  - Покрыто unit-тестами в `tests/test_email_messaging.py` (`test_is_test_email_detection`). Прогон `verify.ps1` успешно пройден (18 unit-тестов, ruff, mypy).
+
+- Завершен `DATA-001` (Интеграция CRM-лидов из Google Sheets и Phone-First сопоставление с VK ID):
+  - Проведен сквозной аудит 87 лидов из Google Sheets CRM и 417 лидов из VK бота через VK API (`messages.getHistory`).
+  - Утвержден и применен инвариант слияния: объединение карточек выполняется строго по подтвержденному совпадению номера телефона (`Phone-First`) либо 100% доказанной связке по таймстампу/форме/DEF-коду региона, исключая ложные слияния однофамильцев.
+  - На боевом сервере Simplecloud VPS выполнен транзакционный merge для 8 подтвержденных пар лидов (обновлен источник `landing_consultation + vk`, привязаны client_id Метрики, история контактов и VK ID).
+  - Оставшиеся 79 лидов CRM сохранены как независимые записи с источником `landing_consultation`. Итоговый баланс базы: 8 `landing_consultation + vk`, 79 `landing_consultation`, 409 `vk_recovery`.
+
 - Завершен `UI-010` (Полировка карточки лида в базе Inbox):
   - Удалена иконка-заглушка аватара (`<UserRound />`) из `LeadDatabaseDetail`.
   - Устранена строка «Источник не указан» — теперь выводится только существующий источник (`source`).

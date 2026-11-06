@@ -4,7 +4,7 @@
 
 - **Repository root directory**: `C:\Users\circlealgorythm\Documents\Бот воронка`
 - **Standard startup path**: `uv run uvicorn funnelhub.main:app --port 8000`
-- **Standard verification path**: `powershell -ExecutionPolicy Bypass -File .\init.ps1` (или `uv run pytest`)
+- **Standard verification path**: `pwsh -ExecutionPolicy Bypass -File scripts/verify.ps1 -Subproject funnel-hub` (или `uv run pytest`)
 - **Active Feature**: None (all features in roadmap completed)
 - **Current blocker**: Нет
 - **Highest priority unfinished feature**: None (100% complete)
@@ -15,7 +15,20 @@
 ## Status
 
 ### What's Done
-### What's Done
+- [x] **`EMAIL-001` (Защита квоты Unisender Go: супрессия тестовых адресов и фильтрация @gmail.com)** (passing):
+  - В `src/funnelhub/services/email_messaging.py` внедрена функция `is_test_email(email)`: отсечение тестовых адресов с корнем "алгоритм" (`.*al[go]r[yi]thm.*@gmail\.com`) ограничено строго доменом `@gmail.com` (корпоративные и сторонние домены реальных клиентов разрешены); ящики `jogspokoen@*`, `test-webhook@*` и `ADMIN_EMAILS` отсекаются безусловно.
+  - В `src/funnelhub/services/funnel_autostart.py` заблокирован автостарт email-воронок для тестовых ящиков.
+  - В `src/funnelhub/services/getcourse_webhook.py` при создании подписки тестовый email автоматически маркируется `unsubscribed`.
+  - В Unisender Go API через `suppression/set.json` занесены 8 тестовых адресов с причиной `unsubscribed`.
+  - В боевой PostgreSQL БД тестовые подписки переведены в `unsubscribed`, а активные воронки в `paused`.
+  - Покрыто unit-тестами в `tests/test_email_messaging.py` (`test_is_test_email_detection`). Прогон `verify.ps1` успешно пройден (18 unit-тестов, ruff, mypy).
+
+- [x] **`DATA-001` (Интеграция CRM-лидов из Google Sheets и Phone-First сопоставление с VK ID)** (passing):
+  - Проведен сквозной аудит 87 лидов из Google Sheets CRM и 417 лидов из VK бота через VK API (`messages.getHistory`).
+  - Утвержден и применен инвариант слияния: объединение карточек выполняется строго по подтвержденному совпадению номера телефона (`Phone-First`) либо 100% доказанной связке по таймстампу/форме/DEF-коду региона, исключая ложные слияния однофамильцев.
+  - На боевом сервере Simplecloud VPS выполнен транзакционный merge для 8 подтвержденных пар лидов (обновлен источник `landing_consultation + vk`, привязаны client_id Метрики, история контактов и VK ID).
+  - Оставшиеся 79 лидов CRM сохранены как независимые записи с источником `landing_consultation`. Итоговый баланс базы: 8 `landing_consultation + vk`, 79 `landing_consultation`, 409 `vk_recovery`.
+
 - [x] **MIG-007 (Демонтаж SmartCaptcha в API, деплой на Simplecloud и обогащение 417 VK-лидов)** (passing):
   - Из isu_landing_application в unnelhub/api/webhooks.py полностью удалена проверка SmartCaptcha; smartcaptcha_token переведен в необязательное поле (Field(default=None)).
   - Контейнер pp пересобран и перезапущен на Simplecloud (85.143.175.148).
@@ -335,3 +348,5 @@
 - **2026-11-06 01:15** | ops(MIG-005): launch all 8 services, verify bots polling, worker dispatch and SSL
 
 - **2026-11-06 02:10** | ops(MIG-006): configure daily encrypted backups with off-site Reg.ru FTP replication
+
+- **2026-11-06 19:22** | feat(funnel-hub): email test suppression and crm vk reconciliation

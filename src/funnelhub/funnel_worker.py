@@ -3,8 +3,6 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from aiogram import Bot
-
 from funnelhub.api.inbox import ApiInboxSendClients
 from funnelhub.config import get_settings
 from funnelhub.db.session import async_session_maker
@@ -16,6 +14,7 @@ from funnelhub.services.funnel_engine import load_funnel_definition
 from funnelhub.services.funnel_runner import run_due_funnel_once
 from funnelhub.services.lead_post_submit_tasks import run_due_lead_post_submit_tasks_once
 from funnelhub.services.metrika_enrichment import enrich_lead_utm_search_queries
+from funnelhub.services.telegram_messaging import create_telegram_bot
 from funnelhub.services.vk_messaging import HttpVkMessageClient
 
 logger = logging.getLogger(__name__)
@@ -36,7 +35,11 @@ async def main() -> None:
         email_definition = load_funnel_definition(settings.default_email_funnel_path)
         if email_definition.key != definitions[0].key:
             definitions.append(email_definition)
-    bot = Bot(token=settings.telegram_bot_token) if settings.telegram_bot_token else None
+    bot = (
+        create_telegram_bot(settings.telegram_bot_token, settings)
+        if settings.telegram_bot_token
+        else None
+    )
     vk_client = (
         HttpVkMessageClient(
             access_token=settings.vk_group_access_token,

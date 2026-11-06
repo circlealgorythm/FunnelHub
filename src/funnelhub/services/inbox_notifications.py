@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from funnelhub.config import Settings
 from funnelhub.db.models import Conversation, Lead, LeadContact, Message, MessengerIdentity
+from funnelhub.services.telegram_messaging import create_telegram_bot
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +42,7 @@ async def notify_admin_about_inbound_message(
     if client is None:
         if settings.inbox_notify_telegram_bot_token is None:
             return False
-        bot = Bot(token=settings.inbox_notify_telegram_bot_token)
+        bot = create_telegram_bot(settings.inbox_notify_telegram_bot_token, settings)
         client = bot
 
     try:

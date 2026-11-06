@@ -51,6 +51,12 @@ class Settings(BaseSettings):
         default=None, validation_alias="TELEGRAM_BOT_USERNAME"
     )
     telegram_bot_token: str | None = Field(default=None, validation_alias="TELEGRAM_BOT_TOKEN")
+    telegram_api_base_url: str | None = Field(
+        default=None, validation_alias="TELEGRAM_API_BASE_URL"
+    )
+    telegram_proxy_secret: str | None = Field(
+        default=None, validation_alias="TELEGRAM_PROXY_SECRET"
+    )
     most_telegram_bot_username: str | None = Field(
         default=None, validation_alias="MOST_TELEGRAM_BOT_USERNAME"
     )

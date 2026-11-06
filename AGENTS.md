@@ -151,3 +151,27 @@ The repository is the **Single System of Record**.
 * **Доказательство (Evidence):**
   - Unit-тест `tests/test_caddyfile.py` проверяет директиву `Content-Security-Policy` и сбалансированность фигурных скобок (PASS).
   - Прогон `scripts/verify.ps1 -Subproject funnel-hub` (ruff, mypy, 18 unit-тестов) успешно завершен с кодом 0.
+
+### STD-EMAIL-002 | Защита квоты Unisender Go: супрессия тестовых адресов и фильтрация по Gmail (HARNESS-002)
+* **Проблема:**
+  Тестовые заявки администратора с ключевыми словами алгоритма (`circlealgorythm@gmail.com`, `test-webhook@aisukam.ru`, `jogspokoen@*`) приводили к холостому расходу лимита Unisender Go (6,000 писем/мес). При этом требовалось не отсекать реальных лидов с корпоративными или сторонними доменами, содержащими корень "алгоритм".
+* **Стандарт:**
+  1. В `email_messaging.py` внедрена функция `is_test_email(email)`.
+  2. Для корней `algor...` / `alory...` отсечение выполняется СТРОГО на домене `@gmail.com` (`.*al[go]r[yi]thm.*@gmail\.com`). Все остальные почтовые провайдеры разрешены для клиентов.
+  3. Для паттернов `jogspokoen` и административных адресов `ADMIN_EMAILS` отсечение действует безусловно.
+  4. На уровне `funnel_autostart.py` и `getcourse_webhook.py` тестовые адреса автоматически маркируются как `unsubscribed`, исключаются из запуска рассылок и заносятся в Unisender Suppression List (`cause="unsubscribed"`).
+* **Доказательство (Evidence):**
+  - Unit-тест `test_is_test_email_detection` в `tests/test_email_messaging.py`: покрывает тестовые ящики на gmail (`circlealgorythm@gmail.com`), легитимные ящики на других доменах (`algorithm.lead@mail.ru`, `client.algorithm@yandex.ru` -> False), `jogspokoen@*`, `aisukam-info@yandex.ru` (GREEN).
+  - Запрос `suppression/get.json` к API Unisender Go подтвердил наличие 8 тестовых адресов в статусе `unsubscribed`.
+  - `pwsh -ExecutionPolicy Bypass -File scripts/verify.ps1 -Subproject funnel-hub` успешно пройден (18 unit-тестов, ruff, mypy).
+
+### STD-DATA-003 | Инвариант слияния лидов: Phone-First и сопоставление с VK ID (HARNESS-002)
+* **Проблема:**
+  При интеграции 87 лидов из Google Sheets CRM и 417 лидов из VK бота требовалось сопоставить профили. Попытка слияния по именам несла высокий риск ложных объединений (однофамильцы, распространенные имена "Ольга", "Елена").
+* **Стандарт:**
+  1. Строгий инвариант: слияние записей (`landing_consultation` + `vk_recovery`) разрешено СТРОГО при совпадении нормализованного номера телефона (`+7...` / 11 цифр) или при 100% подтвержденном совпадении по таймстампу, форме и уникальному ФИО/DEF-коду региона.
+  2. Все остальные лиды CRM без подтвержденного телефона или профиля VK сохраняются как независимые сущности с источником `landing_consultation` без риска коллизий.
+  3. При объединении профилю присваивается составной источник `landing_consultation + vk`, привязывается `client_id` Яндекс.Метрики и объединяется история контактов.
+* **Доказательство (Evidence):**
+  - Транзакционный аудит базы данных PostgreSQL на Simplecloud VPS (`85.143.175.148`): успешно объединено ровно 8 подтвержденных пар лидов; оставшиеся 79 лидов CRM изолированы без искажения персональных данных.
+  - Запрос `SELECT source, count(*) FROM leads GROUP BY source;` подтвердил: `landing_consultation + vk`: 8, `landing_consultation`: 79, `vk_recovery`: 409.

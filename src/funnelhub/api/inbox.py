@@ -57,7 +57,7 @@ from funnelhub.services.inbox_database import (
     upsert_database_lead_vk_id,
 )
 from funnelhub.services.landing_applications import MOST_TSENNOSTEY_SOURCE
-from funnelhub.services.telegram_messaging import TelegramMessageClient
+from funnelhub.services.telegram_messaging import TelegramMessageClient, create_telegram_bot
 from funnelhub.services.vk_messaging import HttpVkMessageClient, VkMessageClient
 
 router = APIRouter(
@@ -370,7 +370,7 @@ async def post_conversation_reply(
         if "telegram" in selected_channels:
             if not settings.telegram_bot_token:
                 raise HTTPException(status_code=503, detail="Telegram client is not configured.")
-            telegram_bot = Bot(token=settings.telegram_bot_token)
+            telegram_bot = create_telegram_bot(settings.telegram_bot_token, settings)
             telegram_client = telegram_bot
         if "telegram_most" in selected_channels:
             if not settings.most_telegram_bot_token:
@@ -378,7 +378,7 @@ async def post_conversation_reply(
                     status_code=503,
                     detail="Most Telegram client is not configured.",
                 )
-            most_telegram_bot = Bot(token=settings.most_telegram_bot_token)
+            most_telegram_bot = create_telegram_bot(settings.most_telegram_bot_token, settings)
             most_telegram_client = most_telegram_bot
         if "vk" in selected_channels:
             if not settings.vk_group_access_token:
@@ -472,7 +472,7 @@ async def post_subscriber_reply(
         if "telegram" in selected_channels:
             if not settings.telegram_bot_token:
                 raise HTTPException(status_code=503, detail="Telegram client is not configured.")
-            telegram_bot = Bot(token=settings.telegram_bot_token)
+            telegram_bot = create_telegram_bot(settings.telegram_bot_token, settings)
             telegram_client = telegram_bot
         if "telegram_most" in selected_channels:
             if not settings.most_telegram_bot_token:
@@ -480,7 +480,7 @@ async def post_subscriber_reply(
                     status_code=503,
                     detail="Most Telegram client is not configured.",
                 )
-            most_telegram_bot = Bot(token=settings.most_telegram_bot_token)
+            most_telegram_bot = create_telegram_bot(settings.most_telegram_bot_token, settings)
             most_telegram_client = most_telegram_bot
         if "vk" in selected_channels:
             if not settings.vk_group_access_token:

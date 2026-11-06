@@ -7,7 +7,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from funnelhub.config import Settings
 from funnelhub.db.models import FunnelState
-from funnelhub.services.email_messaging import get_subscribed_email_subscription
+from funnelhub.services.email_messaging import (
+    get_subscribed_email_subscription,
+    is_test_email,
+)
 from funnelhub.services.funnel_engine import (
     CALENDAR_DAY_OFFSET_METADATA_KEY,
     FUNNEL_STARTED_AT_METADATA_KEY,
@@ -86,7 +89,7 @@ async def start_default_email_funnel_for_lead(
         return None
 
     subscription = await get_subscribed_email_subscription(session, lead_id)
-    if subscription is None:
+    if subscription is None or is_test_email(subscription.email):
         return None
 
     definition = load_funnel_definition(settings.default_email_funnel_path)

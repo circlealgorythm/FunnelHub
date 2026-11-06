@@ -6,6 +6,9 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Protocol, cast
 
+from aiogram import Bot
+from aiogram.client.session.aiohttp import AiohttpSession
+from aiogram.client.telegram import TelegramAPIServer
 from aiogram.types import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
@@ -13,7 +16,23 @@ from aiogram.types import (
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from funnelhub.config import Settings
 from funnelhub.db.models import Conversation, Message, MessengerIdentity
+
+
+def create_telegram_bot(token: str, settings: Settings) -> Bot:
+    session: AiohttpSession | None = None
+    if settings.telegram_api_base_url:
+        secret = settings.telegram_proxy_secret
+        base_url = settings.telegram_api_base_url.rstrip("/")
+        if secret:
+            base = f"{base_url}/bot{{token}}/{{method}}?proxy_secret={secret}"
+            file = f"{base_url}/file/bot{{token}}/{{path}}?proxy_secret={secret}"
+            server = TelegramAPIServer(base=base, file=file)
+        else:
+            server = TelegramAPIServer.from_base(base_url)
+        session = AiohttpSession(api=server)
+    return Bot(token=token, session=session)
 
 
 class TelegramMessageClient(Protocol):

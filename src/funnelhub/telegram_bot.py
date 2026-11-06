@@ -4,7 +4,7 @@ import asyncio
 import logging
 from typing import Any
 
-from aiogram import Bot, Dispatcher, Router
+from aiogram import Dispatcher, Router
 from aiogram.filters import Command, CommandStart
 from aiogram.filters.command import CommandObject
 from aiogram.types import CallbackQuery, Message, User
@@ -23,6 +23,7 @@ from funnelhub.services.inbox import (
 )
 from funnelhub.services.inbox_notifications import notify_admin_about_inbound_message
 from funnelhub.services.telegram_messaging import (
+    create_telegram_bot,
     get_telegram_identity_by_user_id,
     parse_text_callback_data,
     unsubscribe_telegram_identity,
@@ -261,12 +262,12 @@ async def main() -> None:
     if not settings.telegram_bot_token:
         raise RuntimeError("TELEGRAM_BOT_TOKEN is required to run the Telegram bot.")
 
-    bot = Bot(token=settings.telegram_bot_token)
+    bot = create_telegram_bot(settings.telegram_bot_token, settings)
     dispatcher = Dispatcher()
     dispatcher.include_router(router)
 
     logger.info("Starting Telegram bot polling")
-    await dispatcher.start_polling(bot)
+    await dispatcher.start_polling(bot, polling_timeout=10)
 
 
 if __name__ == "__main__":
