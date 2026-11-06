@@ -83,6 +83,7 @@ def enforce_getcourse_ingestion_guard(
     payload: Mapping[str, Any],
     settings: Settings,
     endpoint: str,
+    require_secret: bool = True,
 ) -> None:
     client_ip = get_request_ip(request)
     getcourse_rate_limiter.check(
@@ -94,6 +95,7 @@ def enforce_getcourse_ingestion_guard(
         request=request,
         payload=payload,
         settings=settings,
+        require_secret=require_secret,
     )
 
 
@@ -102,6 +104,7 @@ def validate_getcourse_webhook_secret(
     request: Request,
     payload: Mapping[str, Any],
     settings: Settings,
+    require_secret: bool = True,
 ) -> None:
     configured_secret = clean_secret_value(settings.getcourse_webhook_secret)
     if configured_secret is None:
@@ -109,7 +112,7 @@ def validate_getcourse_webhook_secret(
 
     provided_secret = extract_getcourse_webhook_secret(request, payload)
     if provided_secret is None:
-        if settings.getcourse_webhook_secret_required:
+        if require_secret and settings.getcourse_webhook_secret_required:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="GetCourse webhook secret is required.",

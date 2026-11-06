@@ -428,3 +428,5 @@
 - **2026-11-06 22:33** | chore(funnel-hub): purge 79 empty max-conversation shells (guarded delete, dump+rollback); STD-UI-001 attribution fixed to MIG-004 recover_crm_leads.py
 
 - **2026-11-06 22:35** | docs(funnel-hub): user confirmed 4-lead delta was manual admin deletions; final base 620 leads
+
+- **2026-11-06 23:1x** | fix(funnel-hub): 403-луп getcourse_consultation_submission устранён — воркер не открывает финальный редирект GC на /join/getcourse (follow_redirects=False, httpx raise_for_status только при is_error); GET /join/getcourse переведён на require_secret=False (секрет опционален, rate-limit остаётся, вебхук строго) — реальный лид после GC-формы снова видит join-страницу вместо 403. STD-FUNNEL-005. RED→GREEN на локальном postgres 16 (docker fh-test-pg); FIX A + тесты A/B попали в чужой коммит ef98e57 (гонка с параллельной сессией чистки max-диалогов), FIX B (ingestion_guard.py + messenger.py) — отдельным коммитом; 10 падений DB-тестов доказаны pre-existing на чистом дереве (сеть VK API, прод-PUBLIC_BASE_URL в локальном .env, дрейф тестов)

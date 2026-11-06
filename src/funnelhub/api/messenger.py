@@ -84,11 +84,16 @@ async def getcourse_redirect_join_page(
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> HTMLResponse:
     raw_payload = dict(request.query_params)
+    # Легитимный вызывающий здесь — браузер реального лида: GetCourse после
+    # обработки формы редиректит на этот endpoint без секрета, поэтому секрет
+    # опционален (но проверяется, если передан). Rate-limit остаётся; вебхук
+    # /webhooks/getcourse продолжает требовать секрет строго.
     enforce_getcourse_ingestion_guard(
         request=request,
         payload=raw_payload,
         settings=settings,
         endpoint="join/getcourse",
+        require_secret=False,
     )
     payload = getcourse_redirect_payload(
         {
