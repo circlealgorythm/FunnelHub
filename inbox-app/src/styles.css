@@ -1168,6 +1168,20 @@ h2 {
   text-overflow: ellipsis;
 }
 
+.lead-channel-gc-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  background: rgba(119, 113, 102, 0.1);
+  color: #777166 !important;
+  border: 1px solid rgba(119, 113, 102, 0.28);
+  border-radius: 6px;
+  font-size: 11.5px !important;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  white-space: nowrap;
+}
+
 .lead-blog-article-card {
   margin: 10px 0 14px 0;
   padding: 10px 14px;

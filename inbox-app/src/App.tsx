@@ -2089,6 +2089,13 @@ function DatabaseWorkspace({
                     <td>
                       {leadMessengerLabels(lead).length > 0 ? (
                         leadMessengerLabels(lead).map((label) => <span key={label}>{label}</span>)
+                      ) : lead.getcourse_user_id ? (
+                        <span
+                          className="lead-channel-gc-badge"
+                          title="Импортирован из GetCourse: диалога с ботом пока не было"
+                        >
+                          GC
+                        </span>
                       ) : (
                         <span>мессенджер нет</span>
                       )}

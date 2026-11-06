@@ -15,6 +15,20 @@
 ## Status
 
 ### What's Done
+- [x] **`DATA-002` (Массовый импорт пользователей GetCourse в базу лидов через API: 1188 пользователей, 823 новых лида)** (passing):
+  - Найден и подтверждён рабочий ключ `GETCOURSE_API_KEY` (`.env.recovery.template`, проверка 2026-11-05); выяснены фильтры API: полная выгрузка = `created_at[from]/[to]` (без фильтра error_code 908), группы = `idgrouplist=id_date`.
+  - Выгружены и распарсены все 1188 пользователей GC (export 90643107) + членство в группах (export 90643875, 794 связки, 17 групп). Установлено: JSON API приходит чистым UTF-8 — консольный mojibake является артефактом отображения (см. `.harness/lessons.md` STD-021), перекодировки запрещены.
+  - Подготовлены TSV-стейджинг (`scripts/getcourse-import/`): users.tsv 1188×28 (телефоны нормализованы к 7-префиксу, технические `@vktech.gc` отсечены), groups.tsv 794×4.
+  - Сопоставление с базой (приоритет vk > email > phone, 1:1): 363 склейки (297 vk / 1 email / 66 phone), 823 новых лидов, 2 пропущены как созданные вебхуками во время импорта (guard от гонки — STD-DATA-004).
+  - Боевой импорт на Simplecloud через dry-run (BEGIN/ROLLBACK) → pg_dump (`pre_gc_import_20261106.dump`, сервер + локальная копия, md5 сверены) + скрипт отката `/tmp/gc_import/rollback_gc_import.sh` → COMMIT: leads 500→1323, gc-linked 1188, email-контактов 1025, телефонов 913, UTM 872 (source_kind='import'), тегов групп 794, кастомных полей Да/Нет 1033, external_ids 1186 getcourse + 313 vk.
+  - Импортированным VK-лидам добавлены 15 идентичностей со `is_subscribed=false` (STD-DATA-005) — колонка КАНАЛ показывает VK, боты им не пишут.
+  - Два сбоя в процессе (гонка вебхуков duplicate key gc_id 504948483; lead_tags.id без server_default) оба авто-откатились с нулевыми изменениями и устранены guard-ами; вебхуки и воронки в момент импорта не прерывались, массовые рассылки не запускались (email_subscriptions сознательно не создавались — решение пользователя).
+
+- [x] **`UI-GC-BADGE` (Серый бейдж GC в колонке КАНАЛ базы лидов Inbox)** (passing, деплой ожидает команды):
+  - В `inbox-app/src/App.tsx` ячейка КАНАЛ: при отсутствии TG/VK-идентичностей и наличии `getcourse_user_id` рендерится бейдж `GC` с тултипом «Импортирован из GetCourse: диалога с ботом пока не было».
+  - В `inbox-app/src/styles.css` добавлен `.lead-channel-gc-badge` в тёплой серой гамме (в тон заголовков таблицы).
+  - `npm run build` — 2.50s, exit 0; `verify.ps1 -Subproject funnel-hub` — 18 passed. Боевой деплой UI ожидает явной команды пользователя.
+
 - [x] **`TG-PROXY-001` (Интеграция Telegram Bot API через Cloudflare Worker на Simplecloud VPS)** (passing):
   - Диагностирована и ликвидирована блокировка ТСПУ на порт 443 к IP пулам Telegram (`149.154.*`) на сервере Simplecloud VPS (`85.143.175.148`).
   - Развернут бессерверный Cloudflare Worker Reverse Proxy (`lingering-forest-a1b9.circlealgorythm.workers.dev`), проксирующий запросы к `api.telegram.org` без задержек и ограничений (TLS 40ms, Bot API 100ms).
@@ -376,3 +390,5 @@
 - **2026-11-06 19:46** | fix(funnel-hub): UX-VK-001 инструкция Разрешить сообщения на join-странице + диагностика автостарта VK (STD-FUNNEL-003)
 
 - **2026-11-06 20:17** | feat(funnel-hub): TG-PROXY-001 Cloudflare Worker Telegram proxy, VK-CONFIRM-001 and STD-FUNNEL-004
+
+- **2026-11-06 20:22** | feat(funnel-hub): import 1188 GetCourse users via API (823 new leads, contacts/UTM/tags/external-ids), GC badge in inbox channel column, webhook-race guards, STD-DATA-004/005 lessons

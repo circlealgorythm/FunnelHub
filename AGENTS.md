@@ -206,3 +206,35 @@ The repository is the **Single System of Record**.
   - GREEN: Вызов через Cloudflare Worker `curl -s https://lingering-forest-a1b9.circlealgorythm.workers.dev/bot<token>/getMe` ➔ `{"ok":true,"result":{"id":8963890043,"is_bot":true,"username":"vedicschool_aisu_bot"}}` (exit 0, ответ 100 мс).
   - Верификатор `verify.ps1 -Subproject funnel-hub` успешно пройден (18 unit-тестов, ruff, mypy без ошибок).
   - Контейнер `funnelhub-telegram-bot-1` на Simplecloud стабильно вычитывает события, `curl .../getWebhookInfo` подтвердил `pending_update_count: 0`.
+
+### STD-DATA-004 | Массовый импорт лидов GetCourse через API: гонка с вебхуками, guard UNIQUE-ссылки и lead_tags.id (HARNESS-002)
+* **Сигнал/Маркер (Cue):** GetCourse API, /pl/api/account/users, created_at[from], idgrouplist=id_date, массовый импорт, uq_leads_getcourse_user_id, duplicate key 504948483, вебхук-гонка, getcourse_webhook, lead_tags.id, import_gc_users.sql, dry-run, pg_dump rollback.
+* **Проблема:**
+  Боевой импорт 1188 пользователей GetCourse (823 новых лидов) дважды падал на проде: (1) `duplicate key value violates unique constraint "uq_leads_getcourse_user_id"` на gc_id 504948483 — живой вебхук GetCourse создал лида между dry-run и коммитом; (2) `null value in column "id" of relation "lead_tags"` — в миграции 20260806_01 у lead_tags.id UUID НЕТ server_default.
+* **Причина:**
+  Импорт и вебхуки GC пишут в `leads` параллельно: raw-SQL INSERT/UPDATE без guard-а предполагал отсутствие конкурирующих писателей. Дополнительно raw-SQL вставка в lead_tags не генерирует UUID (в отличие от таблиц 0001_core_data_model, где id имеет server_default gen_random_uuid()).
+* **Стандарт и контрмера:**
+  1. Любой массовый импорт в `leads` обязан содержать guard от гонки с вебхуками: и в UPDATE-линк (`AND NOT EXISTS (SELECT 1 FROM leads l2 WHERE l2.getcourse_user_id = s.gc_id AND l2.id <> l.id)`), и в INSERT новых (`AND NOT EXISTS (SELECT 1 FROM leads l WHERE l.getcourse_user_id = s.gc_id)`). Пропущенных «вебхуковых» лидов обогащать через карту gc_id→lead_id (`JOIN leads ON l.getcourse_user_id = s.gc_id`).
+  2. В raw-SQL вставках UUID-первичные ключи без server_default (lead_tags) задавать явно: `SELECT gen_random_uuid(), ...`.
+  3. Обязательный пайплайн боевого импорта: dry-run (BEGIN…ROLLBACK, отчёт на ревью) → pg_dump на сервере + копия локально + скрипт отката → commit-прогон → POST-IMPORT VERIFY.
+  4. GetCourse API: без фильтра `error_code 908` («Должен быть передан хотя бы один фильтр»); полная выгрузка = `created_at[from]=YYYY-MM-DD&created_at[to]=...`; группы = `idgrouplist=id_date` (формат `idgrouplist=id` отдаёт пустую колонку); ключ — `GETCOURSE_API_KEY` из `.env.recovery.template`; технические email `@vktech.gc` отсекать (`is_getcourse_technical_email`), их VK-ID извлекать из префикса `id<N>`.
+* **Доказательство (Evidence):**
+  - RED-1: `psql -v commit=1 -f import_gc_users.sql` ➔ `ERROR: duplicate key ... (Key (getcourse_user_id)=(504948483))`, авто-ROLLBACK (leads 500, gc-linked 1).
+  - RED-2: повтор ➔ `UPDATE 363, INSERT 823 ... ERROR: null value in column "id" of relation "lead_tags"`, авто-ROLLBACK (leads 500).
+  - GREEN: guard-версия ➔ `UPDATE 363; INSERT 0 823; INSERT 0 1020 (email); INSERT 0 823 (phone); INSERT 0 784 (utm); INSERT 0 794 (tags); INSERT 0 1033 (custom); INSERT 0 1186+313 (ext ids); COMMIT`. POST-IMPORT VERIFY: leads 1323, leads_with_gc_id 1188, emails 1025, phones 913, utm 872, gc_tags 794.
+  - Контейнеры Up, `https://bot.aisukam.ru/inbox/` HTTP 200, ошибок в логах app за 10 мин нет.
+
+### STD-DATA-005 | Импорт VK-идентичностей из GetCourse: только is_subscribed=false (HARNESS-002)
+* **Сигнал/Маркер (Cue):** messenger_identities, is_subscribed, колонка КАНАЛ, VK-бейдж, inbox lead database, импорт VK-ID, uq_messenger_identities_channel_external_user_id.
+* **Проблема:**
+  Колонка КАНАЛ в базе лидов пуста у импортированных из GetCourse лидов: identities создаются только ботами при живом диалоге. Наивная вставка identity с дефолтом `is_subscribed=true` дала бы ботам «право» слать VK-сообщения пользователям, никогда не подписывавшимся на сообщество (первая же отправка упала бы 901/902 и fail-closed отписал бы их).
+* **Причина:**
+  `messenger_identities.is_subscribed` по умолчанию true; все механики отправок фильтруют `is_subscribed IS TRUE`, поэтому флаг = прямое разрешение на рассылку.
+* **Стандарт и контрмера:**
+  1. При импорте VK-ID из внешних источников (GetCourse и др.) identity создавать СТРОГО с `is_subscribed=false` + `raw_profile={"origin": ...}`.
+  2. Telegram из GetCourse восстановить нельзя: поле «FunnelHub — ссылка перехода в новый Telegram-бот» пусто у всех пользователей; КАНАЛ заполнится сам при первом сообщении лиду боту.
+  3. UI-маркер лидов без канала: серый бейдж `GC` в колонке КАНАЛ (inbox-app, `lead-channel-gc-badge`), условие — нет TG/VK identity и есть getcourse_user_id.
+* **Доказательство (Evidence):**
+  - `INSERT INTO messenger_identities ... is_subscribed=false` ➔ `INSERT 0 15`; итого vk_total 432 (414 subscribed / 18 not-subscribed).
+  - Фильтры-разрешения подтверждены кодом: `vk_messaging.py:297`, `funnel_runner.py:260,271,514,536` — `MessengerIdentity.is_subscribed.is_(True)`.
+  - `npm run build` (inbox-app) 2.50s exit 0; `verify.ps1 -Subproject funnel-hub` — 18 passed.
