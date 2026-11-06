@@ -28,7 +28,11 @@
 - [x] **`UI-GC-BADGE` (Серый бейдж GC в колонке КАНАЛ базы лидов Inbox)** (passing, деплой ожидает команды):
   - В `inbox-app/src/App.tsx` ячейка КАНАЛ: при отсутствии TG/VK-идентичностей и наличии `getcourse_user_id` рендерится бейдж `GC` с тултипом «Импортирован из GetCourse: диалога с ботом пока не было».
   - В `inbox-app/src/styles.css` добавлен `.lead-channel-gc-badge` в тёплой серой гамме (в тон заголовков таблицы).
-  - `npm run build` — 2.50s, exit 0; `verify.ps1 -Subproject funnel-hub` — 18 passed. Боевой деплой UI ожидает явной команды пользователя.
+  - `npm run build` — 2.50s, exit 0; `verify.ps1 -Subproject funnel-hub` — 18 passed.
+  - **Боевой деплой выполнен 2026-11-06** (команда пользователя «выкатывай»; `deploy_files.py`: загрузка чистого `inbox-app/dist`, пересборка образов app/funnel-worker/telegram-bot/most-*, alembic upgrade head, up -d, caddy reload). Подтверждено: `/inbox/` HTTP 200, отдаётся бандл `assets/index-CJ539ubP.js`, класс `lead-channel-gc-badge` присутствует в отдаваемом JS (grep = 1), ошибок в логах app нет.
+
+- [x] **`SOP-BACKUP-001` (План слияния при возврате бэкапа Beget VPS)** (план согласован, исполнение по факту получения дампа):
+  - Зафиксирован в `AGENTS.md`: загрузка бэкапа в отдельную схему `beget_restore`, слияние лидов по приоритету getcourse_user_id → VK → телефон → email (Phone-First), перенос переписки `conversations/messages` с дедупликацией по `external_message_id`, объём-правило (не воскрешать GC-лидов до 2026-05-27), разрешение UNIQUE-конфликтов в пользу прода, `lead_tags.id` явно, чужие VK-идентичности `is_subscribed=false`, dry-run → ревью → COMMIT → POST-MERGE VERIFY.
 
 - [x] **`TG-PROXY-001` (Интеграция Telegram Bot API через Cloudflare Worker на Simplecloud VPS)** (passing):
   - Диагностирована и ликвидирована блокировка ТСПУ на порт 443 к IP пулам Telegram (`149.154.*`) на сервере Simplecloud VPS (`85.143.175.148`).
@@ -395,3 +399,5 @@
 - **2026-11-06 20:22** | feat(funnel-hub): import 1188 GetCourse users via API (823 new leads, contacts/UTM/tags/external-ids), GC badge in inbox channel column, webhook-race guards, STD-DATA-004/005 lessons
 
 - **2026-11-06 20:42** | fix(funnel-hub): scope GC import to FunnelHub launch period — delete 698 pre-2026-05-27 imported leads, final 624; STD-DATA-004 scope rule
+
+- **2026-11-06 20:53** | feat(funnel-hub): deploy GC badge to prod (verified in served bundle) + SOP-BACKUP-001 Beget backup merge plan

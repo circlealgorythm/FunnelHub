@@ -96,6 +96,19 @@ The repository is the **Single System of Record**.
    - Логи на сервере Beget: `funnelhub-most-telegram-bot-1` (Start polling for `@most_cannostei_bot`, обработка updates `839195251`, `839195252`), `funnelhub-most-funnel-worker-1` (`Most funnel runner pass completed`), `funnelhub-most-vk-funnel-worker-1` (`Most VK funnel runner pass completed`).
    - Админка `https://bot.aisukam.ru/inbox/` — HTTP 200 OK.
 
+### SOP-BACKUP-001 | Слияние при возврате бэкапа Beget VPS (план восстановления, 2026-11-06)
+* **Контекст:** Beget VPS `31.129.110.56` уничтожен инфраструктурным инцидентом 2026-11; FunnelHub работает на Simplecloud (`85.143.175.148`) на БД, собранной через GC-импорт (DATA-002, граница 2026-05-27) + живые вебхуки. Beget обещает вернуть файловые бэкапы VPS части пользователей (обновление от 2026-11-06). Если дамп Beget вернётся: **история переписки (`conversations`/`messages`), `funnel_states`, `events` и исходные ~499 лидов восстановимы ТОЛЬКО из него** — в текущей базе их нет.
+* **Инварианты слияния:**
+  1. Дамп Beget загружать в ОТДЕЛЬНУЮ схему/БД на Simplecloud (например `beget_restore`); боевые таблицы не трогать до сухого прогона.
+  2. Слияние лидов по ключам в порядке приоритета: `getcourse_user_id` → VK-identity (`messenger_identities.channel='vk'`) → нормализованный телефон → email (lower). Только подтверждённые совпадения (Phone-First, STD-DATA-003); однофамильцев не сливать.
+  3. Переписку (`conversations`/`messages`) переносить из бэкапа целиком, только для лидов, существующих в текущей базе; дедупликация по `external_message_id` либо `(lead_id, channel, sent_at)`; конфликты — в пользу более свежей записи.
+  4. Объём-правило (STD-DATA-004 п.5): лиды GC с регистрацией ранее 2026-05-27 из бэкапа НЕ воскрешать.
+  5. UNIQUE-конфликты решать в пользу прод-записи (`ON CONFLICT DO NOTHING`): `lead_contacts(contact_type, normalized_value)`, `leads.getcourse_user_id`, `lead_external_ids(provider, external_id)`, `messenger_identities(channel, external_user_id)`, `lead_tags(lead_id, tag)`, `lead_custom_fields(lead_id, source, field_key)`.
+  6. Лиды из бэкапа без аналога в проде вставлять только из FunnelHub-каналов (`vk_recovery`, `landing_consultation`); `lead_tags.id` задаётся явно (`gen_random_uuid()`, у таблицы нет server_default).
+  7. Чужие VK-идентичности из бэкапа — только `is_subscribed=false` (STD-DATA-005).
+* **Процедура:** дамп текущего прода (`pg_dump -Fc`) + копия локально → загрузка бэкапа в отдельную схему → dry-run слияния (BEGIN…ROLLBACK: счётчики мёржа/вставок, список конфликтов, выборка карточек) → ревью пользователем → COMMIT → POST-MERGE VERIFY (счётчики до/после, выборочные диалоги, `verify.ps1 -Subproject funnel-hub`, HTTP 200 `/inbox/`, чистые логи вебхуков).
+* **Статус:** план согласован с пользователем 2026-11-06; Evidence (RED→GREEN) появится по факту исполнения слияния.
+
 ### STD-FUNNEL-001 | Мультипроектная изоляция сегментов базы и дедупликация GetCourse
 * **Проблема:** При склейке существующего контакта школы (GetCourse ID, email, телефон) с заявкой из дочернего лендинга («Мост ценностей») базовое поле `Lead.source` сохраняет исходный источник контакта. Простой фильтр `Lead.source != exclude_source` не исключал такой склеенный лид из «Общей базы», что приводило к дублированию лида в обоих разделах админки.
 * **Стандарт:** Фильтрация по исключению источника (`exclude_source`) в `inbox_database.py` и `inbox.py` обязана строиться через `lead_exclude_source_filter`, проверяющий как отсутствие прямого `Lead.source == exclude_source`, так и отсутствие связанных событий `Event.source == exclude_source`.
