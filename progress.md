@@ -415,3 +415,8 @@
 - **2026-11-06 21:21** | fix(funnel-hub): compact GC badge + channel priority in lead database (has_telegram/has_vk/has_max flags, MAX channel, is_subscribed decoupled from display); deployed
 
 - **2026-11-06 21:51** | fix(funnel-hub): remove non-existent MAX channel and GC badge from lead database channel column, honest 'no subscriptions' fallback; STD-UI-001; legacy empty max-conversations flagged
+
+- **2026-11-06 21:55** | ops(STD-022): секреты выровнены с продом — 6 устаревших ключей в .env + VK_CONFIRMATION_CODE в сейфе перезаписаны серверными значениями; vault и .env = 81/81 (0 mismatches / 0 missing), значения не печатались
+- **2026-11-06 22:10** | ops(SEC-005): добавлен третий ярус бэкапов — scripts/backup-pull.ps1 (FTP primary + SSH fallback, локальная ротация 7д), Windows Task 'FunnelHub Backup Pull' ежедневно 17:00 МСК (StartWhenAvailable), RETENTION_DAYS сервера 14→7; SOP-BACKUP-002 в AGENTS.md
+
+- **2026-11-06 22:01** | docs(funnel-hub): STD-UI-001 attribution — max-conversation shells created by MIG-004 recover_crm_leads.py placeholder, not experiments
