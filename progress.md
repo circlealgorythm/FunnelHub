@@ -356,3 +356,5 @@
 - **2026-11-06 02:10** | ops(MIG-006): configure daily encrypted backups with off-site Reg.ru FTP replication
 
 - **2026-11-06 19:22** | feat(funnel-hub): email test suppression and crm vk reconciliation
+
+- **2026-11-06 19:46** | fix(funnel-hub): UX-VK-001 инструкция Разрешить сообщения на join-странице + диагностика автостарта VK (STD-FUNNEL-003)

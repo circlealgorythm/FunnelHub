@@ -141,6 +141,19 @@ The repository is the **Single System of Record**.
   - Unit-тест `test_logout_revokes_session_cookie`: попытка повторного использования куки после логаута завершается HTTP 401 (GREEN).
   - `pwsh -ExecutionPolicy Bypass -File scripts/verify.ps1 -Subproject funnel-hub` (18 passed, ruff passed, mypy passed).
 
+### STD-FUNNEL-003 | Автостарт VK-воронки: платформенный предел VK и UX-контрмера «Разрешить сообщения» (HARNESS-002)
+* **Сигнал/Маркер (Cue):** «VK бот не пишет первым», «воронка не стартует автоматически после заявки», «новый аккаунт VK — тишина в чате», `message_allow`, `vk.me?ref`, переход со страницы спасибо `/join/{token}`.
+* **Проблема & Причина:** VK Callback API **не отправляет сообществу никакого события**, когда пользователь просто открывает чат (даже с нового аккаунта и даже при подписанном message_allow). Автостарт воронки физически возможен только по событию `message_allow` (тап «Разрешить сообщения») или `message_new` (первое сообщение пользователя) — в обоих VK передает `ref` из ссылки `vk.me/<screen>?ref=<token>`. Прямая отправка без события падает с VK error 901 (классифицируется как permanent → пауза воронки), а узнать VK ID без действия пользователя нельзя (VK OAuth-флоу `vk_oauth.py` реализован, но отклонён пользователем: длинный путь снижает конверсию). После переноса БД на Simplecloud база `messenger_identities` пуста для новых людей — путь `relaunch_vk_for_known_lead` (мгновенная отправка известным VK ID) перестал покрывать новых лидов, и платформенный разрыв стал видимым.
+* **Стандарт и контрмера:**
+  1. Диагностику автостарта вести по БД, а не по docker-логам (uvicorn не пишет access-логи, INFO логи `funnelhub.*` не проходят root-handler): `funnel_states.metadata->>'restart_reason' = 'bot_start'` + ключ `ref` в `messenger_identities.raw_profile` = событие пришло с токеном и воронка стартовала по нему.
+  2. При подозрениях на `message_allow` сверять подписку события в UI настроек Callback API сообщества («Разрешение на получение»); токен группы имеет scope только `messages` — `groups.getCallbackSettings` вернёт error 15/1133. Чекбокс «Исходящее сообщение» (message_reply) включать не нужно — это эхо собственных отправок.
+  3. UX-стандарт: на join-странице (`render_join_page`) обязана быть инструкция одного касания: «в VK нажмите "Разрешить сообщения", в Telegram — "Запустить"». Набор текста пользователем не требуется, конверсия не страдает.
+* **Доказательство (Evidence):**
+  - Ксения (VK ID 258149228, заявка 2026-11-06 15:55 UTC): SQL `funnel_states` → `restart_reason='bot_start'`, 15:56:37 — первое сообщение ушло автоматически по событию с ref (`raw_profile` содержит ключ `ref`).
+  - Светлана/«Екатерина Пушкина» (заявка 15:59 UTC, заведомо новый VK-аккаунт): ноль строк в `messenger_identities`/`messages`/`events` по VK — открытие чата без тапа «Разрешить» не генерирует событий.
+  - Скриншот настроек Callback API сообщества: «Разрешение на получение» включён; `groups.getCallbackSettings` под токеном группы → error_code 15 (no scopes).
+  - Верификация правки: `verify.ps1 -Subproject funnel-hub` код 0 (ruff, mypy 54 файлов, 18 тестов); `tests/test_join_page.py` 2 passed; визуальный контроль render_join_page (десктоп 1280px + мобайл 390px).
+
 ### STD-SEC-003 | Защита периметра через Content-Security-Policy в Caddyfile (HARNESS-002)
 * **Проблема:**
   В заголовках безопасности реверс-прокси Caddy отсутствовала директива `Content-Security-Policy`, что снижало защиту от атак XSS и кликджекинга при работе с веб-интерфейсом FunnelHub (`bot.aisukam.ru`).
