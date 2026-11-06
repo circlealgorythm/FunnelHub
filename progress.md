@@ -15,6 +15,22 @@
 ## Status
 
 ### What's Done
+- [x] **`TG-PROXY-001` (Интеграция Telegram Bot API через Cloudflare Worker на Simplecloud VPS)** (passing):
+  - Диагностирована и ликвидирована блокировка ТСПУ на порт 443 к IP пулам Telegram (`149.154.*`) на сервере Simplecloud VPS (`85.143.175.148`).
+  - Развернут бессерверный Cloudflare Worker Reverse Proxy (`lingering-forest-a1b9.circlealgorythm.workers.dev`), проксирующий запросы к `api.telegram.org` без задержек и ограничений (TLS 40ms, Bot API 100ms).
+  - В `src/funnelhub/services/telegram_messaging.py` внедрена фабрика `create_telegram_bot(token, settings)` с поддержкой `TELEGRAM_API_BASE_URL` и `TELEGRAM_PROXY_SECRET`.
+  - Все сервисы (`funnel_worker`, `telegram_bot`, `inbox`, `inbox_notifications`) переведены на фабрику.
+  - В `src/funnelhub/telegram_bot.py` настроен `polling_timeout=10` для синхронизации с edge-таймаутами Cloudflare.
+  - Контейнеры `app`, `funnel-worker` и `telegram-bot` на боевом сервере пересобраны и запущены; поллинг `@vedicschool_aisu_bot` стабилен, pending updates = 0.
+
+- [x] **`VK-CONFIRM-001` (Синхронизация VK Callback API confirmation code для bot.aisukam.ru)** (passing):
+  - При переключении адреса Callback API в сообществе `shamanaisu` с Beget на `https://bot.aisukam.ru/webhooks/vk` актуализирован `VK_CONFIRMATION_CODE=efefcce1` в конфигурации бэкенда.
+  - В сообществе ВК получена зеленая галочка подтверждения сервера, включены события `message_new` и `message_allow`.
+
+- [x] **`E2E-FUNNEL-001` (Полная верификация сквозной цепочки заявки, join-страницы и запуска ботов)** (passing):
+  - Проверена сквозная цепочка: отправка формы -> создание лида в PostgreSQL и CRM -> генерация `/join/{token}` -> рендеринг кнопок Telegram и VK -> подписка на ботов.
+  - Вебхук GetCourse проверен (ответ HTTP 200 за 0.17 с).
+  - Верификатор `verify.ps1 -Subproject funnel-hub` успешно пройден (18 unit-тестов, ruff, mypy).
 - [x] **`UX-VK-001` (Инструкция «Разрешить сообщения» на странице спасибо для автостарта VK-воронки)** (passing):
   - Диагностика боевого автостарта (2026-11-06): механизм ref-автостарта работает — лид Ксения (VK ID 258149228) получила первое сообщение через 1.5 мин после заявки (funnel_states.restart_reason="bot_start", 15:56:37 UTC) по событию VK с ref-токеном. Тест с новым аккаунтом (лид «Светлана типа заяц») показал ноль событий: VK не отправляет сообществу колбэк при простом открытии чата — платформенное ограничение (message_allow подписан в Callback API сообщества, проверено скриншотом настроек).
   - В `src/funnelhub/api/messenger.py` (render_join_page) сноска под кнопками дополнена инструкцией: «В открывшемся чате подтвердите запуск: в VK нажмите "Разрешить сообщения", в Telegram — "Запустить"» — одно касание пользователя вместо набора текста, конверсия не страдает.
@@ -358,3 +374,5 @@
 - **2026-11-06 19:22** | feat(funnel-hub): email test suppression and crm vk reconciliation
 
 - **2026-11-06 19:46** | fix(funnel-hub): UX-VK-001 инструкция Разрешить сообщения на join-странице + диагностика автостарта VK (STD-FUNNEL-003)
+
+- **2026-11-06 20:17** | feat(funnel-hub): TG-PROXY-001 Cloudflare Worker Telegram proxy, VK-CONFIRM-001 and STD-FUNNEL-004

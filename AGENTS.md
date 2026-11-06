@@ -188,3 +188,21 @@ The repository is the **Single System of Record**.
 * **Доказательство (Evidence):**
   - Транзакционный аудит базы данных PostgreSQL на Simplecloud VPS (`85.143.175.148`): успешно объединено ровно 8 подтвержденных пар лидов; оставшиеся 79 лидов CRM изолированы без искажения персональных данных.
   - Запрос `SELECT source, count(*) FROM leads GROUP BY source;` подтвердил: `landing_consultation + vk`: 8, `landing_consultation`: 79, `vk_recovery`: 409.
+
+
+### STD-FUNNEL-004 | Интеграция Telegram Bot API через Cloudflare Worker Reverse Proxy и калибровка таймаутов aiogram (HARNESS-002)
+* **Сигнал/Маркер (Cue):** Telegram Bot API, Simplecloud VPS, aiogram 3, ТСПУ, TCP 443 timeout, Cloudflare Worker, TelegramAPIServer, TELEGRAM_API_BASE_URL, create_telegram_bot, polling_timeout, getUpdates timeout.
+* **Проблема:**
+  На российских серверах Simplecloud исходящие TCP-соединения к пулам IP Telegram (`149.154.*`, `91.108.*`) на порт 443 блокируются ТСПУ (`Connection timed out`), из-за чего aiogram не может связаться с `api.telegram.org` и бот падает в бесконечный реконнект. Попытка поднять PHP-прокси на хостинге Reg.ru натолкнулась на аналогичную фильтрацию ТСПУ.
+* **Причина:**
+  Сетевая фильтрация на уровне провайдеров РФ отсекает прямой доступ к домену Telegram. Кроме того, при long-polling опросе `getUpdates` через Cloudflare Worker разрыв соединений по внутренним edge-таймаутам Cloudflare (100–300 с) при дефолтном таймауте aiohttp вызывал периодические ошибки `TelegramNetworkError: Request timeout error`.
+* **Стандарт и контрмера:**
+  1. Разворачивается бессерверный Cloudflare Worker Reverse Proxy (`export default { async fetch(req) { const u = new URL(req.url); u.hostname = 'api.telegram.org'; return fetch(new Request(u, req)); } }`), трафик к которому из РФ не блокируется и имеет задержку < 40 мс.
+  2. В `src/funnelhub/services/telegram_messaging.py` создана централизованная фабрика `create_telegram_bot(token, settings)`. При наличии `settings.telegram_api_base_url` создается `TelegramAPIServer.from_base(base_url)` и передается в `AiohttpSession`.
+  3. Все точки создания бота (`funnel_worker.py`, `telegram_bot.py`, `inbox.py`, `inbox_notifications.py`) используют исключительно `create_telegram_bot`, исключая прямой вызов `Bot(token=...)`.
+  4. В `telegram_bot.py` для aiogram задается явный таймаут long polling: `dispatcher.start_polling(bot, polling_timeout=10)`, что исключает зависание сессий на границе таймаутов прокси и обеспечивает автоматическое переподключение без потери апдейтов.
+* **Доказательство (Evidence):**
+  - RED: Прямой вызов с Simplecloud `curl -m 5 https://api.telegram.org/bot<token>/getMe` ➔ `Connection timed out (exit 28)`.
+  - GREEN: Вызов через Cloudflare Worker `curl -s https://lingering-forest-a1b9.circlealgorythm.workers.dev/bot<token>/getMe` ➔ `{"ok":true,"result":{"id":8963890043,"is_bot":true,"username":"vedicschool_aisu_bot"}}` (exit 0, ответ 100 мс).
+  - Верификатор `verify.ps1 -Subproject funnel-hub` успешно пройден (18 unit-тестов, ruff, mypy без ошибок).
+  - Контейнер `funnelhub-telegram-bot-1` на Simplecloud стабильно вычитывает события, `curl .../getWebhookInfo` подтвердил `pending_update_count: 0`.
