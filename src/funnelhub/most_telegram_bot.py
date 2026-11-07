@@ -36,6 +36,7 @@ from funnelhub.services.inbox_notifications import notify_admin_about_inbound_me
 from funnelhub.services.lead_post_submit_tasks import enqueue_lead_tag_notification
 from funnelhub.services.lead_tags import assign_lead_tag
 from funnelhub.services.telegram_messaging import (
+    create_telegram_bot,
     get_telegram_identity_by_user_id,
     parse_text_callback_data,
     unsubscribe_telegram_identity,
@@ -704,7 +705,7 @@ async def main() -> None:
     settings = get_settings()
     if not settings.most_telegram_bot_token:
         raise RuntimeError("MOST_TELEGRAM_BOT_TOKEN is required to run the Most Telegram bot.")
-    bot = Bot(token=settings.most_telegram_bot_token)
+    bot = create_telegram_bot(settings.most_telegram_bot_token, settings)
     dispatcher = Dispatcher()
     dispatcher.include_router(router)
     try:

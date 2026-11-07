@@ -529,22 +529,32 @@ async def test_run_due_funnel_once_uses_preferred_messenger_channel(
     assert vk_client.peer_id is None
 
 
+class FailingTelegramBot(FakeTelegramBot):
+    async def send_message(
+        self,
+        chat_id: str,
+        text: str,
+        reply_markup: object | None = None,
+    ) -> FakeSentMessage:
+        raise RuntimeError("Telegram API is down")
+
+
 async def test_run_due_funnel_once_records_failed_step_without_crashing(
     prepare_database: None,
 ) -> None:
-    lead_id = await create_lead_without_identity()
+    lead_id = await create_lead_with_telegram_identity()
     definition = build_messenger_definition()
     now = datetime(2026, 5, 28, 12, 0, tzinfo=UTC)
 
     async with async_session_maker() as session:
-        await start_funnel_for_lead(session, lead_id, definition, channel="telegram", now=now)
+        await start_funnel_for_lead(session, lead_id, definition, now=now)
         await session.commit()
 
     async with async_session_maker() as session:
         stats = await run_due_funnel_once(
             session=session,
             definition=definition,
-            bot=FakeTelegramBot(),
+            bot=FailingTelegramBot(),
             vk_client=FakeVkClient(),
             now=now,
         )
@@ -553,6 +563,43 @@ async def test_run_due_funnel_once_records_failed_step_without_crashing(
     assert stats.sent == 0
     assert stats.skipped == 0
     assert stats.failed == 1
+
+
+async def test_run_due_funnel_once_skips_messenger_step_without_subscribed_identity(
+    prepare_database: None,
+) -> None:
+    """Лид без подписанной identity не должен ронять раннер с ERROR: шаг
+    остаётся active и уйдёт после первого сообщения боту."""
+    lead_id = await create_lead_without_identity()
+    definition = build_messenger_definition()
+    now = datetime(2026, 5, 28, 12, 0, tzinfo=UTC)
+    bot = FakeTelegramBot()
+    vk_client = FakeVkClient()
+
+    async with async_session_maker() as session:
+        state = await start_funnel_for_lead(session, lead_id, definition, now=now)
+        state.next_run_at = now - timedelta(minutes=1)
+        await session.commit()
+
+    async with async_session_maker() as session:
+        stats = await run_due_funnel_once(
+            session=session,
+            definition=definition,
+            bot=bot,
+            vk_client=vk_client,
+            now=now,
+        )
+
+    assert stats.due == 1
+    assert stats.sent == 0
+    assert stats.skipped == 1
+    assert stats.failed == 0
+    assert bot.chat_id is None
+
+    async with async_session_maker() as session:
+        remaining = await session.scalar(select(FunnelState).where(FunnelState.lead_id == lead_id))
+        assert remaining is not None
+        assert remaining.status == "active"
 
 
 async def test_run_due_funnel_once_continues_after_failed_step_rollback(
@@ -584,8 +631,8 @@ async def test_run_due_funnel_once_continues_after_failed_step_rollback(
 
     assert stats.due == 2
     assert stats.sent == 1
-    assert stats.skipped == 0
-    assert stats.failed == 1
+    assert stats.skipped == 1
+    assert stats.failed == 0
     assert bot.chat_id == "telegram-701"
     assert bot.text == "Welcome from messenger runner"
 

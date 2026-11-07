@@ -3,12 +3,11 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from aiogram import Bot
-
 from funnelhub.config import get_settings
 from funnelhub.db.session import async_session_maker
 from funnelhub.most_telegram_bot import MOST_CHANNEL, load_most_definition
 from funnelhub.services.funnel_runner import run_due_funnel_once
+from funnelhub.services.telegram_messaging import create_telegram_bot
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +18,7 @@ async def main() -> None:
     if not settings.most_telegram_bot_token:
         raise RuntimeError("MOST_TELEGRAM_BOT_TOKEN is required to run the Most funnel worker.")
     definition = load_most_definition(settings)
-    bot = Bot(token=settings.most_telegram_bot_token)
+    bot = create_telegram_bot(settings.most_telegram_bot_token, settings)
     try:
         while True:
             async with async_session_maker() as session:

@@ -46,6 +46,10 @@ from funnelhub.services.vk_messaging import (
 MESSENGER_TEXT_LIMIT = 4096
 
 logger = logging.getLogger(__name__)
+
+
+class MessengerIdentityNotSubscribedError(RuntimeError):
+    """Funnel step cannot be delivered yet: the lead has no subscribed messenger identity."""
 BOT_BUTTON_URLS = {
     "funnelhub://bot/telegram": "telegram",
     "funnelhub://bot/vk": "vk",
@@ -123,7 +127,9 @@ class MessengerFunnelStepSender:
                 payload.channel,
             )
             if identity is None:
-                raise ValueError("Lead has no subscribed messenger identity.")
+                raise MessengerIdentityNotSubscribedError(
+                    "Lead has no subscribed messenger identity."
+                )
             if identity.channel in {"telegram", "telegram_most"}:
                 await self._send_telegram(payload, channel=identity.channel)
                 return
@@ -390,6 +396,15 @@ async def run_due_funnel_once(
             await session.commit()
         except Exception as exc:
             await session.rollback()
+            if isinstance(exc, MessengerIdentityNotSubscribedError):
+                # Лид ещё не написал боту — identity появится после первого
+                # сообщения; состояние остаётся active, шаг уйдёт позже.
+                skipped += 1
+                logger.warning(
+                    "Skipping funnel step: lead has no subscribed messenger identity yet",
+                    extra={"funnel_key": definition.key, "funnel_state_id": str(state_id)},
+                )
+                continue
             if is_permanent_delivery_error(exc):
                 try:
                     paused = await pause_funnel_state_after_permanent_delivery_error(
