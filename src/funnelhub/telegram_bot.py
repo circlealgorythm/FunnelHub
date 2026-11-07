@@ -206,18 +206,18 @@ async def handle_inline_answer(callback: CallbackQuery) -> None:
                 channel="telegram",
                 external_user_id=str(telegram_user.id),
             )
-            await session.commit()
-            await callback.answer("Принято")
-            return
+
+        # Уведомление оператору — в том числе об авто-обработанных ответах
+        # кнопок: оператор отслеживает выбор лидов в @leadsaisubot.
         if inbound_message is not None:
             await notify_admin_about_inbound_message(
                 session=session,
                 settings=settings,
                 message=inbound_message,
             )
-            await session.commit()
 
-    await callback.answer()
+        await session.commit()
+        await callback.answer("Принято" if handled else None)
 
 
 def normalize_start_token(args: str | None) -> str | None:

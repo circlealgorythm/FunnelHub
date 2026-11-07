@@ -67,7 +67,9 @@ async def handle_vk_message_new(
                     channel="vk",
                     external_user_id=external_user_id,
                 )
-            elif inbound_message is not None:
+            # Уведомление оператору — в том числе об авто-обработанных ответах
+            # кнопок: оператор отслеживает выбор лидов в @leadsaisubot.
+            if inbound_message is not None:
                 await notify_admin_about_inbound_message(
                     session=session,
                     settings=settings,
