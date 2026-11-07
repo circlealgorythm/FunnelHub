@@ -437,7 +437,9 @@ async def handle_callback(callback: CallbackQuery) -> None:
             await mark_conversation_auto_handled(
                 session=session, channel=MOST_CHANNEL, external_user_id=str(callback.from_user.id)
             )
-        elif inbound is not None:
+        # Уведомление оператору — в том числе об авто-обработанных ответах
+        # кнопок: оператор отслеживает выбор лидов в @leadsaisubot.
+        if inbound is not None:
             await notify_admin_about_inbound_message(
                 session=session, settings=settings, message=inbound
             )

@@ -17,7 +17,10 @@ from funnelhub.services.inbox import (
     mark_conversation_auto_handled,
     record_inbound_messenger_message,
 )
-from funnelhub.services.inbox_notifications import notify_admin_about_inbound_message
+from funnelhub.services.inbox_notifications import (
+    notify_admin_about_inbound_message,
+    notify_admin_about_unbound_messenger_message,
+)
 from funnelhub.services.vk_messaging import HttpVkMessageClient, unsubscribe_vk_identity
 from funnelhub.vk_bot import (
     extract_vk_message,
@@ -70,6 +73,13 @@ async def handle_most_vk_message_new(
                 settings=settings,
                 message=inbound_message,
             )
+        else:
+            await notify_admin_about_unbound_messenger_message(
+                settings=settings,
+                channel=MOST_VK_CHANNEL,
+                external_user_id=external_user_id,
+                body=text,
+            )
         return "ok"
 
     sender = build_sender(session, settings)
@@ -88,11 +98,20 @@ async def handle_most_vk_message_new(
             channel=MOST_VK_CHANNEL,
             external_user_id=external_user_id,
         )
-    elif inbound_message is not None:
+    # Уведомление оператору — в том числе об авто-обработанных ответах
+    # кнопок: оператор отслеживает выбор лидов в @leadsaisubot.
+    if inbound_message is not None:
         await notify_admin_about_inbound_message(
             session=session,
             settings=settings,
             message=inbound_message,
+        )
+    else:
+        await notify_admin_about_unbound_messenger_message(
+            settings=settings,
+            channel=MOST_VK_CHANNEL,
+            external_user_id=external_user_id,
+            body=text,
         )
     return "ok"
 

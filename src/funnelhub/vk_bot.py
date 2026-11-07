@@ -15,7 +15,10 @@ from funnelhub.services.inbox import (
     mark_conversation_auto_handled,
     record_inbound_messenger_message,
 )
-from funnelhub.services.inbox_notifications import notify_admin_about_inbound_message
+from funnelhub.services.inbox_notifications import (
+    notify_admin_about_inbound_message,
+    notify_admin_about_unbound_messenger_message,
+)
 from funnelhub.services.vk_messaging import HttpVkMessageClient, unsubscribe_vk_identity
 
 
@@ -80,6 +83,15 @@ async def handle_vk_message_new(
                 session=session,
                 settings=settings,
                 message=inbound_message,
+            )
+        if inbound_message is None:
+            # Пользователь пишет в VK-группу напрямую, до привязки аккаунта:
+            # диалога в Inbox нет, но оператор должен увидеть обращение.
+            await notify_admin_about_unbound_messenger_message(
+                settings=settings,
+                channel="vk",
+                external_user_id=external_user_id,
+                body=text,
             )
         if inbound_message is not None:
             await session.flush()

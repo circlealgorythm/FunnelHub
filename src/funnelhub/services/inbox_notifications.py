@@ -61,6 +61,56 @@ async def notify_admin_about_inbound_message(
             await bot.session.close()
 
 
+async def notify_admin_about_unbound_messenger_message(
+    *,
+    settings: Settings,
+    channel: str,
+    external_user_id: str,
+    body: str,
+    client: TelegramNotificationClient | None = None,
+) -> bool:
+    """Сообщение от пользователя, ещё не привязанного к лиду (например, пишет
+    в сообщения VK-группы напрямую, до нажатия one-tap кнопки): диалога в
+    Inbox у такого пользователя нет, но оператор должен увидеть обращение."""
+    if not is_inbox_notification_configured(settings):
+        return False
+
+    owns_client = client is None
+    bot: Bot | None = None
+    if client is None:
+        if settings.inbox_notify_telegram_bot_token is None:
+            return False
+        bot = create_telegram_bot(settings.inbox_notify_telegram_bot_token, settings)
+        client = bot
+
+    try:
+        text = "\n".join(
+            [
+                "Сообщение от непривязанного пользователя",
+                "",
+                f"Канал: {channel_label(channel)}",
+                f"Пользователь: {external_user_id}",
+                "",
+                preview_text(body),
+                "",
+                "Диалог в Inbox не создан: пользователь ещё не привязан к лиду "
+                "(нужно нажать кнопку из join-страницы после заявки).",
+            ]
+        )
+        await client.send_message(
+            chat_id=settings.inbox_notify_telegram_chat_id or "",
+            text=text,
+            disable_web_page_preview=True,
+        )
+        return True
+    except Exception:
+        logger.exception("Failed to send unbound-user Telegram notification")
+        return False
+    finally:
+        if owns_client and bot is not None:
+            await bot.session.close()
+
+
 async def build_admin_notification_text(
     session: AsyncSession,
     *,
