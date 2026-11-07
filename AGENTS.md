@@ -340,3 +340,20 @@ The repository is the **Single System of Record**.
 * **Доказательство (Evidence):**
   - ДО: прод-трейсбек `MultipleResultsFound` в app-логах; SQL на проде: `JOIN messenger_identities ON lead_id&channel` для VK-диалога Ксении → 2 строки; her «Привет» (vk_id 1076368826, 05:00–05:01) в БД отсутствуют (потеряны до привязки).
   - ПОСЛЕ (деплой 0d7f975): регресс-тест `test_inbox_detail_with_two_identities_of_same_channel` — RED (MultipleResultsFound на старом коде через git stash) → GREEN; test_inbox.py 7/7 passed; test_inbox_notifications.py 4/4; mypy OK; контейнеры restarts=0, inbox 200.
+
+### STD-FUNNEL-007 | VK-колбэк Моста: секрет/код сверять с VK-админкой, безопасный зонд колбэка (2026-11-07)
+* **Сигнал/Маркер (Cue):** `/webhooks/most-vk`, `MOST_VK_CONFIRMATION_CODE`, `MOST_VK_CALLBACK_SECRET`, «Адрес сервера успешно сохранён», `403 Unexpected VK group` / `Invalid VK secret`, health-check VK-бота, «бот VK не реагирует».
+* **Проблема & Причина:** (1) `MOST_VK_CONFIRMATION_CODE` в .env пуст → на confirmation-рукопожатие сервер отвечал 503 (URL был подтверждён исторически, дефект латентный до переподключения). (2) Серверный secret (32 симв., унаследован с Beget) ≠ секрету в VK-админке (14 симв.) — сервер был самосогласован (проба с серверным secret проходила), но VK в каждом событии шлёт СВОЙ secret: все `message_new` отбивались бы 403. (3) В хендлере `/most-vk` проверка `group_id` стоит ДО выдачи confirmation-кода — зонд без group_id даёт 403 и не показывает реальное состояние.
+* **Стандарт и контрмера:**
+  1. Секрет и строку подтверждения VK-колбэка брать ТОЛЬКО из админки группы (UI → Настройки → Работа с API → Callback API; через API не выдаются) и синхронизировать в 3 места: сервер .env + локальный .env + сейф (STD-022). При health-check VK-бота сверять ДЛИНЫ значений «админка vs .env» (значения не печатать).
+  2. Безопасный зонд колбэка (ничего не создаёт): `confirmation` + group_id → ожидать точную строку кода; `message_new` с настоящим secret + `text:"/stop"` → `ok` (выход до `record_inbound_messenger_message`, без диалога/уведомлений).
+  3. После `docker compose up -d` приложение стартует ~30–60 с: curl в этот период даёт 000 — это не сбой, ждать и повторять.
+* **Доказательство (Evidence):**
+  - ДО: зонд confirmation → ответ len=57 = `{"detail":"MOST_VK_CONFIRMATION_CODE is not configured."}`; secret: сервер 32 симв. vs VK-админка 14 симв. (скриншот настроек группы 240711612).
+  - ПОСЛЕ (синхронизация + recreate): confirmation+group_id → `65d51d4d` (байт-в-байт = админке); wrong secret → 403; real secret + `/stop` → `ok`; баннер VK «Адрес сервера успешно сохранён» (подтверждение вживую); школьный `/webhooks/vk` handshake MATCH (не задет).
+
+### STD-FUNNEL-008 | В app-контейнере FunnelHub нет access-логов: «0 строк в docker logs» ≠ «трафика не было» (2026-11-07)
+* **Сигнал/Маркер (Cue):** `grep 'POST /webhooks' docker logs funnelhub-app-1` → пусто; «доходят ли заявки?», «были ли запросы?», health-check приёма лидов.
+* **Проблема & Причина:** uvicorn access-логи не пишутся в docker logs app-контейнера — по мотивировке «в логах 0 POST» легко ошибочно заключить отсутствие трафика/заявок (в сессии 2026-11-07 такая попытка была при диагностике заявок Моста).
+* **Стандарт и контрмера:** факты приёма устанавливать по БД (`leads`/`messages`/`tasks` с `created_at`) и внешним зондам с ожидаемым статусом (401/422/403 на кривых данных — маршрут жив и ничего не создаёт); тайминги — по меткам в БД, не по логам.
+* **Доказательство (Evidence):** `docker logs funnelhub-app-1 --since 60m | grep -oE 'POST /webhooks/[a-z-]+' | sort | uniq -c` → пусто при одновременно успешных внешних зондах в тот же час: `POST https://bot.aisukam.ru/webhooks/most-vk` → `65d51d4d`, PHP-обработчик → 422 — трафик шёл, строк в логах нет.
