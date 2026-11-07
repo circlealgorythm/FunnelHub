@@ -240,3 +240,5 @@
 - **2026-11-07 00:24** | ops(funnel-hub): SOP-OPS-003 — профилактика docker build cache на Simplecloud, builder prune освободил 2.4 ГБ (тома БД не тронуты)
 
 - **2026-11-07 05:04** | fix(funnel-hub): STD-FUNNEL-006 — most-боты через Cloudflare-прокси (крэш-луп 248 устранён), graceful skip funnel_runner без identity (547 ERROR/24ч -> 0), health-check перед рекламой OPS-HEALTH-001
+
+- **2026-11-07 05:48** | fix(funnel-hub): STD-UI-002 — фикс 500 Inbox при двух identity, уведомления @leadsaisubot восстановлены (кнопки+непривязанные VK+обе воронки), ротация GETCOURSE_API_KEY
