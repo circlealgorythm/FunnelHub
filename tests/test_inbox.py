@@ -297,6 +297,54 @@ async def test_list_and_detail_inbox_conversations() -> None:
         assert detail.reply_channels[0].is_default is True
 
 
+async def test_inbox_detail_with_two_identities_of_same_channel() -> None:
+    """Лид привязал второй VK-аккаунт: диалог не должен дублироваться в списке,
+    а деталь — падать MultipleResultsFound (join по identity размножал строки)."""
+    lead_id = await create_lead_with_identity()
+    async with async_session_maker() as session:
+        session.add(
+            MessengerIdentity(
+                id=uuid.uuid4(),
+                lead_id=lead_id,
+                channel="vk",
+                external_user_id="vk-first",
+                display_name="VK First",
+                is_subscribed=True,
+                raw_profile={},
+            )
+        )
+        await session.flush()
+        session.add(
+            MessengerIdentity(
+                id=uuid.uuid4(),
+                lead_id=lead_id,
+                channel="vk",
+                external_user_id="vk-second",
+                display_name="VK Second",
+                is_subscribed=True,
+                raw_profile={},
+            )
+        )
+        await session.flush()
+        inbound = await record_inbound_messenger_message(
+            session=session,
+            channel="vk",
+            external_user_id="vk-second",
+            body="Привет",
+        )
+        await session.commit()
+
+    assert inbound is not None
+    async with async_session_maker() as session:
+        summaries = await list_inbox_conversations(session)
+        vk_summaries = [s for s in summaries if s.channel == "vk"]
+        assert len(vk_summaries) == 1
+
+        detail = await get_inbox_conversation_detail(session, inbound.conversation_id)
+        assert detail is not None
+        assert [message.body for message in detail.messages] == ["Привет"]
+
+
 async def test_inbox_api_lists_and_returns_conversation_detail(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

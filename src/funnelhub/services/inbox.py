@@ -5,7 +5,16 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Literal, Protocol, cast
 
-from sqlalchemy import Select, case, exists, func, literal, select, update
+from sqlalchemy import (
+    ScalarSelect,
+    Select,
+    case,
+    exists,
+    func,
+    literal,
+    select,
+    update,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from funnelhub.db.models import (
@@ -690,6 +699,22 @@ def build_conversation_summary_query() -> Select[tuple[Any, ...]]:
     )
     email = primary_contact_subquery("email")
     phone = primary_contact_subquery("phone")
+
+    def identity_column(column: Any) -> ScalarSelect[Any]:
+        # Лид может иметь несколько идентичностей одного канала (например,
+        # привязал второй VK-аккаунт): join размножил бы строку диалога.
+        return (
+            select(column)
+            .where(
+                MessengerIdentity.lead_id == Conversation.lead_id,
+                MessengerIdentity.channel == Conversation.channel,
+            )
+            .order_by(MessengerIdentity.created_at.desc())
+            .limit(1)
+            .correlate(Conversation)
+            .scalar_subquery()
+        )
+
     unread_count = (
         select(func.count(Message.id))
         .where(
@@ -713,19 +738,14 @@ def build_conversation_summary_query() -> Select[tuple[Any, ...]]:
             Lead.status.label("lead_status"),
             email.label("email"),
             phone.label("phone"),
-            MessengerIdentity.display_name,
-            MessengerIdentity.username,
-            MessengerIdentity.is_subscribed,
+            identity_column(MessengerIdentity.display_name).label("display_name"),
+            identity_column(MessengerIdentity.username).label("username"),
+            identity_column(MessengerIdentity.is_subscribed).label("is_subscribed"),
             last_message_body.label("last_message_body"),
             last_message_direction.label("last_message_direction"),
             unread_count.label("unread_count"),
         )
         .join(Lead, Lead.id == Conversation.lead_id)
-        .outerjoin(
-            MessengerIdentity,
-            (MessengerIdentity.lead_id == Conversation.lead_id)
-            & (MessengerIdentity.channel == Conversation.channel),
-        )
     )
 
 
