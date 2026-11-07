@@ -3,6 +3,7 @@
 This repository is governed by the **Harness Engineering** methodology.
 The repository is the **Single System of Record**.
 
+> **Инвариант нулевого шага (STD-020):** Перед взятием любой задачи агент ОБЯЗАН выполнить git pull --autostash --rebase origin <branch> (или python3 scripts/sync-ecosystem.py в корне). Запрещено менять код без предварительной синхронизации с GitHub!
 > **Сквозные стандарты школы:** Перед реализацией общих стандартов безопасности и инфраструктуры сверяться с [.harness/lessons.md](file:///./.harness/lessons.md).  
 > **Локальный журнал прогресса:** [progress.md](file:///./projects/funnel-hub/progress.md)
 
