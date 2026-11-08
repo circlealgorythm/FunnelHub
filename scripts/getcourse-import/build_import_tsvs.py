@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Билдер TSV для импорта пользователей GetCourse в FunnelHub.
 
 Вход:  users_clean.json (export 90643107, 40 колонок),
@@ -13,13 +12,16 @@
 - email: технические @vktech.gc → NULL (в подписки/контакты не попадают)
 - времена GetCourse интерпретируются как Europe/Moscow (+03, без DST)
 """
+
 from __future__ import annotations
 
 import json
 import re
 from pathlib import Path
 
-BASE = Path(r"C:/Users/circlealgorythm/Documents/доки/Projects/Школа AisuKam/tmp/gc-export-20261106")
+BASE = Path(
+    r"C:/Users/circlealgorythm/Documents/доки/Projects/Школа AisuKam/tmp/gc-export-20261106"
+)
 
 USERS_TSV = BASE / "users.tsv"
 GROUPS_TSV = BASE / "groups.tsv"
@@ -70,7 +72,14 @@ def ts_msk(v: str) -> str | None:
 
 def clean(v: str) -> str:
     """Убрать управляющие символы, ломающие COPY TEXT."""
-    return (v or "").replace("\\", "\\\\").replace("\t", " ").replace("\n", " ").replace("\r", " ").strip()
+    return (
+        (v or "")
+        .replace("\\", "\\\\")
+        .replace("\t", " ")
+        .replace("\n", " ")
+        .replace("\r", " ")
+        .strip()
+    )
 
 
 def tsv(v: str | None) -> str:
@@ -81,7 +90,10 @@ def main() -> int:
     users = json.loads((BASE / "users_clean.json").read_text(encoding="utf-8"))["rows"]
     gp = json.loads((BASE / "export_groups2.json").read_text(encoding="utf-8"))["info"]
     # имена групп приходят чистым UTF-8 — без перекодировок
-    groups_ref = {str(g["id"]): (g.get("name") or "").strip() for g in json.loads((BASE / "groups_fixed.json").read_text(encoding="utf-8"))}
+    groups_ref = {
+        str(g["id"]): (g.get("name") or "").strip()
+        for g in json.loads((BASE / "groups_fixed.json").read_text(encoding="utf-8"))
+    }
 
     # группы: слитый по gc_id словарь (export 41 колонка, позиция 40)
     group_rows: dict[str, set[tuple[str, str]]] = {}
@@ -99,10 +111,13 @@ def main() -> int:
                 group_rows.setdefault(gc_id, set()).add((gid, date.strip()))
 
     seen = 0
-    with USERS_TSV.open("w", encoding="utf-8", newline="") as fu, GROUPS_TSV.open("w", encoding="utf-8", newline="") as fg:
+    with (
+        USERS_TSV.open("w", encoding="utf-8", newline="") as fu,
+        GROUPS_TSV.open("w", encoding="utf-8", newline="") as fg,
+    ):
         for u in users:
             gc_id = u["gc_id"]
-            # users_clean.json уже декодирован (fix применён в parse_gc_export) — не чиним второй раз
+            # users_clean.json уже декодирован в parse_gc_export; повторная обработка не нужна.
             email = None if is_technical_email(u.get("email", "")) else clean(u.get("email"))
             phone = norm_phone(u.get("phone", ""))
             vals = [

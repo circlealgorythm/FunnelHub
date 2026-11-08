@@ -1,16 +1,18 @@
-# -*- coding: utf-8 -*-
 """Пересечение выгрузки GetCourse с нашей прод-базой лидов.
 
 Все ключи — ASCII-слаги из parse_gc_export.py (gc_id, email, phone, vk_id...).
 Ключи склейки с нашей базой: email (lower), телефон (нормализация 8/7), VK-ID.
 """
+
 from __future__ import annotations
 
 import json
 import re
 from pathlib import Path
 
-BASE = Path(r"C:/Users/circlealgorythm/Documents/доки/Projects/Школа AisuKam/tmp/gc-export-20261106")
+BASE = Path(
+    r"C:/Users/circlealgorythm/Documents/доки/Projects/Школа AisuKam/tmp/gc-export-20261106"
+)
 
 
 def norm_phone(p: str) -> str:
@@ -47,7 +49,10 @@ def main() -> int:
     our_emails = {e for r in ours.values() for e in r["email"]}
     our_phones = {p for r in ours.values() for p in r["phone"]}
     our_vks = {v for r in ours.values() for v in r["vk"]}
-    print(f"our leads: {len(ours)}, emails: {len(our_emails)}, phones: {len(our_phones)}, vk: {len(our_vks)}")
+    print(
+        f"our leads: {len(ours)}, emails: {len(our_emails)}, "
+        f"phones: {len(our_phones)}, vk: {len(our_vks)}"
+    )
 
     gc_by_email: dict[str, list[dict]] = {}
     gc_by_phone: dict[str, list[dict]] = {}
@@ -111,7 +116,11 @@ def main() -> int:
             hits = gc_by_vk.get(v, [])
             if hits:
                 u = hits[0]
-                print(f"  lead {lid[:8]} vk={v} -> gc_id={u['gc_id']} email={u['email']} phone={u['phone']} name={u['first_name']} {u['last_name']}")
+                print(
+                    f"  lead {lid[:8]} vk={v} -> gc_id={u['gc_id']} "
+                    f"email={u['email']} phone={u['phone']} "
+                    f"name={u['first_name']} {u['last_name']}"
+                )
                 shown += 1
                 break
     return 0

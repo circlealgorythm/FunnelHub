@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 r"""Парсер выгрузки пользователей GetCourse (export 90643107 + группы 90643875).
 
 ФАКТ (проверено кодпоинтами): JSON API приходит в чистом UTF-8, никакой
@@ -7,14 +6,19 @@ r"""Парсер выгрузки пользователей GetCourse (export 9
 
 Элементы items — плоские массивы строк, выровненные по fields позиционно.
 """
+
 from __future__ import annotations
 
 import json
 import sys
 from pathlib import Path
 
-SRC = Path(r"C:/Users/circlealgorythm/Documents/доки/Projects/Школа AisuKam/tmp/gc-export-20261106/export_full_90643107.json")
-OUT = Path(r"C:/Users/circlealgorythm/Documents/доки/Projects/Школа AisuKam/tmp/gc-export-20261106/users_clean.json")
+BASE = Path(
+    r"C:/Users/circlealgorythm/Documents/доки/Projects/Школа AisuKam/"
+    "tmp/gc-export-20261106"
+)
+SRC = BASE / "export_full_90643107.json"
+OUT = BASE / "users_clean.json"
 
 SLUGS = [
     "gc_id", "email", "reg_type", "created_at", "last_activity",
@@ -38,8 +42,8 @@ def main() -> int:
     # Позиционная проверка соответствия слагов эталонным значениям строки 0
     row0 = items[0]
     assert row0[0] == "415767714", row0[0]
-    assert row0[5] == "\u0410\u0439\u0441\u0443", repr(row0[5])          # Айсу
-    assert row0[6] == "\u041a\u0430\u043c", repr(row0[6])                # Кам
+    assert row0[5] == "\u0410\u0439\u0441\u0443", repr(row0[5])  # Айсу
+    assert row0[6] == "\u041a\u0430\u043c", repr(row0[6])  # Кам
     assert row0[10] == "\u0420\u043e\u0441\u0441\u0438\u044f", repr(row0[10])  # Россия
 
     fields = [f if f else f"(col{i})" for i, f in enumerate(fields_raw)]
@@ -53,7 +57,7 @@ def main() -> int:
         if not (isinstance(it, list) and len(it) == len(SLUGS)):
             skipped += 1
             continue
-        rows.append(dict(zip(SLUGS, it)))
+        rows.append(dict(zip(SLUGS, it, strict=True)))
 
     n = len(rows)
     print(f"rows: {n} (skipped: {skipped})")
@@ -64,7 +68,9 @@ def main() -> int:
             print(f"  {slug}: {filled}/{n} ({100 * filled // n}%)")
 
     OUT.write_text(
-        json.dumps({"slugs": SLUGS, "orig_names": fields, "rows": rows}, ensure_ascii=False, indent=1),
+        json.dumps(
+            {"slugs": SLUGS, "orig_names": fields, "rows": rows}, ensure_ascii=False, indent=1
+        ),
         encoding="utf-8",
     )
     print("saved: users_clean.json")
