@@ -274,3 +274,8 @@
 - **2026-11-08 20:05** | ops(harness): глубокие DB-тесты встроены в гейт verify (scripts/verify-deep.ps1 + verifyCmd в hub-manifest; SKIP на машинах без Docker/fh-test-pg); урок STD-FUNNEL-009 зарегистрирован в AGENTS.md
 
 - **2026-11-08 19:00** | test(funnel-hub): fix 2 stale tests + ORDER BY tie flake, wire deep DB tests into verify gate (STD-FUNNEL-009); FUNNEL-EMAIL-001 deploy verified live
+
+- **2026-11-08 21:00** | feat(funnel-hub): TELEGRAM-B-001 — вариант Б поллинга: polling_timeout 10->30 через TELEGRAM_POLLING_TIMEOUT (втрое меньше getUpdates-раундтрипов через CF-прокси, задержка доставки не растёт), явный aiohttp request timeout 90s (TELEGRAM_REQUEST_TIMEOUT) в create_telegram_bot; .env.example задокументирован; тесты фабрики 7 passed; контракт: request_timeout > polling_timeout
+- **2026-11-08 21:05** | ops(test-infra): эпизод Exited(255) fh-test-pg (сбой Docker Desktop/WSL, не postgres) -> 30 ERROR в гейте; контейнер перезапущен, verify 18+52 GREEN; verify-deep честно падает на мёртвом Docker вместо тихого пропуска
+
+- **2026-11-08 19:18** | feat(funnel-hub): TELEGRAM-B-001 polling tuning 10->30s + aiohttp timeout 90s (option B, STD-FUNNEL-004 residual CF timeouts)

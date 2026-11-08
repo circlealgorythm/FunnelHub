@@ -712,7 +712,7 @@ async def main() -> None:
     dispatcher.include_router(router)
     try:
         logger.info("Starting Most tsennostey Telegram bot polling")
-        await dispatcher.start_polling(bot)
+        await dispatcher.start_polling(bot, polling_timeout=settings.telegram_polling_timeout)
     finally:
         await bot.session.close()
 

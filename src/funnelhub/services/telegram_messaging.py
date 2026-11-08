@@ -21,7 +21,10 @@ from funnelhub.db.models import Conversation, Message, MessengerIdentity
 
 
 def create_telegram_bot(token: str, settings: Settings) -> Bot:
-    session: AiohttpSession | None = None
+    # TELEGRAM_REQUEST_TIMEOUT must exceed TELEGRAM_POLLING_TIMEOUT with headroom
+    # for Cloudflare Worker latency (STD-FUNNEL-004); poll timeout 30s cuts the
+    # getUpdates round trips ~3x vs 10s, reducing periodic CF-edge timeouts.
+    session: AiohttpSession
     if settings.telegram_api_base_url:
         secret = settings.telegram_proxy_secret
         base_url = settings.telegram_api_base_url.rstrip("/")
@@ -31,7 +34,9 @@ def create_telegram_bot(token: str, settings: Settings) -> Bot:
             server = TelegramAPIServer(base=base, file=file)
         else:
             server = TelegramAPIServer.from_base(base_url)
-        session = AiohttpSession(api=server)
+        session = AiohttpSession(api=server, timeout=settings.telegram_request_timeout)
+    else:
+        session = AiohttpSession(timeout=settings.telegram_request_timeout)
     return Bot(token=token, session=session)
 
 

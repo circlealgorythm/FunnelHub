@@ -7,6 +7,7 @@ from dataclasses import dataclass
 import pytest
 from sqlalchemy import delete, select
 
+from funnelhub.config import Settings
 from funnelhub.db.base import Base
 from funnelhub.db.models import Lead, Message, MessengerIdentity
 from funnelhub.db.session import async_session_maker, engine
@@ -15,6 +16,7 @@ from funnelhub.services.telegram_messaging import (
     TelegramUrlButton,
     build_message_metadata,
     build_url_keyboard,
+    create_telegram_bot,
     parse_text_callback_data,
     send_telegram_text_message,
     unsubscribe_telegram_identity,
@@ -165,3 +167,25 @@ async def test_unsubscribe_telegram_identity() -> None:
         assert identity is not None
         assert identity.is_subscribed is False
         assert identity.unsubscribed_at is not None
+
+
+def test_create_telegram_bot_applies_request_timeout_via_proxy() -> None:
+    settings = Settings(
+        TELEGRAM_BOT_TOKEN="123456:test-token",
+        TELEGRAM_API_BASE_URL="https://worker.example.com",
+        TELEGRAM_PROXY_SECRET="s3cret",
+        TELEGRAM_REQUEST_TIMEOUT=77.5,
+        _env_file=None,
+    )
+
+    bot = create_telegram_bot(settings.telegram_bot_token, settings)
+
+    assert bot.session is not None
+    assert bot.session.timeout == 77.5
+
+
+def test_telegram_timeout_defaults_match_option_b() -> None:
+    settings = Settings(_env_file=None)
+
+    assert settings.telegram_polling_timeout == 30
+    assert settings.telegram_request_timeout == 90.0

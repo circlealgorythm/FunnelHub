@@ -57,6 +57,12 @@ class Settings(BaseSettings):
     telegram_proxy_secret: str | None = Field(
         default=None, validation_alias="TELEGRAM_PROXY_SECRET"
     )
+    telegram_polling_timeout: int = Field(
+        default=30, validation_alias="TELEGRAM_POLLING_TIMEOUT"
+    )
+    telegram_request_timeout: float = Field(
+        default=90.0, validation_alias="TELEGRAM_REQUEST_TIMEOUT"
+    )
     most_telegram_bot_username: str | None = Field(
         default=None, validation_alias="MOST_TELEGRAM_BOT_USERNAME"
     )

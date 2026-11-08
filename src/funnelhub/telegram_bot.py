@@ -267,7 +267,7 @@ async def main() -> None:
     dispatcher.include_router(router)
 
     logger.info("Starting Telegram bot polling")
-    await dispatcher.start_polling(bot, polling_timeout=10)
+    await dispatcher.start_polling(bot, polling_timeout=settings.telegram_polling_timeout)
 
 
 if __name__ == "__main__":
