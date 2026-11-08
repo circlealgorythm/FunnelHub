@@ -279,3 +279,7 @@
 - **2026-11-08 21:05** | ops(test-infra): эпизод Exited(255) fh-test-pg (сбой Docker Desktop/WSL, не postgres) -> 30 ERROR в гейте; контейнер перезапущен, verify 18+52 GREEN; verify-deep честно падает на мёртвом Docker вместо тихого пропуска
 
 - **2026-11-08 19:18** | feat(funnel-hub): TELEGRAM-B-001 polling tuning 10->30s + aiohttp timeout 90s (option B, STD-FUNNEL-004 residual CF timeouts)
+
+- **2026-11-08 21:40** | deploy(funnel-hub): TELEGRAM-B-001 выкачен на прод (deploy_files.py exit 0, 6 app-контейнеров recreated); poll=30/req=90.0 подтверждены docker exec в обоих живых ботах, Start polling, 0 таймаутов с деплоя; /health+/inbox/ 200 после стартового окна (~60с 502 — паттерн STD-UI-002); контрольный замер таймаутов за 24ч (цель <100/сутки на бота против ~290) — при следующей сессии; STD-FUNNEL-004 калибровка обновлена (п.4-5)
+
+- **2026-11-08 19:28** | docs(funnel-hub): harness fixation - TELEGRAM-B-001 deploy verified live, STD-FUNNEL-004 calibration updated to option B
