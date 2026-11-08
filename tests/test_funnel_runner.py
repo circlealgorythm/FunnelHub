@@ -743,7 +743,7 @@ async def test_run_due_funnel_once_resolves_email_bot_buttons(
         )
         assert bot_link_token is not None
         telegram_url = f"https://t.me/aisu_test_bot?start={bot_link_token.token}"
-        vk_url = f"http://localhost:8000/join/{bot_link_token.token}/vk"
+        vk_url = f"https://bot.aisukam.ru/join/{bot_link_token.token}/vk"
 
         assert telegram_url in email_client.text
         assert vk_url in email_client.text
@@ -811,11 +811,14 @@ async def test_run_due_funnel_once_repeats_pending_question_after_content_only(
             )
             .order_by(Message.created_at.asc())
         )
-        assert [message.body for message in messages] == [
+        # content + reminder are inserted in one transaction -> identical
+        # created_at (Postgres now() is transaction start) -> ORDER BY is
+        # nondeterministic on ties, so compare as a multiset, not a sequence
+        assert sorted(message.body for message in messages) == sorted([
             "Что актуальнее?",
             "Первое видео",
             "Что актуальнее?",
-        ]
+        ])
 
 
 async def test_run_due_funnel_once_retries_failed_email_step(

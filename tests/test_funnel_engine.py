@@ -277,7 +277,12 @@ async def test_start_funnel_for_lead_creates_state(
     assert state.status == "active"
     assert state.current_step_key == "welcome"
     assert state.next_run_at == now
-    assert state.metadata_ == {"definition_version": 1, "step_index": 0}
+    assert state.metadata_ == {
+        "definition_version": 1,
+        "step_index": 0,
+        "calendar_day_offset": 0,
+        "funnel_started_at": "2026-05-28T10:00:00+00:00",
+    }
 
 
 async def test_start_funnel_for_lead_reuses_existing_state(

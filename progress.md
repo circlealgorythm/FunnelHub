@@ -268,3 +268,9 @@
 - **2026-11-08 19:30** | fix(funnel-hub): FUNNEL-EMAIL-001 marker drift — PERMANENT_DELIVERY_ERROR_MARKERS had old message text, real message gained "(or is test account)" suffix (STD-EMAIL-002) -> no pause, infinite retry; TDD RED->GREEN via existing test pauses_email_step_without_subscription; marker substring fixed; 14 passed (1 pre-existing failure test_run_due_funnel_once_resolves_email_bot_buttons vk_url drift, unrelated — proven via git stash); ruff+mypy clean; deploy pending user command
 
 - **2026-11-08 18:38** | fix(funnel-hub): FUNNEL-EMAIL-001 marker drift broke email-funnel pause classification (4.5k err/day retry storm); 4 stuck states paused ops-manually; TDD RED->GREEN
+
+- **2026-11-08 19:45** | deploy(funnel-hub): FUNNEL-EMAIL-001 fix deployed via deploy_files.py (exit 0, 6 app-контейнеров recreated, alembic clean); маркер подтверждён в живом контейнере, /health 200, шторм не возобновился
+- **2026-11-08 20:00** | test(funnel-hub): исправлены 2 устаревших теста (buttons vk_url -> ожидание по public_base_url — прод-код прав, тест отстал; engine metadata + calendar_day_offset/funnel_started_at) и флак ORDER BY created_at при равных таймстампах одной транзакции -> сравнение мультимножеством; глубокий набор 52 passed
+- **2026-11-08 20:05** | ops(harness): глубокие DB-тесты встроены в гейт verify (scripts/verify-deep.ps1 + verifyCmd в hub-manifest; SKIP на машинах без Docker/fh-test-pg); урок STD-FUNNEL-009 зарегистрирован в AGENTS.md
+
+- **2026-11-08 19:00** | test(funnel-hub): fix 2 stale tests + ORDER BY tie flake, wire deep DB tests into verify gate (STD-FUNNEL-009); FUNNEL-EMAIL-001 deploy verified live

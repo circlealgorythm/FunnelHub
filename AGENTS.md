@@ -369,3 +369,17 @@ The repository is the **Single System of Record**.
 * **Проблема & Причина:** uvicorn access-логи не пишутся в docker logs app-контейнера — по мотивировке «в логах 0 POST» легко ошибочно заключить отсутствие трафика/заявок (в сессии 2026-11-07 такая попытка была при диагностике заявок Моста).
 * **Стандарт и контрмера:** факты приёма устанавливать по БД (`leads`/`messages`/`tasks` с `created_at`) и внешним зондам с ожидаемым статусом (401/422/403 на кривых данных — маршрут жив и ничего не создаёт); тайминги — по меткам в БД, не по логам.
 * **Доказательство (Evidence):** `docker logs funnelhub-app-1 --since 60m | grep -oE 'POST /webhooks/[a-z-]+' | sort | uniq -c` → пусто при одновременно успешных внешних зондах в тот же час: `POST https://bot.aisukam.ru/webhooks/most-vk` → `65d51d4d`, PHP-обработчик → 422 — трафик шёл, строк в логах нет.
+
+
+### STD-FUNNEL-009 | Маркерный дрейф сообщений об ошибках и глубокие DB-тесты в гейте verify (HARNESS-002)
+* **Сигнал/Маркер (Cue):** PERMANENT_DELIVERY_ERROR_MARKERS, "(or is test account)", email bounce, пауза воронки, вечный ретрай, 4578 ошибок, verify.ps1 18 passed, глубокие DB-тесты, fh-test-pg, ORDER BY created_at tie.
+* **Проблема & Причина:** Текст исключения в `email_messaging.py:220` получил суффикс `(or is test account)` (STD-EMAIL-002), а строковый маркер в `PERMANENT_DELIVERY_ERROR_MARKERS` остался со старым текстом и хвостовой точкой — классификация `is_permanent_delivery_error` перестала совпадать, пауза не ставилась, email-шаги с bounced-лидами ретраились бесконечно (4 лида → 4578 ошибок/сутки). Дрейф не ловился гейтом, потому что `verify.ps1` гоняет только 18 быстрых тестов, а DB-тесты (где живёт классификация) были вне гейта.
+* **Стандарт и контрмера:**
+  1. При изменении текста исключений-маркеров обновлять ОБЕ стороны; маркеры держать стабильными префиксами БЕЗ хвостовых знаков препинания (совпадение подстрокой).
+  2. RED-тест воспроизводить ТОЧНЫМ текстом продовой ошибки (из лога/трейсбека), а не реконструированным по памяти.
+  3. Глубокие DB-тесты — обязательная ступень гейта: `scripts/verify-deep.ps1` (52 теста: funnel_runner/engine/answers/autostart/email_*) через контейнер `fh-test-pg`; на машинах без Docker — SKIP с пометкой (быстрая ступень всё равно гейтит).
+  4. В тестах, где несколько сообщений пишутся в одной транзакции, `ORDER BY created_at` нестабилен (Postgres `now()` = старт транзакции → равные ключи) — сравнивать тела как мультимножество (`sorted(...)`).
+* **Доказательство (Evidence):**
+  - RED: `test_run_due_funnel_once_pauses_email_step_without_subscription` падает точной продовой ошибкой `ValueError: Lead has no subscribed email subscription (or is test account).` (state active вместо paused).
+  - GREEN: после фикса маркера — глубокий набор 52 passed, 4 skipped; полный гейт `verify.ps1 -Subproject funnel-hub` → 18 passed + `[DEEP] 52 passed` (23.6s).
+  - Деплой `2608f32` подтверждён в живом контейнере: `PERMANENT_DELIVERY_ERROR_MARKERS` без хвостового периода; все 8 контейнеров Up, `/health` 200.
