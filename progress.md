@@ -283,3 +283,5 @@
 - **2026-11-08 21:40** | deploy(funnel-hub): TELEGRAM-B-001 выкачен на прод (deploy_files.py exit 0, 6 app-контейнеров recreated); poll=30/req=90.0 подтверждены docker exec в обоих живых ботах, Start polling, 0 таймаутов с деплоя; /health+/inbox/ 200 после стартового окна (~60с 502 — паттерн STD-UI-002); контрольный замер таймаутов за 24ч (цель <100/сутки на бота против ~290) — при следующей сессии; STD-FUNNEL-004 калибровка обновлена (п.4-5)
 
 - **2026-11-08 19:28** | docs(funnel-hub): harness fixation - TELEGRAM-B-001 deploy verified live, STD-FUNNEL-004 calibration updated to option B
+
+- **2026-11-08 19:29** | docs(funnel-hub): STD-FUNNEL-004 calibration updated to option B (poll 30s settings-driven, request 90s contract)
