@@ -262,3 +262,9 @@
 - **2026-11-07 18:40** | ops(funnel-hub): OPS-DR-001 — Beget DR закрыт: доаварийный дамп 03:00 расшифрован, бесшовность воронок доказана по расписанию (day_03/05/06/14/15 ушли в 06:00 07.11), восстановлен последний пробел (vk_recovery июньский, dry-run→commit, fs 417/417); бэкап-цепочка за сегодня проверена по sha256; STD-DATA-006 в AGENTS.md
 
 - **2026-11-07 21:06** | ops(funnel-hub): OPS-DR-001 — Beget DR закрыт: доаварийный дамп расшифрован, бесшовность воронок доказана, восстановлен последний пробел (fs 417/417); бэкап-цепочка проверена по sha256; STD-DATA-006
+
+- **2026-11-08 19:10** | ops(funnel-hub): server health check — all 8 containers Up, HTTP 200, DB growing (638 leads), backups Nov 7+8 on FTP, PC pull ran on schedule 17:00; found email-funnel retry storm (4578 err/day: 4 bounced-lead states retried forever)
+- **2026-11-08 19:20** | ops(funnel-hub): paused 4 stuck email funnel states (UPDATE 4, reversible, metadata paused_by=ops_manual_2026-11-08); storm stopped — 0 errors in 4 min
+- **2026-11-08 19:30** | fix(funnel-hub): FUNNEL-EMAIL-001 marker drift — PERMANENT_DELIVERY_ERROR_MARKERS had old message text, real message gained "(or is test account)" suffix (STD-EMAIL-002) -> no pause, infinite retry; TDD RED->GREEN via existing test pauses_email_step_without_subscription; marker substring fixed; 14 passed (1 pre-existing failure test_run_due_funnel_once_resolves_email_bot_buttons vk_url drift, unrelated — proven via git stash); ruff+mypy clean; deploy pending user command
+
+- **2026-11-08 18:38** | fix(funnel-hub): FUNNEL-EMAIL-001 marker drift broke email-funnel pause classification (4.5k err/day retry storm); 4 stuck states paused ops-manually; TDD RED->GREEN

@@ -63,7 +63,7 @@ VK_PERMANENT_USER_ERROR_MARKERS = (
 )
 
 PERMANENT_DELIVERY_ERROR_MARKERS = (
-    "Lead has no subscribed email subscription.",
+    "Lead has no subscribed email subscription",
     "Lead has no subscribed VK identity.",
     *VK_PERMANENT_USER_ERROR_MARKERS,
     "bot was blocked by the user",
