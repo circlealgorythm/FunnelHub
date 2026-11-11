@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import secrets
 import uuid
 from dataclasses import dataclass
@@ -183,10 +184,44 @@ def build_most_vk_deep_link(settings: Settings, token: str) -> str | None:
     return f"https://vk.me/{screen_name}?ref={token}"
 
 
+def build_telegram_launch_link(settings: Settings, token: str) -> str | None:
+    if build_telegram_deep_link(settings, token) is None:
+        return None
+    return f"{settings.public_base_url.rstrip('/')}/join/{quote(token, safe='')}/tg"
+
+
+def build_most_telegram_launch_link(settings: Settings, token: str) -> str | None:
+    if build_most_telegram_deep_link(settings, token) is None:
+        return None
+    return f"{settings.public_base_url.rstrip('/')}/join/{quote(token, safe='')}/tg"
+
+
 def build_vk_launch_link(settings: Settings, token: str) -> str | None:
     if build_vk_deep_link(settings, token) is None:
         return None
     return f"{settings.public_base_url.rstrip('/')}/join/{quote(token, safe='')}/vk"
+
+
+BOT_LINK_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9_-]{20,50}$")
+BOT_LINK_URL_PATTERN = re.compile(r"(?:/join/|start=)([A-Za-z0-9_-]{20,50})")
+
+
+def extract_bot_link_token(text: str | None) -> str | None:
+    if not text:
+        return None
+    clean = text.strip()
+    url_match = BOT_LINK_URL_PATTERN.search(clean)
+    if url_match:
+        return url_match.group(1)
+    if clean.startswith(("/start", "start")):
+        parts = clean.split()
+        if len(parts) >= 2:
+            candidate = parts[1].strip()
+            if BOT_LINK_TOKEN_PATTERN.match(candidate):
+                return candidate
+    if BOT_LINK_TOKEN_PATTERN.match(clean):
+        return clean
+    return None
 
 
 def generate_bot_link_token() -> str:

@@ -397,3 +397,18 @@ The repository is the **Single System of Record**.
   - RED: `test_run_due_funnel_once_pauses_email_step_without_subscription` падает точной продовой ошибкой `ValueError: Lead has no subscribed email subscription (or is test account).` (state active вместо paused).
   - GREEN: после фикса маркера — глубокий набор 52 passed, 4 skipped; полный гейт `verify.ps1 -Subproject funnel-hub` → 18 passed + `[DEEP] 52 passed` (23.6s).
   - Деплой `2608f32` подтверждён в живом контейнере: `PERMANENT_DELIVERY_ERROR_MARKERS` без хвостового периода; все 8 контейнеров Up, `/health` 200.
+
+
+### STD-FUNNEL-010 | Надёжный диплинк Telegram ботов, транзитный переход /join/{token}/tg и телефонный fallback (HARNESS-002)
+* **Сигнал/Маркер (Cue):** `bot_link_tokens`, `?start=token`, `handle_start`, `command.args is None`, `Update id is handled`, «перейдите по ссылке на странице после заявки», Telegram Web, WhatsApp/VK in-app browser stripping query params, пустой старт.
+* **Проблема & Причина:** Прямые ссылки вида `https://t.me/bot?start=token`, передаваемые лидам вручную из CRM (WhatsApp, VK, SMS), открываются во встроенных WebView или в Telegram Web. В них переход по кастомной схеме `tg://resolve` срезает query-параметр `?start=`. При существующей истории чата Telegram не показывает кнопку «Запустить», а ручной ввод `/start` или выбор из меню передаёт команду без аргументов (`command.args is None`). Бот выдавал тупиковый отказ, не создавая идентичность и не стартуя воронку.
+* **Стандарт и контрмера:**
+  1. В CRM в карточке лида выдавать 3 раздельные ссылки: (а) страница подарков `/join/{token}`, (б) транзитная ссылка Telegram `/join/{token}/tg` (пробрасывает прямое приложение `tg://resolve?domain=...&start=...` без потерь в WebView), (в) VK `/join/{token}/vk`.
+  2. В `telegram_bot.py` и `most_telegram_bot.py`:
+     - парсить токен из любого текстового сообщения лида (прямой URL, t.me URL, чистый токен) через `extract_bot_link_token`;
+     - при пустом `/start` предлагать подтверждение заявки кнопкой «📱 Подтвердить заявку по номеру телефона» (`request_contact=True`) либо вводом телефона/ссылки;
+     - по номеру телефона сопоставлять лида в `lead_contacts` и автоматически привязывать к воронке.
+* **Доказательство (Evidence):**
+  - RED: Update `662570790` (2026-11-11 17:19:55 UTC) обработан за 740ms с отказом «Чтобы получить материалы, нажмите кнопку Telegram на странице после заявки» без создания `messenger_identities` (лид потерян при ручной отправке ссылки).
+  - GREEN: `tests/test_telegram_bot.py` (6 passed, включая `test_extract_bot_link_token` и `test_build_telegram_launch_link`), `tests/test_join_page.py` (3 passed, включая `test_telegram_launch_page_renders_deep_links`), `verify.ps1 -Subproject funnel-hub` (18 passed, ruff clean, mypy 54 files clean).
+  - Сборка фронтенда `npm run build` (inbox-app) завершена успешно за 2.25s.

@@ -7,6 +7,7 @@ from funnelhub.config import Settings
 def test_join_page_renders_vk_deep_link_without_oauth_authorization() -> None:
     response = render_join_page(
         Settings(
+            PUBLIC_BASE_URL="http://localhost:8000",
             VK_GROUP_SCREEN_NAME="aisu_test_vk",
             VK_GROUP_ID=123,
             VK_CALLBACK_SECRET="callback-secret",
@@ -25,6 +26,7 @@ def test_join_page_renders_vk_deep_link_without_oauth_authorization() -> None:
 def test_join_page_uses_simple_messenger_button_copy() -> None:
     response = render_join_page(
         Settings(
+            PUBLIC_BASE_URL="http://localhost:8000",
             TELEGRAM_BOT_USERNAME="aisu_test_bot",
             VK_GROUP_SCREEN_NAME="aisu_test_vk",
         ),
@@ -38,3 +40,18 @@ def test_join_page_uses_simple_messenger_button_copy() -> None:
     assert "Открыть VK" in html
     assert "персон" not in html.lower()
     assert "ссылк" not in html.lower()
+
+
+def test_telegram_launch_page_renders_deep_links() -> None:
+    from funnelhub.api.messenger import render_telegram_launch_page
+
+    response = render_telegram_launch_page(
+        tme_url="https://t.me/aisu_test_bot?start=token-123",
+        tg_app_url="tg://resolve?domain=aisu_test_bot&start=token-123",
+    )
+    html = response.body.decode()
+
+    assert 'href="tg://resolve?domain=aisu_test_bot&amp;start=token-123"' in html
+    assert 'href="https://t.me/aisu_test_bot?start=token-123"' in html
+    assert "Открыть Telegram" in html
+    assert "t.me" in html

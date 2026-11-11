@@ -67,3 +67,39 @@ def test_build_status_text() -> None:
 def test_build_stop_text() -> None:
     assert build_stop_text(True) == "Подписка в Telegram остановлена."
     assert build_stop_text(False) == "Telegram пока не привязан. Отписка не требуется."
+
+
+def test_extract_bot_link_token() -> None:
+    from funnelhub.services.bot_linking import extract_bot_link_token
+
+    tok = "J0oiBX4TDaBy68-v8gFtoUsxQcUNxQyo"
+    assert extract_bot_link_token(f"https://t.me/vedicschool_aisu_bot?start={tok}") == tok
+    assert extract_bot_link_token(f"https://bot.aisukam.ru/join/{tok}") == tok
+    assert extract_bot_link_token(f"https://bot.aisukam.ru/join/{tok}/tg") == tok
+    assert extract_bot_link_token(f"/start {tok}") == tok
+    assert extract_bot_link_token(f"start {tok}") == tok
+    assert extract_bot_link_token(tok) == tok
+    assert extract_bot_link_token("Привет, хочу на консультацию") is None
+    assert extract_bot_link_token(None) is None
+
+
+def test_build_telegram_launch_link() -> None:
+    from funnelhub.config import Settings
+    from funnelhub.services.bot_linking import (
+        build_most_telegram_launch_link,
+        build_telegram_launch_link,
+    )
+
+    settings = Settings(
+        PUBLIC_BASE_URL="https://bot.aisukam.ru",
+        TELEGRAM_BOT_USERNAME="vedicschool_aisu_bot",
+        MOST_TELEGRAM_BOT_USERNAME="most_cannostei_bot",
+    )
+    assert (
+        build_telegram_launch_link(settings, "tok123")
+        == "https://bot.aisukam.ru/join/tok123/tg"
+    )
+    assert (
+        build_most_telegram_launch_link(settings, "tok123")
+        == "https://bot.aisukam.ru/join/tok123/tg"
+    )

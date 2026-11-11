@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from funnelhub.config import Settings, get_settings
 from funnelhub.db.models import FunnelState
 from funnelhub.db.session import async_session_maker
-from funnelhub.services.bot_linking import link_messenger_identity
+from funnelhub.services.bot_linking import extract_bot_link_token, link_messenger_identity
 from funnelhub.services.funnel_autostart import restart_funnel_for_lead
 from funnelhub.services.funnel_engine import (
     FunnelButton,
@@ -339,19 +339,11 @@ BUTTON_REPLY_ALIASES = {
 }
 
 
-@router.message(CommandStart())
-async def handle_start(message: Message, command: CommandObject) -> None:
-    token = normalize_start_token(command.args)
-    if token is None:
-        await message.answer(
-            "Чтобы получить материалы, нажмите кнопку Telegram на странице после заявки."
-        )
-        return
-    telegram_user = message.from_user
-    bot = message.bot
-    if telegram_user is None or bot is None:
-        await message.answer("Не удалось определить Telegram-пользователя.")
-        return
+async def start_most_lead_with_token(
+    bot: Bot,
+    telegram_user: User,
+    token: str,
+) -> bool:
     settings = get_settings()
     definition = load_most_definition(settings)
     try:
@@ -377,9 +369,39 @@ async def handle_start(message: Message, command: CommandObject) -> None:
                 session=session, state=state, definition=definition, sender=sender
             )
             await session.commit()
+            return True
     except ValueError:
-        logger.info("Most tsennostey Telegram start rejected")
+        logger.info("Most tsennostey Telegram start rejected for token: %s", token)
+        return False
+
+
+@router.message(CommandStart())
+async def handle_start(message: Message, command: CommandObject) -> None:
+    telegram_user = message.from_user
+    bot = message.bot
+    if telegram_user is None or bot is None:
+        await message.answer("Не удалось определить Telegram-пользователя.")
+        return
+
+    token = normalize_start_token(command.args)
+    if token is not None:
+        ok = await start_most_lead_with_token(bot, telegram_user, token)
+        if ok:
+            return
         await message.answer("Не удалось открыть материалы. Вернитесь на страницу после заявки.")
+        return
+
+    async with async_session_maker() as session:
+        identity = await get_telegram_identity_by_user_id(session, str(telegram_user.id))
+    if identity is not None and identity.is_subscribed:
+        await message.answer("Вы уже подключены к проекту «Мост ценностей»!")
+        return
+
+    await message.answer(
+        "Чтобы получить материалы проекта «Мост ценностей», "
+        "откройте бота по персональной ссылке после заявки "
+        "или отправьте ссылку на страницу после заявки в этот чат."
+    )
 
 
 @router.message(Command("status"))
@@ -449,8 +471,15 @@ async def handle_callback(callback: CallbackQuery) -> None:
 
 @router.message()
 async def handle_message(message: Message) -> None:
-    if message.from_user is None or message.text is None:
+    if message.from_user is None or message.text is None or message.bot is None:
         return
+
+    token = extract_bot_link_token(message.text)
+    if token is not None:
+        ok = await start_most_lead_with_token(message.bot, message.from_user, token)
+        if ok:
+            return
+
     settings = get_settings()
     async with async_session_maker() as session:
         inbound = await record_inbound_messenger_message(

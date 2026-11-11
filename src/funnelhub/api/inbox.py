@@ -17,9 +17,12 @@ from funnelhub.db.models import BotLinkToken, Conversation, Lead
 from funnelhub.db.session import get_session
 from funnelhub.services.auth import require_admin_session
 from funnelhub.services.bot_linking import (
+    build_join_url,
     build_most_telegram_deep_link,
+    build_most_telegram_launch_link,
     build_most_vk_deep_link,
     build_telegram_deep_link,
+    build_telegram_launch_link,
     build_vk_launch_link,
     create_or_get_active_bot_link_token,
 )
@@ -970,11 +973,31 @@ def database_bot_link_responses(
     expires_at = bot_link_token.expires_at
     links: list[DatabaseBotLinkResponse] = []
     is_most_lead = lead_source == MOST_TSENNOSTEY_SOURCE
-    telegram_link = (
+
+    # 1. Страница после заявки (выбор мессенджера и описание подарков)
+    page_link = build_join_url(settings, token)
+    links.append(
+        DatabaseBotLinkResponse(
+            channel="page",
+            label="Страница после заявки",
+            url=page_link,
+            token=token,
+            expires_at=expires_at,
+        )
+    )
+
+    # 2. Telegram транзитная ссылка (автоматически пробрасывает tg:// без потерь)
+    telegram_launch = (
+        build_most_telegram_launch_link(settings, token)
+        if is_most_lead
+        else build_telegram_launch_link(settings, token)
+    )
+    telegram_direct = (
         build_most_telegram_deep_link(settings, token)
         if is_most_lead
         else build_telegram_deep_link(settings, token)
     )
+    telegram_link = telegram_launch or telegram_direct
     if telegram_link:
         links.append(
             DatabaseBotLinkResponse(
@@ -985,6 +1008,8 @@ def database_bot_link_responses(
                 expires_at=expires_at,
             )
         )
+
+    # 3. ВКонтакте ссылка запуска
     vk_link = (
         build_most_vk_deep_link(settings, token)
         if is_most_lead

@@ -12,7 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from funnelhub.config import Settings, get_settings
-from funnelhub.db.models import LeadExternalId, MessengerIdentity
+from funnelhub.db.models import Lead, LeadExternalId, MessengerIdentity
 from funnelhub.db.session import get_session
 from funnelhub.services.bot_linking import (
     build_telegram_deep_link,
@@ -35,6 +35,7 @@ from funnelhub.services.ingestion_guard import (
     enforce_getcourse_ingestion_guard,
     strip_getcourse_webhook_secret_fields,
 )
+from funnelhub.services.landing_applications import MOST_TSENNOSTEY_SOURCE
 from funnelhub.services.lead_post_submit_tasks import enqueue_lead_post_submit_tasks
 from funnelhub.services.vk_messaging import HttpVkMessageClient
 from funnelhub.services.vk_oauth import (
@@ -174,6 +175,41 @@ async def vk_launch_redirect(
         )
 
     return RedirectResponse(vk_url, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
+
+
+@router.get("/join/{token}/tg", response_class=HTMLResponse)
+@router.get("/join/{token}/telegram", response_class=HTMLResponse)
+async def telegram_launch_redirect(
+    token: str,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> HTMLResponse:
+    bot_link_token = await get_active_bot_link_token(session, token)
+    if bot_link_token is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Join token not found.")
+
+    lead = await session.get(Lead, bot_link_token.lead_id)
+    is_most_lead = lead is not None and lead.source == MOST_TSENNOSTEY_SOURCE
+    raw_username = (
+        settings.most_telegram_bot_username
+        if is_most_lead
+        else settings.telegram_bot_username
+    )
+    if not raw_username:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Telegram bot is not configured.",
+        )
+    username = raw_username.strip().lstrip("@")
+    if not username:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Telegram bot username is empty.",
+        )
+
+    tme_url = f"https://t.me/{username}?start={token}"
+    tg_app_url = f"tg://resolve?domain={username}&start={token}"
+    return render_telegram_launch_page(tme_url=tme_url, tg_app_url=tg_app_url)
 
 
 @router.get("/oauth/vk/callback", response_class=HTMLResponse)
@@ -541,6 +577,111 @@ def render_vk_oauth_success(settings: Settings) -> HTMLResponse:
     <p>Первое сообщение уже отправляется. Сейчас откроется диалог сообщества во Вконтакте.</p>
     <p><a href="{escaped_vk_url}">Открыть Вконтакте</a></p>
   </main>
+</body>
+</html>"""
+    )
+
+
+def render_telegram_launch_page(tme_url: str, tg_app_url: str) -> HTMLResponse:
+    escaped_tme = html.escape(tme_url)
+    escaped_tg = html.escape(tg_app_url)
+    return HTMLResponse(
+        f"""<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="refresh" content="2; url={escaped_tme}">
+  <title>Переход в Telegram — Школа Сатья Юга</title>
+  <style>
+    :root {{
+      --paper: #f8f0df;
+      --paper-light: #fffaf0;
+      --ink: #21160e;
+      --muted: #6f5941;
+      --gold: #b07a35;
+      --gold-dark: #7d4f1e;
+      --line: rgba(176, 122, 53, 0.28);
+      --shadow: 0 22px 60px rgba(78, 48, 20, 0.13);
+    }}
+    * {{ box-sizing: border-box; }}
+    body {{
+      margin: 0;
+      min-height: 100vh;
+      font-family: Georgia, "Times New Roman", serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 72% 18%, rgba(176, 122, 53, 0.16), transparent 28%),
+        linear-gradient(180deg, var(--paper-light) 0%, var(--paper) 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }}
+    .card {{
+      max-width: 480px;
+      width: 100%;
+      background: var(--paper-light);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 36px 28px;
+      text-align: center;
+      box-shadow: var(--shadow);
+    }}
+    h1 {{
+      font-size: 24px;
+      font-weight: 600;
+      margin: 0 0 14px;
+      color: var(--ink);
+    }}
+    p {{
+      font-size: 16px;
+      line-height: 1.5;
+      color: var(--muted);
+      margin: 0 0 24px;
+    }}
+    .button {{
+      display: inline-block;
+      width: 100%;
+      padding: 16px 24px;
+      background: var(--gold);
+      color: #fff;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-size: 17px;
+      font-weight: 600;
+      text-decoration: none;
+      border-radius: 8px;
+      transition: background 0.2s;
+    }}
+    .button:hover {{
+      background: var(--gold-dark);
+    }}
+    .fallback {{
+      display: block;
+      margin-top: 18px;
+      font-size: 14px;
+      color: var(--gold-dark);
+      text-decoration: underline;
+    }}
+  </style>
+  <script>
+    (function() {{
+      try {{
+        window.location.href = "{escaped_tg}";
+        setTimeout(function() {{
+          window.location.href = "{escaped_tme}";
+        }}, 2000);
+      }} catch (e) {{}}
+    }})();
+  </script>
+</head>
+<body>
+  <div class="card">
+    <h1>Переходим в Telegram...</h1>
+    <p>Бот откроется автоматически. Если этого не произошло, нажмите кнопку ниже:</p>
+    <a class="button" href="{escaped_tg}">Открыть Telegram</a>
+    <a class="fallback" href="{escaped_tme}">Открыть через веб-ссылку (t.me)</a>
+  </div>
 </body>
 </html>"""
     )

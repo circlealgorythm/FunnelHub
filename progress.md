@@ -15,6 +15,13 @@
 ## Status
 
 ### What's Done
+- [x] **Сессия 2026-11-11: надёжный запуск Telegram-ботов по ссылкам из CRM, транзитный редирект и fallback по телефону (STD-FUNNEL-010):**
+  1. Выявлена первопричина ошибки при переходе по ссылке на бота из базы («Чтобы получить материалы, нажмите кнопку Telegram на странице после заявки»): при открытии прямых ссылок `t.me/bot?start=token` из встроенных браузеров мессенджеров (WhatsApp/VK WebView) или Telegram Web параметр `start` теряется (`command.args is None`), либо пользователь ранее уже открывал диалог с ботом и нажимал меню `/start` без параметров.
+  2. В `services/bot_linking.py` добавлены функции построения надёжных ссылок `build_telegram_launch_link` (`/join/{token}/tg`), `build_most_telegram_launch_link` и парсер токенов `extract_bot_link_token` (из ссылок, текста или команд).
+  3. В `api/messenger.py` добавлен транзитный маршрут `/join/{token}/tg` (`/join/{token}/telegram`), мгновенно инициирующий протокольный переход `tg://resolve?domain=...&start={token}` со страхующим редиректом на `t.me` и кнопкой ручного перехода при блокировке popup.
+  4. В `api/inbox.py` список `bot_links` дополнен тремя точками входа: персональный транзитный запуск Telegram (`/join/{token}/tg`), VK (`/join/{token}/vk`) и веб-страница выдачи материалов (`/join/{token}`).
+  5. В `telegram_bot.py` и `most_telegram_bot.py` вынесен хендлер `start_telegram_lead_with_token`, добавлен fallback по номеру телефона `link_telegram_lead_by_phone` (сопоставление с `lead_contacts`), кнопка `📱 Подтвердить заявку по номеру телефона` (Send Contact) при пустом `/start`, а также разбор токенов и номеров телефонов из обычных текстовых сообщений.
+  6. Проверки: unit-тесты `test_telegram_bot.py`, `test_join_page.py`, `test_inbox_database.py` (27 passed), `ruff check .` и `mypy src/funnelhub` (54 файла) пройдены без ошибок, фронтенд `inbox-app` успешно собран (`npm run build`). В `AGENTS.md` зафиксирован стандарт STD-FUNNEL-010.
 - [x] **Сессия 2026-11-11: устранение таймаутов API экспорта GetCourse и защита от ошибки 903:**
   1. Выявлена первопричина отображения статуса 'new' вместо 'GC <id>' под именами недавних лидов (Дария, Надежда, Рамиля и др.) в CRM FunnelHub: фоновая задача getcourse_profile_enrichment опрашивала асинхронный экспорт GetCourse (/pl/api/account/users) всего 5 секунд (5 попыток по 1с), тогда как очередь GetCourse формирует файл за 15–45 секунд (error 909 'Файл еще не создан'). По истечении 5с задача падала с profile_not_found.
   2. В config.py и .env FunnelHub таймаут опроса увеличен до 60 секунд (GETCOURSE_API_POLL_ATTEMPTS=30, GETCOURSE_API_POLL_INTERVAL_SECONDS=2.0), контейнеры pp и unnel-worker перезапущены на сервере Simplecloud.
@@ -302,3 +309,5 @@
 - **2026-11-09 00:57** | ops(funnel-hub): secure backup monitoring and verification checks
 
 - **2026-11-11 20:20** | fix(funnel-hub): increase getcourse export poll timeout to 60s and add rate limit protection
+
+- **2026-11-11 21:00** | fix(funnel-hub): reliable telegram bot deep linking and phone fallback (STD-FUNNEL-010)

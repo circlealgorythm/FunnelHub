@@ -2,17 +2,30 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from typing import Any
 
-from aiogram import Dispatcher, Router
+from aiogram import Bot, Dispatcher, F, Router
 from aiogram.filters import Command, CommandStart
 from aiogram.filters.command import CommandObject
-from aiogram.types import CallbackQuery, Message, User
+from aiogram.types import (
+    CallbackQuery,
+    KeyboardButton,
+    Message,
+    ReplyKeyboardMarkup,
+    ReplyKeyboardRemove,
+    User,
+)
+from sqlalchemy import select
 
 from funnelhub.config import get_settings
-from funnelhub.db.models import MessengerIdentity
+from funnelhub.db.models import Lead, LeadContact, MessengerIdentity
 from funnelhub.db.session import async_session_maker
-from funnelhub.services.bot_linking import link_messenger_identity
+from funnelhub.services.bot_linking import (
+    create_or_get_active_bot_link_token,
+    extract_bot_link_token,
+    link_messenger_identity,
+)
 from funnelhub.services.funnel_answers import handle_funnel_text_reply
 from funnelhub.services.funnel_autostart import restart_default_funnel_for_lead
 from funnelhub.services.funnel_engine import load_funnel_definition, run_due_funnel_step
@@ -33,20 +46,11 @@ logger = logging.getLogger(__name__)
 router = Router()
 
 
-@router.message(CommandStart())
-async def handle_start(message: Message, command: CommandObject) -> None:
-    token = normalize_start_token(command.args)
-    if token is None:
-        await message.answer(
-            "Чтобы получить материалы, нажмите кнопку Telegram на странице после заявки."
-        )
-        return
-
-    telegram_user = message.from_user
-    if telegram_user is None:
-        await message.answer("Не удалось определить Telegram-пользователя.")
-        return
-
+async def start_telegram_lead_with_token(
+    bot: Bot,
+    telegram_user: User,
+    token: str,
+) -> bool:
     try:
         settings = get_settings()
         definition = load_funnel_definition(settings.default_funnel_path)
@@ -69,7 +73,7 @@ async def handle_start(message: Message, command: CommandObject) -> None:
             )
             sender = MessengerFunnelStepSender(
                 session=session,
-                telegram_bot=message.bot,
+                telegram_bot=bot,
                 vk_client=None,
             )
             await run_due_funnel_step(
@@ -79,13 +83,141 @@ async def handle_start(message: Message, command: CommandObject) -> None:
                 sender=sender,
             )
             await session.commit()
+            return True
     except ValueError:
-        logger.info("Telegram start rejected for invalid or conflicting token")
+        logger.info(
+            "Telegram start rejected for invalid or conflicting token: %s",
+            token,
+            extra={"telegram_user_id": telegram_user.id},
+        )
+        return False
+
+
+async def link_telegram_lead_by_phone(
+    bot: Bot,
+    telegram_user: User,
+    phone: str,
+) -> bool:
+    digits = re.sub(r"\D", "", phone)
+    if len(digits) < 10:
+        return False
+
+    variations = [digits]
+    if len(digits) == 11 and digits.startswith(("7", "8")):
+        core = digits[1:]
+        variations.extend([core, "7" + core, "8" + core])
+    elif len(digits) == 10:
+        variations.extend(["7" + digits, "8" + digits])
+
+    settings = get_settings()
+    definition = load_funnel_definition(settings.default_funnel_path)
+    async with async_session_maker() as session:
+        contact = await session.scalar(
+            select(LeadContact)
+            .where(
+                LeadContact.contact_type == "phone",
+                LeadContact.normalized_value.in_(variations),
+            )
+            .order_by(LeadContact.created_at.desc())
+        )
+        if contact is None:
+            return False
+
+        lead = await session.get(Lead, contact.lead_id)
+        if lead is None:
+            return False
+
+        bot_link_token = await create_or_get_active_bot_link_token(session, lead)
+        result = await link_messenger_identity(
+            session=session,
+            token=bot_link_token.token,
+            channel="telegram",
+            external_user_id=str(telegram_user.id),
+            username=telegram_user.username,
+            display_name=telegram_user.full_name,
+            raw_profile=build_raw_profile(telegram_user),
+            allow_relink=True,
+        )
+        state = await restart_default_funnel_for_lead(
+            session=session,
+            settings=settings,
+            lead_id=result.lead_id,
+            messenger_channel="telegram",
+        )
+        sender = MessengerFunnelStepSender(
+            session=session,
+            telegram_bot=bot,
+            vk_client=None,
+        )
+        await run_due_funnel_step(
+            session=session,
+            state=state,
+            definition=definition,
+            sender=sender,
+        )
+        await session.commit()
+        return True
+
+
+@router.message(CommandStart())
+async def handle_start(message: Message, command: CommandObject) -> None:
+    telegram_user = message.from_user
+    bot = message.bot
+    if telegram_user is None or bot is None:
+        await message.answer("Не удалось определить Telegram-пользователя.")
+        return
+
+    token = normalize_start_token(command.args)
+    if token is not None:
+        ok = await start_telegram_lead_with_token(bot, telegram_user, token)
+        if ok:
+            return
         await message.answer(
-            "Не удалось открыть материалы. Вернитесь на страницу после заявки "
-            "и нажмите кнопку Telegram еще раз."
+            "Не удалось открыть материалы по этой ссылке (возможно, срок её действия истёк). "
+            "Отправьте ваш номер телефона, и мы найдем вашу заявку."
         )
         return
+
+    async with async_session_maker() as session:
+        existing = await get_telegram_identity_by_user_id(session, str(telegram_user.id))
+    if existing is not None and existing.is_subscribed:
+        await message.answer("Вы уже подключены к материалам Школы Сатья Юга!")
+        return
+
+    keyboard = ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="📱 Подтвердить заявку по номеру телефона", request_contact=True)]
+        ],
+        resize_keyboard=True,
+        one_time_keyboard=True,
+    )
+    await message.answer(
+        "Чтобы получить материалы, откройте бота по персональной ссылке после заявки "
+        "или нажмите кнопку ниже, чтобы подтвердить заявку по номеру телефона:",
+        reply_markup=keyboard,
+    )
+
+
+@router.message(F.contact)
+async def handle_contact(message: Message) -> None:
+    telegram_user = message.from_user
+    contact = message.contact
+    bot = message.bot
+    if telegram_user is None or contact is None or bot is None:
+        return
+
+    ok = await link_telegram_lead_by_phone(bot, telegram_user, contact.phone_number)
+    if ok:
+        await message.answer(
+            "Заявка подтверждена! Материалы отправлены выше.",
+            reply_markup=ReplyKeyboardRemove(),
+        )
+    else:
+        await message.answer(
+            "Заявка с таким номером телефона не найдена. "
+            "Пожалуйста, отправьте ссылку на страницу после заявки в этот чат.",
+            reply_markup=ReplyKeyboardRemove(),
+        )
 
 
 @router.message(Command("status"))
@@ -118,15 +250,38 @@ async def handle_stop(message: Message) -> None:
 @router.message()
 async def handle_text_answer(message: Message) -> None:
     telegram_user = message.from_user
-    if telegram_user is None or message.text is None:
+    bot = message.bot
+    if telegram_user is None or message.text is None or bot is None:
         return
+
+    # 1. Check if message contains token or link
+    token = extract_bot_link_token(message.text)
+    if token is not None:
+        ok = await start_telegram_lead_with_token(bot, telegram_user, token)
+        if ok:
+            return
+
+    # 2. Check if unlinked user typed a phone number as text
+    clean_text = message.text.strip()
+    digits = re.sub(r"\D", "", clean_text)
+    if len(digits) in (10, 11) and re.fullmatch(r"^\+?[0-9\s\-\(\)]{10,20}$", clean_text):
+        async with async_session_maker() as session:
+            existing = await get_telegram_identity_by_user_id(session, str(telegram_user.id))
+        if existing is None or not existing.is_subscribed:
+            ok = await link_telegram_lead_by_phone(bot, telegram_user, clean_text)
+            if ok:
+                await message.answer(
+                    "Заявка подтверждена! Материалы отправлены выше.",
+                    reply_markup=ReplyKeyboardRemove(),
+                )
+                return
 
     settings = get_settings()
     definition = load_funnel_definition(settings.default_funnel_path)
     async with async_session_maker() as session:
         sender = MessengerFunnelStepSender(
             session=session,
-            telegram_bot=message.bot,
+            telegram_bot=bot,
             vk_client=None,
         )
         inbound_message = await record_inbound_messenger_message(

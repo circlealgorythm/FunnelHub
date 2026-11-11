@@ -661,10 +661,12 @@ async def test_database_api_requires_auth_and_supports_list_export_import(
     assert list_response.json()["items"][0]["name"] == "Database Test Lead"
     assert detail_response.status_code == 200
     bot_links = detail_response.json()["bot_links"]
-    assert {item["channel"] for item in bot_links} == {"telegram", "vk"}
+    assert {item["channel"] for item in bot_links} == {"page", "telegram", "vk"}
     assert bot_links[0]["token"]
     assert any(
-        item["url"].startswith("https://t.me/aisu_test_bot?start=") for item in bot_links
+        "/join/" in item["url"] and item["url"].endswith("/tg") for item in bot_links
+    )
+    assert any("/join/" in item["url"] and item["channel"] == "page" for item in bot_links
     )
     assert any("/join/" in item["url"] and item["url"].endswith("/vk") for item in bot_links)
     assert vk_id_response.status_code == 200
