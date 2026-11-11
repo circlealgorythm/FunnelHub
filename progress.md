@@ -15,6 +15,12 @@
 ## Status
 
 ### What's Done
+- [x] **Сессия 2026-11-11: устранение таймаутов API экспорта GetCourse и защита от ошибки 903:**
+  1. Выявлена первопричина отображения статуса 'new' вместо 'GC <id>' под именами недавних лидов (Дария, Надежда, Рамиля и др.) в CRM FunnelHub: фоновая задача getcourse_profile_enrichment опрашивала асинхронный экспорт GetCourse (/pl/api/account/users) всего 5 секунд (5 попыток по 1с), тогда как очередь GetCourse формирует файл за 15–45 секунд (error 909 'Файл еще не создан'). По истечении 5с задача падала с profile_not_found.
+  2. В config.py и .env FunnelHub таймаут опроса увеличен до 60 секунд (GETCOURSE_API_POLL_ATTEMPTS=30, GETCOURSE_API_POLL_INTERVAL_SECONDS=2.0), контейнеры pp и unnel-worker перезапущены на сервере Simplecloud.
+  3. Проверено на лиде Дария: экспорт успешно завершился с первого раза, получен getcourse_user_id: 523808545, внешний ID getcourse: 523808545 записан в БД, статус в CRM обновлен на GC 523808545. Также обогащены Алла, Антонина, Наталья и две Татьяны.
+  4. Зафиксирован лимит GetCourse Export API: 100 запросов за 2 часа (код ошибки 903 'Слишком много запросов'). Из-за прежнего зацикливания повторных попыток на 28 упавших лидах лимит был временно исчерпан; фоновый воркер с новыми таймаутами автоматически разберет оставшиеся лиды после сброса счетчика GetCourse.
+  5. Проверки: uv run pytest tests/test_getcourse_api.py 8 passed; полный scripts/verify.ps1 -Subproject funnel-hub успешно пройден (ruff, mypy 54 files OK, 18 passed).
 - [x] **Сессия 2026-11-08–09: проверка здоровья, резервирование и качество проверок:**
   1. Проверены VPS, контейнеры, HTTP, PostgreSQL и Redis; диагностические ошибки SQL идентифицированы как отдельные некорректные запросы.
   2. Исправлен запуск выгрузки бэкапов на ПК: UTF-8 BOM для Windows PowerShell и прямое действие планировщика с передачей exit code; копии сервера, FTP и ПК совпали по SHA-256. Планировщик проверен вручную, следующая выгрузка в 17:00.
@@ -294,3 +300,5 @@
 - **2026-11-08 19:29** | docs(funnel-hub): STD-FUNNEL-004 calibration updated to option B (poll 30s settings-driven, request 90s contract)
 
 - **2026-11-09 00:57** | ops(funnel-hub): secure backup monitoring and verification checks
+
+- **2026-11-11 20:20** | fix(funnel-hub): increase getcourse export poll timeout to 60s and add rate limit protection

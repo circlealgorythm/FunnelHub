@@ -42,10 +42,10 @@ class Settings(BaseSettings):
     )
     getcourse_api_key: str | None = Field(default=None, validation_alias="GETCOURSE_API_KEY")
     getcourse_api_poll_attempts: int = Field(
-        default=5, validation_alias="GETCOURSE_API_POLL_ATTEMPTS"
+        default=30, validation_alias="GETCOURSE_API_POLL_ATTEMPTS"
     )
     getcourse_api_poll_interval_seconds: float = Field(
-        default=1.0, validation_alias="GETCOURSE_API_POLL_INTERVAL_SECONDS"
+        default=2.0, validation_alias="GETCOURSE_API_POLL_INTERVAL_SECONDS"
     )
     telegram_bot_username: str | None = Field(
         default=None, validation_alias="TELEGRAM_BOT_USERNAME"
