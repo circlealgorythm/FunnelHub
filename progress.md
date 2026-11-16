@@ -330,3 +330,5 @@
 - **2026-11-11 21:00** | fix(funnel-hub): reliable telegram bot deep linking and phone fallback (STD-FUNNEL-010)
 
 - **2026-11-16 19:23** | feat(funnel-hub): consultation quiz backend, join banner, inbox-app quiz section #1
+
+- **2026-11-16 19:53** | fix(inbox): sort database leads by updated_at desc to bump repeat applications to top
