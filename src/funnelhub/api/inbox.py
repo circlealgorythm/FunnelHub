@@ -186,6 +186,7 @@ class DatabaseLeadDetailResponse(BaseModel):
     funnel_states: list[dict[str, object]]
     recent_messages: list[dict[str, object]]
     raw_getcourse_data: dict[str, object]
+    quiz: dict[str, object] | None = None
 
 
 class DatabaseImportResponse(BaseModel):
@@ -961,6 +962,7 @@ def database_lead_detail_response(
         funnel_states=detail.funnel_states,
         recent_messages=detail.recent_messages,
         raw_getcourse_data=detail.raw_getcourse_data,
+        quiz=detail.quiz,
     )
 
 

@@ -782,6 +782,34 @@ def render_join_page(settings: Settings, token: str) -> HTMLResponse:
       font-weight: 500;
     }}
 
+    .consultation-banner {{
+      margin: 0 0 26px;
+      padding: 18px 22px;
+      border: 1px solid rgba(123, 36, 69, 0.24);
+      border-left: 5px solid var(--maroon);
+      border-radius: 8px;
+      background: rgba(123, 36, 69, 0.05);
+      box-shadow: 0 10px 24px rgba(123, 36, 69, 0.05);
+    }}
+
+    .consultation-banner-title {{
+      margin: 0 0 8px;
+      color: var(--maroon);
+      font-size: 22px;
+      font-weight: 700;
+      line-height: 1.3;
+      font-family: Georgia, "Times New Roman", serif;
+    }}
+
+    .consultation-banner-desc {{
+      margin: 0;
+      color: var(--ink);
+      font-size: 16px;
+      line-height: 1.45;
+      font-family: "Trebuchet MS", Verdana, sans-serif;
+      font-weight: 600;
+    }}
+
     p {{
       margin: 0;
       color: var(--muted);
@@ -1090,6 +1118,19 @@ def render_join_page(settings: Settings, token: str) -> HTMLResponse:
       .gift {{
         grid-template-columns: 1fr;
       }}
+
+      .consultation-banner {{
+        padding: 14px 16px;
+        margin-bottom: 20px;
+      }}
+
+      .consultation-banner-title {{
+        font-size: 18px;
+      }}
+
+      .consultation-banner-desc {{
+        font-size: 14px;
+      }}
     }}
   </style>
 </head>
@@ -1099,6 +1140,14 @@ def render_join_page(settings: Settings, token: str) -> HTMLResponse:
       <div>
         <p class="eyebrow">Заявка принята</p>
         <h1 id="thanks-title">Спасибо за вашу заявку!</h1>
+        <div class="consultation-banner" role="alert">
+          <p class="consultation-banner-title">
+            Будьте на связи ближайшие дни, чтобы не пропустить вашу консультацию!
+          </p>
+          <p class="consultation-banner-desc">
+            Для дальнейшей коммуникации необходимо подписаться на чат-боты
+          </p>
+        </div>
         <div class="actions" aria-label="Выберите мессенджер">
           {telegram_markup}
           {vk_markup}

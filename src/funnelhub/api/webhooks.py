@@ -136,6 +136,11 @@ class AisuLandingApplicationRequest(BaseModel):
     device_gpu: str | None = Field(default=None, max_length=255)
     device_screen: str | None = Field(default=None, max_length=64)
     device_cpu_cores: int | None = Field(default=None)
+    quiz_status: Literal["draft", "completed"] | None = Field(default=None)
+    quiz_messenger: list[str] | str | None = Field(default=None)
+    quiz_known: str | None = Field(default=None, max_length=64)
+    quiz_goal: str | None = Field(default=None, max_length=64)
+    quiz_training: str | None = Field(default=None, max_length=64)
 
     @field_validator("name", "phone", "email")
     @classmethod
@@ -335,6 +340,15 @@ async def aisu_landing_application(
             "device_gpu": application.device_gpu,
             "device_screen": application.device_screen,
             "device_cpu_cores": application.device_cpu_cores,
+            "quiz_status": application.quiz_status or "completed",
+            "quiz_messenger": (
+                ", ".join(application.quiz_messenger)
+                if isinstance(application.quiz_messenger, list)
+                else application.quiz_messenger
+            ),
+            "quiz_known": application.quiz_known,
+            "quiz_goal": application.quiz_goal,
+            "quiz_training": application.quiz_training,
         },
     )
     await start_default_email_funnel_for_lead(
@@ -342,13 +356,14 @@ async def aisu_landing_application(
         settings=settings,
         lead_id=result.lead_id,
     )
+    is_draft = application.quiz_status == "draft"
     await enqueue_lead_post_submit_tasks(
         session=session,
         settings=settings,
         lead_id=result.lead_id,
         created=result.created,
         source=application.source or "landing-applications/aisu",
-        notify_admin=True,
+        notify_admin=not is_draft,
     )
     await enqueue_getcourse_consultation_submission(
         session=session,

@@ -382,7 +382,47 @@ type DatabaseLeadDetail = {
   funnel_states: Array<Record<string, unknown>>;
   recent_messages: Array<Record<string, unknown>>;
   raw_getcourse_data: Record<string, unknown>;
+  quiz?: {
+    status?: string | null;
+    is_completed?: boolean;
+    messenger?: string | null;
+    known?: string | null;
+    goal?: string | null;
+    training?: string | null;
+  } | null;
 };
+
+function getLeadQuiz(detail: DatabaseLeadDetail) {
+  if (detail.quiz) {
+    return detail.quiz;
+  }
+  const cfMap = new Map<string, string>();
+  for (const cf of detail.custom_fields || []) {
+    if (typeof cf.key === "string" && cf.value !== null && cf.value !== undefined) {
+      cfMap.set(cf.key, String(cf.value));
+    }
+  }
+  const raw = (detail.raw_getcourse_data || {}) as Record<string, unknown>;
+  const status = cfMap.get("quiz_status") || (typeof raw.quiz_status === "string" ? raw.quiz_status : null);
+  const messenger = cfMap.get("quiz_messenger") || (typeof raw.quiz_messenger === "string" ? raw.quiz_messenger : null);
+  const known = cfMap.get("quiz_known") || (typeof raw.quiz_known === "string" ? raw.quiz_known : null);
+  const goal = cfMap.get("quiz_goal") || (typeof raw.quiz_goal === "string" ? raw.quiz_goal : null);
+  const training = cfMap.get("quiz_training") || (typeof raw.quiz_training === "string" ? raw.quiz_training : null);
+
+  if (!status && !messenger && !known && !goal && !training) {
+    return null;
+  }
+
+  const isCompleted = status === "completed" || Boolean(messenger && known && goal && training);
+  return {
+    status: isCompleted ? "completed" : "draft",
+    is_completed: isCompleted,
+    messenger,
+    known,
+    goal,
+    training,
+  };
+}
 
 type DatabaseImportSummary = {
   batch_id: string;
@@ -2229,6 +2269,71 @@ function LeadDatabaseDetail({
         </div>
       </div>
 
+      {(() => {
+        const quiz = getLeadQuiz(detail);
+        return (
+          <DetailSection
+            count={quiz ? (quiz.is_completed ? 4 : 1) : 0}
+            defaultOpen
+            title="Анкета консультации"
+          >
+            {!quiz ? (
+              <p style={{ color: "#8a7561", fontStyle: "italic", margin: "4px 0" }}>
+                Анкета не заполнялась (регистрация без анкеты или старый лид).
+              </p>
+            ) : (
+              <div className="quiz-detail-content">
+                <div
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    padding: "6px 14px",
+                    borderRadius: "20px",
+                    fontSize: "13px",
+                    fontWeight: 600,
+                    marginBottom: "14px",
+                    background: quiz.is_completed ? "rgba(46, 133, 64, 0.12)" : "rgba(108, 117, 125, 0.12)",
+                    color: quiz.is_completed ? "#1e7e34" : "#5a6268",
+                    border: `1px solid ${quiz.is_completed ? "rgba(46, 133, 64, 0.3)" : "rgba(108, 117, 125, 0.25)"}`,
+                  }}
+                >
+                  <span
+                    style={{
+                      display: "inline-block",
+                      width: "8px",
+                      height: "8px",
+                      borderRadius: "50%",
+                      background: quiz.is_completed ? "#28a745" : "#6c757d",
+                    }}
+                  />
+                  {quiz.is_completed
+                    ? "Анкета заполнена — целевой лид (звонить)"
+                    : "Анкета не заполнена (только контакты — не звонить)"}
+                </div>
+
+                <KeyValueLine
+                  label="1. Удобный мессенджер"
+                  value={quiz.messenger || (quiz.is_completed ? "Не указан" : "—")}
+                />
+                <KeyValueLine
+                  label="2. Знакомство с Айсу Кам"
+                  value={quiz.known || (quiz.is_completed ? "Не указано" : "—")}
+                />
+                <KeyValueLine
+                  label="3. Конкретная цель"
+                  value={quiz.goal || (quiz.is_completed ? "Не указано" : "—")}
+                />
+                <KeyValueLine
+                  label="4. Желание обучаться тонкому плану"
+                  value={quiz.training || (quiz.is_completed ? "Не указано" : "—")}
+                />
+              </div>
+            )}
+          </DetailSection>
+        );
+      })()}
+
       <DetailSection count={detail.bot_links.length} title="Ссылки на ботов">
         <form className="vk-id-form" onSubmit={(event) => void submitVkId(event)}>
           <label htmlFor={`vk-id-${detail.lead.id}`}>VK-ID</label>
@@ -2294,7 +2399,7 @@ function LeadDatabaseDetail({
         </div>
       </DetailSection>
 
-      <DetailSection count={detail.profile_fields.length} defaultOpen title="Профиль GetCourse">
+      <DetailSection count={detail.profile_fields.length} title="Профиль GetCourse">
         <KeyValueRows items={detail.profile_fields} />
       </DetailSection>
 
@@ -2333,7 +2438,7 @@ function LeadDatabaseDetail({
         ))}
       </DetailSection>
 
-      <DetailSection count={detail.utm_snapshots.length} defaultOpen title="Источник и UTM">
+      <DetailSection count={detail.utm_snapshots.length} title="Источник и UTM">
         {detail.utm_snapshots.length === 0 ? <p>UTM-данных нет.</p> : null}
         {detail.utm_snapshots.map((snapshot, index) => (
           <div className="nested-detail" key={`${String(snapshot.source_kind)}-${index}`}>
@@ -2363,7 +2468,7 @@ function LeadDatabaseDetail({
         ))}
       </DetailSection>
 
-      <DetailSection count={detail.custom_fields.length} defaultOpen title="Дополнительные поля">
+      <DetailSection count={detail.custom_fields.length} title="Дополнительные поля">
         {detail.custom_fields.length === 0 ? <p>Дополнительных полей нет.</p> : null}
         <div className="field-chip-list">
           {detail.custom_fields.map((field) => (
@@ -2397,7 +2502,7 @@ function LeadDatabaseDetail({
         ))}
       </DetailSection>
 
-      <DetailSection count={detail.funnel_states.length} defaultOpen title="Воронка">
+      <DetailSection count={detail.funnel_states.length} title="Воронка">
         {detail.funnel_states.length === 0 ? <p>Нет активных состояний.</p> : null}
         <div className="funnel-state-list">
           {detail.funnel_states.map((state, index) => (

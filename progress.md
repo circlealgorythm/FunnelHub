@@ -15,6 +15,23 @@
 ## Status
 
 ### What's Done
+- [x] **Сессия 2026-11-16: бэкенд анкеты консультации, админка Inbox (секция №1) и баннер на странице «Спасибо»:**
+  1. **Бэкенд FunnelHub (`src/funnelhub`):**
+     - В `api/webhooks.py` (`AisuLandingApplicationRequest`) и `services/getcourse_webhook.py` добавлена поддержка полей анкеты (`quiz_status`, `quiz_messenger`, `quiz_known`, `quiz_goal`, `quiz_training`).
+     - Сохранение в Postgres в `LeadCustomField` и `raw_getcourse_data` (JSONB) без деструктивных миграций.
+     - Оповещение менеджеров в Telegram (@leadsaisubot) защищено: отправляется только по заполненным анкетам (`notify_admin = quiz_status != "draft"`). Фоновая синхронизация с GetCourse (`TASK_GETCOURSE_PROFILE_ENRICHMENT`, `TASK_GETCOURSE_CONSULTATION_SUBMISSION`) и рассылками сохранена для всех заявок.
+     - В `api/inbox.py` и `services/inbox_database.py` структура `quiz` проброшена в API детальной карточки лида.
+  2. **Админка FunnelHub (`inbox-app`):**
+     - Секция «Анкета консультации» выведена на позицию №1 (над «Ссылки на ботов») и развернута по умолчанию (`defaultOpen={true}`).
+     - Все остальные аккордеоны («Профиль GetCourse», «Источник и UTM», «Дополнительные поля», «Воронка» и т.д.) по умолчанию свернуты (`defaultOpen={false}`).
+     - Реализован статус: зеленый бейдж `Анкета заполнена — целевой лид (звонить)` или серый `Анкета не заполнена (только контакты — не звонить)` + вывод строк со всеми 4 ответами.
+  3. **Страница «Спасибо» (`api/messenger.py`):**
+     - На странице `/join/{token}` сразу под заголовком добавлен заметный акцентный блок:
+       *«Будьте на связи ближайшие дни, чтобы не пропустить вашу консультацию! Для дальнейшей коммуникации необходимо подписаться на чат-боты»*.
+  4. **Верификация и боевой деплой (Evidence):**
+     - Тесты `pytest tests/test_join_page.py tests/test_telegram_bot.py` пройдены на 100%.
+     - Сборка фронтенда `inbox-app`: `tsc -b && vite build` (dist 292 kB JS, exit 0).
+     - Деплой на VPS Beget через `deploy_files.py`: все 6 контейнеров собраны и запущены, Caddy reloaded, `/health` ➔ `{"status":"ok","service":"FunnelHub"}`, `/inbox/` ➔ HTTP 200 OK.
 - [x] **Сессия 2026-11-11: надёжный запуск Telegram-ботов по ссылкам из CRM, транзитный редирект и fallback по телефону (STD-FUNNEL-010):**
   1. Выявлена первопричина ошибки при переходе по ссылке на бота из базы («Чтобы получить материалы, нажмите кнопку Telegram на странице после заявки»): при открытии прямых ссылок `t.me/bot?start=token` из встроенных браузеров мессенджеров (WhatsApp/VK WebView) или Telegram Web параметр `start` теряется (`command.args is None`), либо пользователь ранее уже открывал диалог с ботом и нажимал меню `/start` без параметров.
   2. В `services/bot_linking.py` добавлены функции построения надёжных ссылок `build_telegram_launch_link` (`/join/{token}/tg`), `build_most_telegram_launch_link` и парсер токенов `extract_bot_link_token` (из ссылок, текста или команд).
@@ -311,3 +328,5 @@
 - **2026-11-11 20:20** | fix(funnel-hub): increase getcourse export poll timeout to 60s and add rate limit protection
 
 - **2026-11-11 21:00** | fix(funnel-hub): reliable telegram bot deep linking and phone fallback (STD-FUNNEL-010)
+
+- **2026-11-16 19:23** | feat(funnel-hub): consultation quiz backend, join banner, inbox-app quiz section #1

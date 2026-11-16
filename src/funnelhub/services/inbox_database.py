@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import io
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Literal
@@ -163,6 +164,7 @@ class DatabaseLeadDetail:
     funnel_states: list[dict[str, Any]]
     recent_messages: list[dict[str, Any]]
     raw_getcourse_data: dict[str, Any]
+    quiz: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -453,7 +455,33 @@ async def get_database_lead_detail(
             for message in messages
         ],
         raw_getcourse_data=lead.raw_getcourse_data or {},
+        quiz=extract_quiz_detail(custom_fields, lead.raw_getcourse_data or {}),
     )
+
+
+def extract_quiz_detail(
+    custom_fields: Sequence[LeadCustomField],
+    raw_data: dict[str, Any],
+) -> dict[str, Any] | None:
+    cf_map = {field.field_key: field.value for field in custom_fields if field.value}
+    status = cf_map.get("quiz_status") or raw_data.get("quiz_status")
+    messenger = cf_map.get("quiz_messenger") or raw_data.get("quiz_messenger")
+    known = cf_map.get("quiz_known") or raw_data.get("quiz_known")
+    goal = cf_map.get("quiz_goal") or raw_data.get("quiz_goal")
+    training = cf_map.get("quiz_training") or raw_data.get("quiz_training")
+
+    if not any([status, messenger, known, goal, training]):
+        return None
+
+    is_completed = (status == "completed") or bool(messenger and known and goal and training)
+    return {
+        "status": "completed" if is_completed else "draft",
+        "is_completed": is_completed,
+        "messenger": messenger,
+        "known": known,
+        "goal": goal,
+        "training": training,
+    }
 
 
 async def upsert_database_lead_vk_id(

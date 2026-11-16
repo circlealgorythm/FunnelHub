@@ -68,6 +68,11 @@ KNOWN_ADDITIONAL_FIELD_ALIASES = {
     "mailing_categories": ("mailing_categories", "Категории рассылок"),
     "article_title": ("article_title", "Статья блога"),
     "article_url": ("article_url", "Ссылка на статью"),
+    "quiz_status": ("quiz_status", "Статус анкеты"),
+    "quiz_messenger": ("quiz_messenger", "Удобный мессенджер"),
+    "quiz_known": ("quiz_known", "Знакомство с Айсу"),
+    "quiz_goal": ("quiz_goal", "Конкретная цель"),
+    "quiz_training": ("quiz_training", "Желание обучаться"),
 }
 ADDITIONAL_FIELD_LABELS = {
     "birth_date": "Дата рождения",
@@ -84,6 +89,11 @@ ADDITIONAL_FIELD_LABELS = {
     "mailing_categories": "Категории рассылок",
     "article_title": "Статья блога",
     "article_url": "Ссылка на статью",
+    "quiz_status": "Статус анкеты",
+    "quiz_messenger": "Удобный мессенджер",
+    "quiz_known": "Знакомство с Айсу",
+    "quiz_goal": "Конкретная цель",
+    "quiz_training": "Желание обучаться",
 }
 PRIVACY_POLICY_URL = "https://shamanaisu.getcourse.ru/politica"
 CONSENT_CUSTOM_FIELD_MAPPING = {

@@ -38,6 +38,8 @@ def test_join_page_uses_simple_messenger_button_copy() -> None:
     assert 'href="http://localhost:8000/join/token-123/vk"' in html
     assert "Открыть Telegram" in html
     assert "Открыть VK" in html
+    assert "Будьте на связи ближайшие дни" in html
+    assert "необходимо подписаться на чат-боты" in html
     assert "персон" not in html.lower()
     assert "ссылк" not in html.lower()
 
