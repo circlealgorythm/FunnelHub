@@ -15,6 +15,11 @@
 ## Status
 
 ### What's Done
+- [x] **Сессия 2026-11-18: аудит возвращённого бэкапа Beget (`2026-10-19`) и восстановление недостающих лидов + Telegram-идентичностей (без рассылок):**
+  1. **Аудит `backup.tar` (`2026-10-19 11:55 МСК`):** извлечён и сверен с продом дамп `opt/funnelhub/backups/funnelhub_backup_20261019_030002.sql.gz` (`358` лидов за `2026-06-05`–`2026-10-18`, `56` TG-идентичностей, `488` `funnel_states`, `363` `email_subscriptions`, `9 731` сообщение). По решению пользователя рассылки и переписка не восстанавливались (`funnel_states`/`email_subscriptions`/`conversations`/`messages` не трогались).
+  2. **Безопасное слияние по `SOP-BACKUP-001` (`dry-run` → pre-backup → `COMMIT`):** снят дамп прода `pre_beget1019_restore_20261118.dump` (`1 336 076` Б, `sha256=1d5be317...`, сервер + локально `tmp/backups/`). Исключены `4` тестовых и `1` пустая карточка; маппинг `st_match` с `rn_st = 1` (`STD-DATA-007`) устранил потерю `22` вторичных карточек (`skipped_collision_leads: 22→0`).
+  3. **Результат в live-БД на Simplecloud:** добавлен `131` недостающий лид (`leads: 670→801`), дозаполнены пустые поля у `104` совпавших лидов, восстановлены `56` Telegram-идентичностей (`38` subscribed / `18` unsubscribed; `tg_idents: 10→66`, `idents: 443→499`), `+400` контактов (`210 email + 190 phone`), `+175` `lead_external_ids`, `+531` `lead_utm`, `+331` `lead_custom_fields`, `+595` `lead_consents`. `funnel_states=499`, `email_subscriptions=62`, `conversations=443`, `messages=1274` не изменились.
+  4. **Верификация и гигиена (Evidence):** 8 контейнеров Up, 0 ошибок в логах, `/health` → `200`, `/inbox/` → `200`; временные SQL-файлы с PII удалены с сервера и ПК.
 - [x] **Сессия 2026-11-18: изоляция Блога от анкеты, дедупликация Шаг 1 → Шаг 2, сортировка базы `GREATEST`, уведомления и оптимизация Docker/Caddy:**
   1. **Изоляция заявок из Блога (`webhooks.py`, `inbox_database.py`, `inbox-app/src/App.tsx`):** убрана подстановка `or "completed"` по умолчанию для `quiz_status`; в `extract_quiz_detail` добавлена проверка `lead_source` и защита от старых ответов при `draft` или пустом `completed`; секция «Анкета консультации» скрыта на вкладках «Блог»/«Мост ценностей» и у лидов из Блога без анкеты (`inbox-app/dist` пересобран).
   2. **Дедупликация Шаг 1 → Шаг 2 (`lead_post_submit_tasks.py`, `getcourse_webhook.py`):** в `enqueue_getcourse_consultation_submission` добавлена проверка 30-минутного окна по нормализованной сигнатуре контактов (отправка черновика в GetCourse на Шаге 1 сохранена, повтор на Шаге 2 с теми же контактами исключён, смена контактов в `pending`-задаче обновляет `payload`); добавлены дедупликация `LeadUtm`, сброс `is_primary` предыдущих контактов и защита от перезаписи `completed` запоздавшим `draft`.
@@ -340,3 +345,5 @@
 - **2026-11-16 19:53** | fix(inbox): sort database leads by updated_at desc to bump repeat applications to top
 
 - **2026-11-18 01:05** | fix(funnel-hub): blog quiz isolation, step1-2 dedupe, greatest ordering, email quiz answers and docker layer cache
+
+- **2026-11-18 01:53** | ops(funnel-hub): restore 131 missing leads and 56 TG identities from Beget 2026-10-19 backup (no mailings); STD-DATA-007
