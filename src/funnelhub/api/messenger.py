@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import html
 import logging
+import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any, Literal, cast
 
@@ -12,7 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from funnelhub.config import Settings, get_settings
-from funnelhub.db.models import Lead, LeadExternalId, MessengerIdentity
+from funnelhub.db.models import Event, Lead, LeadExternalId, MessengerIdentity
 from funnelhub.db.session import get_session
 from funnelhub.services.bot_linking import (
     build_telegram_deep_link,
@@ -107,6 +108,15 @@ async def getcourse_redirect_join_page(
 
     try:
         result = await ingest_getcourse_webhook(session, payload)
+        session.add(
+            Event(
+                id=uuid.uuid4(),
+                lead_id=result.lead_id,
+                event_type="landing.application.received",
+                source="getcourse",
+                payload={"endpoint": "join/getcourse"},
+            )
+        )
         await start_default_email_funnel_for_lead(
             session=session,
             settings=settings,

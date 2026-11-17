@@ -10,8 +10,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from funnelhub.config import Settings
-from funnelhub.db.models import Event, Lead, LeadContact, Message
+from funnelhub.db.models import Event, Lead, LeadContact, LeadCustomField, Message
 from funnelhub.services.email_messaging import EmailProviderClient, build_email_provider_client
+from funnelhub.services.inbox_database import extract_quiz_detail
 
 logger = logging.getLogger(__name__)
 SENT_EVENT_TYPE = "lead.application.notification.sent"
@@ -56,6 +57,18 @@ async def send_lead_application_notification(
         return 0
 
     contacts = await load_lead_contacts(session, lead_id)
+    custom_fields = list(
+        (
+            await session.scalars(
+                select(LeadCustomField).where(LeadCustomField.lead_id == lead_id)
+            )
+        ).all()
+    )
+    quiz = extract_quiz_detail(
+        custom_fields,
+        lead.raw_getcourse_data or {},
+        lead_source=lead.source,
+    )
     subject = "Новая заявка на консультацию" if created else "Повторная заявка на консультацию"
     body = build_lead_notification_text(
         lead=lead,
@@ -63,6 +76,7 @@ async def send_lead_application_notification(
         created=created,
         source=source,
         settings=settings,
+        quiz=quiz,
     )
     html = build_lead_notification_html(body)
     sent = 0
@@ -320,6 +334,7 @@ def build_lead_notification_text(
     source: str,
     settings: Settings,
     tag: str | None = None,
+    quiz: dict[str, Any] | None = None,
 ) -> str:
     raw = lead.raw_getcourse_data or {}
     vk_id = raw.get("vk_id") or raw.get("VK-ID") or raw.get("vk_user_id")
@@ -331,7 +346,7 @@ def build_lead_notification_text(
         f"Имя: {lead.full_name or lead.first_name or raw.get('name') or '-'}",
         f"Телефон: {contacts.get('phone') or raw.get('phone') or '-'}",
         f"Email: {contacts.get('email') or raw.get('email') or '-'}",
-        f"Форма: {raw.get('form_type') or '-'}",
+        f"Форма: {raw.get('form_type') or ('consultation' if quiz else '-')}",
         f"Источник/UTM: {raw.get('source') or raw.get('utm_source') or '-'}",
         f"ID GetCourse: {lead.getcourse_user_id or raw.get('gc_user_id') or '-'}",
         f"VK-ID: {vk_id or '-'}",
@@ -339,6 +354,17 @@ def build_lead_notification_text(
     ]
     if tag is not None:
         lines.insert(2, f"Присвоен тег: {tag}")
+    if quiz and quiz.get("is_completed"):
+        lines.extend(
+            [
+                "",
+                "Анкета консультации:",
+                f"1. Удобный мессенджер: {quiz.get('messenger') or 'Не указан'}",
+                f"2. Знакомство с Айсу Кам: {quiz.get('known') or 'Не указано'}",
+                f"3. Конкретная цель: {quiz.get('goal') or 'Не указано'}",
+                f"4. Желание обучаться тонкому плану: {quiz.get('training') or 'Не указано'}",
+            ]
+        )
     if settings.inbox_app_url:
         lines.append(f"Inbox: {settings.inbox_app_url.rstrip('/')}")
     return "\n".join(str(line) for line in lines)

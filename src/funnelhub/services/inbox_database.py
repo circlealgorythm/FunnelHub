@@ -25,6 +25,7 @@ from funnelhub.db.models import (
     LeadContact,
     LeadCustomField,
     LeadExternalId,
+    LeadPostSubmitTask,
     LeadUtm,
     Message,
     MessengerIdentity,
@@ -254,17 +255,9 @@ async def list_database_leads(
         count_statement = count_statement.where(target_date_col <= date_to)
 
     total = int(await session.scalar(count_statement) or 0)
-    # Хронологический порядок базы: сначала недавно обновленные лиды (Lead.updated_at),
-    # затем по дате регистрации в GC или создания, и tie-breaker по id.
     rows = (
         await session.execute(
-            base_statement.order_by(
-                Lead.updated_at.desc(),
-                func.coalesce(Lead.getcourse_created_at, Lead.created_at).desc(),
-                Lead.id.asc(),
-            )
-            .limit(limit)
-            .offset(offset)
+            apply_database_leads_ordering(base_statement).limit(limit).offset(offset)
         )
     ).all()
     return DatabaseLeadList(
@@ -272,6 +265,47 @@ async def list_database_leads(
         total=total,
         limit=limit,
         offset=offset,
+    )
+
+
+def apply_database_leads_ordering(
+    statement: Select[tuple[Any, ...]],
+) -> Select[tuple[Any, ...]]:
+    """Хронология базы по дате регистрации (getcourse_created_at / created_at)
+    с поднятием наверх лидов по дате последней живой заявки с сайта/лендингов.
+    Фоновый импорт CSV/XLSX и GC enrichment порядок старой базы не нарушают."""
+    last_landing_subq = (
+        select(
+            Event.lead_id.label("lead_id"),
+            func.max(Event.occurred_at).label("max_at"),
+        )
+        .where(Event.event_type == "landing.application.received")
+        .group_by(Event.lead_id)
+        .subquery()
+    )
+    last_task_subq = (
+        select(
+            LeadPostSubmitTask.lead_id.label("lead_id"),
+            func.max(LeadPostSubmitTask.created_at).label("max_at"),
+        )
+        .where(LeadPostSubmitTask.task_type == "getcourse_consultation_submission")
+        .group_by(LeadPostSubmitTask.lead_id)
+        .subquery()
+    )
+    base_reg_at = func.coalesce(Lead.getcourse_created_at, Lead.created_at)
+    effective_sort_at = func.greatest(
+        base_reg_at,
+        func.coalesce(last_landing_subq.c.max_at, base_reg_at),
+        func.coalesce(last_task_subq.c.max_at, base_reg_at),
+    )
+    return (
+        statement.outerjoin(last_landing_subq, last_landing_subq.c.lead_id == Lead.id)
+        .outerjoin(last_task_subq, last_task_subq.c.lead_id == Lead.id)
+        .order_by(
+            effective_sort_at.desc(),
+            base_reg_at.desc(),
+            Lead.id.asc(),
+        )
     )
 
 
@@ -454,13 +488,19 @@ async def get_database_lead_detail(
             for message in messages
         ],
         raw_getcourse_data=lead.raw_getcourse_data or {},
-        quiz=extract_quiz_detail(custom_fields, lead.raw_getcourse_data or {}),
+        quiz=extract_quiz_detail(
+            custom_fields,
+            lead.raw_getcourse_data or {},
+            lead_source=lead.source,
+        ),
     )
 
 
 def extract_quiz_detail(
     custom_fields: Sequence[LeadCustomField],
     raw_data: dict[str, Any],
+    *,
+    lead_source: str | None = None,
 ) -> dict[str, Any] | None:
     cf_map = {field.field_key: field.value for field in custom_fields if field.value}
     status = cf_map.get("quiz_status") or raw_data.get("quiz_status")
@@ -469,10 +509,27 @@ def extract_quiz_detail(
     goal = cf_map.get("quiz_goal") or raw_data.get("quiz_goal")
     training = cf_map.get("quiz_training") or raw_data.get("quiz_training")
 
-    if not any([status, messenger, known, goal, training]):
+    has_any_answer = any([messenger, known, goal, training])
+    has_all_answers = bool(messenger and known and goal and training)
+
+    if lead_source == "blog" and not has_any_answer:
+        return None
+    if not status and not has_any_answer:
+        return None
+    if status == "completed" and not has_any_answer:
         return None
 
-    is_completed = (status == "completed") or bool(messenger and known and goal and training)
+    if status == "draft":
+        return {
+            "status": "draft",
+            "is_completed": False,
+            "messenger": None,
+            "known": None,
+            "goal": None,
+            "training": None,
+        }
+
+    is_completed = (status == "completed") or has_all_answers
     return {
         "status": "completed" if is_completed else "draft",
         "is_completed": is_completed,
@@ -877,7 +934,11 @@ async def execute_import_file(
         try:
             if not has_import_identity(payload):
                 raise ValueError("Row must include gc_user_id, email, or phone.")
-            result = await ingest_getcourse_webhook(session, payload)
+            result = await ingest_getcourse_webhook(
+                session,
+                payload,
+                preserve_updated_at=True,
+            )
             import_row.lead_id = result.lead_id
             import_row.status = "imported"
             processed_rows += 1

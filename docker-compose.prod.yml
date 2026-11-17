@@ -2,6 +2,7 @@ name: funnelhub
 
 services:
   app:
+    image: funnelhub:latest
     build: .
     command: uvicorn funnelhub.main:app --host 0.0.0.0 --port 8000 --no-access-log
     env_file:
@@ -23,6 +24,7 @@ services:
     restart: unless-stopped
 
   telegram-bot:
+    image: funnelhub:latest
     build: .
     command: python -m funnelhub.telegram_bot
     env_file:
@@ -41,6 +43,7 @@ services:
     restart: unless-stopped
 
   most-telegram-bot:
+    image: funnelhub:latest
     build: .
     command: python -m funnelhub.most_telegram_bot
     env_file:
@@ -57,6 +60,7 @@ services:
     restart: unless-stopped
 
   most-funnel-worker:
+    image: funnelhub:latest
     build: .
     command: python -m funnelhub.most_funnel_worker
     env_file:
@@ -73,6 +77,7 @@ services:
     restart: unless-stopped
 
   most-vk-funnel-worker:
+    image: funnelhub:latest
     build: .
     command: python -m funnelhub.most_vk_funnel_worker
     env_file:
@@ -89,6 +94,7 @@ services:
     restart: unless-stopped
 
   funnel-worker:
+    image: funnelhub:latest
     build: .
     command: python -m funnelhub.funnel_worker
     env_file:

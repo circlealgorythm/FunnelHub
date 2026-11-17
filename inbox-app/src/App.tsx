@@ -393,7 +393,7 @@ type DatabaseLeadDetail = {
 };
 
 function getLeadQuiz(detail: DatabaseLeadDetail) {
-  if (detail.quiz) {
+  if (detail.quiz !== undefined) {
     return detail.quiz;
   }
   const cfMap = new Map<string, string>();
@@ -409,11 +409,30 @@ function getLeadQuiz(detail: DatabaseLeadDetail) {
   const goal = cfMap.get("quiz_goal") || (typeof raw.quiz_goal === "string" ? raw.quiz_goal : null);
   const training = cfMap.get("quiz_training") || (typeof raw.quiz_training === "string" ? raw.quiz_training : null);
 
-  if (!status && !messenger && !known && !goal && !training) {
+  const hasAnyAnswer = Boolean(messenger || known || goal || training);
+  const hasAllAnswers = Boolean(messenger && known && goal && training);
+
+  if (detail.lead.source === "blog" && !hasAnyAnswer) {
     return null;
   }
+  if (!status && !hasAnyAnswer) {
+    return null;
+  }
+  if (status === "completed" && !hasAnyAnswer) {
+    return null;
+  }
+  if (status === "draft") {
+    return {
+      status: "draft",
+      is_completed: false,
+      messenger: null,
+      known: null,
+      goal: null,
+      training: null,
+    };
+  }
 
-  const isCompleted = status === "completed" || Boolean(messenger && known && goal && training);
+  const isCompleted = status === "completed" || hasAllAnswers;
   return {
     status: isCompleted ? "completed" : "draft",
     is_completed: isCompleted,
@@ -2150,7 +2169,13 @@ function DatabaseWorkspace({
           {databaseDetailState === "loading" ? (
             <div className="detail-empty">Загружаем карточку...</div>
           ) : selectedLeadDetail ? (
-            <LeadDatabaseDetail detail={selectedLeadDetail} onSaveVkId={onSaveLeadVkId} onDeleteLead={onDeleteLead} onOpenInbox={onOpenLeadInInbox} />
+            <LeadDatabaseDetail
+              databaseSegment={databaseSegment}
+              detail={selectedLeadDetail}
+              onSaveVkId={onSaveLeadVkId}
+              onDeleteLead={onDeleteLead}
+              onOpenInbox={onOpenLeadInInbox}
+            />
           ) : (
             <div className="detail-empty">
               <DatabaseIcon aria-hidden="true" size={34} />
@@ -2165,11 +2190,13 @@ function DatabaseWorkspace({
 }
 
 function LeadDatabaseDetail({
+  databaseSegment,
   detail,
   onSaveVkId,
   onDeleteLead,
   onOpenInbox,
 }: {
+  databaseSegment: DatabaseSegment;
   detail: DatabaseLeadDetail;
   onSaveVkId: (leadId: string, vkId: string) => Promise<void>;
   onDeleteLead: (leadId: string) => Promise<void>;
@@ -2271,6 +2298,9 @@ function LeadDatabaseDetail({
 
       {(() => {
         const quiz = getLeadQuiz(detail);
+        if (databaseSegment !== "main" || (detail.lead.source === "blog" && !quiz)) {
+          return null;
+        }
         return (
           <DetailSection
             count={quiz ? (quiz.is_completed ? 4 : 1) : 0}

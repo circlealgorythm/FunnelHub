@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import secrets
+import uuid
 from typing import Annotated, Any, Literal
 
 from fastapi import (
@@ -17,6 +18,7 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from funnelhub.config import Settings, get_settings
+from funnelhub.db.models import Event
 from funnelhub.db.session import get_session
 from funnelhub.most_vk_bot import handle_most_vk_message_allow, handle_most_vk_message_new
 from funnelhub.services.bot_linking import (
@@ -39,6 +41,7 @@ from funnelhub.services.landing_applications import ingest_most_tsennostey_appli
 from funnelhub.services.lead_post_submit_tasks import (
     enqueue_getcourse_consultation_submission,
     enqueue_lead_post_submit_tasks,
+    resolve_application_is_new_lead,
 )
 from funnelhub.vk_bot import handle_vk_message_allow, handle_vk_message_new
 
@@ -199,6 +202,15 @@ async def getcourse_webhook(
 
     try:
         result = await ingest_getcourse_webhook(session, payload)
+        session.add(
+            Event(
+                id=uuid.uuid4(),
+                lead_id=result.lead_id,
+                event_type="landing.application.received",
+                source="getcourse",
+                payload={"endpoint": "webhooks/getcourse"},
+            )
+        )
         await start_default_email_funnel_for_lead(
             session=session,
             settings=settings,
@@ -340,7 +352,7 @@ async def aisu_landing_application(
             "device_gpu": application.device_gpu,
             "device_screen": application.device_screen,
             "device_cpu_cores": application.device_cpu_cores,
-            "quiz_status": application.quiz_status or "completed",
+            "quiz_status": application.quiz_status,
             "quiz_messenger": (
                 ", ".join(application.quiz_messenger)
                 if isinstance(application.quiz_messenger, list)
@@ -351,17 +363,38 @@ async def aisu_landing_application(
             "quiz_training": application.quiz_training,
         },
     )
+    session.add(
+        Event(
+            id=uuid.uuid4(),
+            lead_id=result.lead_id,
+            event_type="landing.application.received",
+            source="blog" if application.source == "blog" else "aisu",
+            payload={
+                "source": application.source or "landing-applications/aisu",
+                "quiz_status": application.quiz_status,
+            },
+        )
+    )
     await start_default_email_funnel_for_lead(
         session=session,
         settings=settings,
         lead_id=result.lead_id,
     )
     is_draft = application.quiz_status == "draft"
+    effective_created = (
+        False
+        if is_draft
+        else await resolve_application_is_new_lead(
+            session,
+            lead_id=result.lead_id,
+            created=result.created,
+        )
+    )
     await enqueue_lead_post_submit_tasks(
         session=session,
         settings=settings,
         lead_id=result.lead_id,
-        created=result.created,
+        created=effective_created,
         source=application.source or "landing-applications/aisu",
         notify_admin=not is_draft,
     )

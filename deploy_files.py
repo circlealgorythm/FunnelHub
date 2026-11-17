@@ -121,15 +121,16 @@ def main() -> None:
             sftp.close()
 
         caddy_reload = (
+            "(sudo cp -f Caddyfile /etc/caddy/Caddyfile 2>/dev/null || true) && "
             "(command -v caddy >/dev/null 2>&1 && sudo systemctl reload caddy 2>/dev/null "
             "|| caddy reload --config Caddyfile 2>/dev/null || true)"
         )
         command = (
             f"cd {REMOTE_ROOT} && "
-            "docker compose -f docker-compose.prod.yml build app funnel-worker telegram-bot "
-            "most-telegram-bot most-funnel-worker most-vk-funnel-worker && "
+            "docker compose -f docker-compose.prod.yml build app && "
             "docker compose -f docker-compose.prod.yml run --rm app alembic upgrade head && "
-            "docker compose -f docker-compose.prod.yml up -d app funnel-worker telegram-bot "
+            "docker compose -f docker-compose.prod.yml up -d --force-recreate "
+            "app funnel-worker telegram-bot "
             f"most-telegram-bot most-funnel-worker most-vk-funnel-worker && {caddy_reload}"
         )
         _, stdout, stderr = ssh.exec_command(command)

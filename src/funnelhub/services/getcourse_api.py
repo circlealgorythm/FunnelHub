@@ -80,7 +80,12 @@ async def enrich_lead_from_getcourse_api(
             reason="profile_not_found",
         )
 
-    await ingest_getcourse_webhook(session, profile, target_lead_id=lead.id)
+    await ingest_getcourse_webhook(
+        session,
+        profile,
+        target_lead_id=lead.id,
+        preserve_updated_at=True,
+    )
     return GetCourseProfileEnrichmentResult(attempted=True, updated=True)
 
 

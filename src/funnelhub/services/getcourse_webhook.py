@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 import uuid
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import select
@@ -127,6 +127,8 @@ async def ingest_getcourse_webhook(
     session: AsyncSession,
     payload: dict[str, Any],
     target_lead_id: uuid.UUID | None = None,
+    *,
+    preserve_updated_at: bool = False,
 ) -> GetCourseWebhookIngestionResult:
     normalized = normalize_getcourse_payload(payload)
     if (
@@ -154,7 +156,12 @@ async def ingest_getcourse_webhook(
         lead = Lead(id=uuid.uuid4())
         session.add(lead)
 
-    apply_payload_to_lead(lead, normalized)
+    apply_payload_to_lead(
+        lead,
+        normalized,
+        preserve_updated_at=preserve_updated_at,
+        created=created,
+    )
     if lead.device_fingerprint:
         existing_duplicate_id = await session.scalar(
             select(Lead.id).where(
@@ -187,24 +194,58 @@ async def ingest_getcourse_webhook(
     await upsert_consents(session, lead, custom_fields)
 
     if has_attribution_data(normalized):
-        session.add(
-            LeadUtm(
-                id=uuid.uuid4(),
-                lead_id=lead.id,
-                source_kind="form",
-                utm_source=normalized["utm"]["utm_source"],
-                utm_medium=normalized["utm"]["utm_medium"],
-                utm_campaign=normalized["utm_campaign"],
-                utm_term=normalized["utm_term"],
-                utm_content=normalized["utm_content"],
-                utm_group=normalized["utm_group"],
-                yclid=normalized["yclid"],
-                metrika_client_id=normalized["metrika_client_id"],
-                metrika_visit_id=normalized["metrika_visit_id"],
-                device_fingerprint=normalized.get("device_fingerprint"),
-                raw_data=normalized["raw_payload"],
-            )
+        now = datetime.now(UTC)
+        recent_utm = await session.scalar(
+            select(LeadUtm)
+            .where(LeadUtm.lead_id == lead.id, LeadUtm.created_at >= now - timedelta(minutes=30))
+            .order_by(LeadUtm.created_at.desc())
+            .limit(1)
         )
+        new_utm_signature = (
+            "form",
+            normalized["utm"]["utm_source"],
+            normalized["utm"]["utm_medium"],
+            normalized["utm_campaign"],
+            normalized["utm_term"],
+            normalized["utm_content"],
+            normalized["utm_group"],
+            normalized["yclid"],
+            normalized["metrika_client_id"],
+        )
+        if recent_utm is not None and (
+            recent_utm.source_kind,
+            recent_utm.utm_source,
+            recent_utm.utm_medium,
+            recent_utm.utm_campaign,
+            recent_utm.utm_term,
+            recent_utm.utm_content,
+            recent_utm.utm_group,
+            recent_utm.yclid,
+            recent_utm.metrika_client_id,
+        ) == new_utm_signature:
+            if normalized.get("device_fingerprint"):
+                recent_utm.device_fingerprint = normalized["device_fingerprint"]
+            recent_utm.raw_data = normalized["raw_payload"]
+            recent_utm.updated_at = now
+        else:
+            session.add(
+                LeadUtm(
+                    id=uuid.uuid4(),
+                    lead_id=lead.id,
+                    source_kind="form",
+                    utm_source=normalized["utm"]["utm_source"],
+                    utm_medium=normalized["utm"]["utm_medium"],
+                    utm_campaign=normalized["utm_campaign"],
+                    utm_term=normalized["utm_term"],
+                    utm_content=normalized["utm_content"],
+                    utm_group=normalized["utm_group"],
+                    yclid=normalized["yclid"],
+                    metrika_client_id=normalized["metrika_client_id"],
+                    metrika_visit_id=normalized["metrika_visit_id"],
+                    device_fingerprint=normalized.get("device_fingerprint"),
+                    raw_data=normalized["raw_payload"],
+                )
+            )
 
     session.add(
         Event(
@@ -339,7 +380,13 @@ async def find_existing_lead(
     return None
 
 
-def apply_payload_to_lead(lead: Lead, normalized: dict[str, Any]) -> None:
+def apply_payload_to_lead(
+    lead: Lead,
+    normalized: dict[str, Any],
+    *,
+    preserve_updated_at: bool = False,
+    created: bool = False,
+) -> None:
     now = datetime.now(UTC)
     lead.getcourse_user_id = normalized["getcourse_user_id"] or lead.getcourse_user_id
     lead.first_name = normalized["first_name"] or lead.first_name
@@ -364,7 +411,11 @@ def apply_payload_to_lead(lead: Lead, normalized: dict[str, Any]) -> None:
     if normalized.get("device_cpu_cores") is not None:
         lead.device_cpu_cores = normalized["device_cpu_cores"]
     lead.raw_getcourse_data = normalized["raw_payload"]
-    lead.updated_at = now
+    if preserve_updated_at:
+        if created:
+            lead.updated_at = normalized["getcourse_created_at"] or now
+    else:
+        lead.updated_at = now
 
 
 async def upsert_getcourse_external_id(
@@ -460,6 +511,22 @@ async def upsert_contact(
             LeadContact.normalized_value == normalized_value,
         )
     )
+    if contact is not None and contact.lead_id != lead.id:
+        return
+
+    other_primaries = (
+        await session.scalars(
+            select(LeadContact).where(
+                LeadContact.lead_id == lead.id,
+                LeadContact.contact_type == contact_type,
+                LeadContact.normalized_value != normalized_value,
+                LeadContact.is_primary.is_(True),
+            )
+        )
+    ).all()
+    for other in other_primaries:
+        other.is_primary = False
+
     if contact is None:
         session.add(
             LeadContact(
@@ -473,9 +540,8 @@ async def upsert_contact(
         )
         return
 
-    if contact.lead_id == lead.id:
-        contact.value = value
-        contact.is_primary = True
+    contact.value = value
+    contact.is_primary = True
 
 
 async def upsert_email_subscription(
@@ -518,6 +584,7 @@ async def upsert_custom_fields(
     lead: Lead,
     normalized: dict[str, Any],
 ) -> dict[str, LeadCustomField]:
+    now = datetime.now(UTC)
     custom_fields = {}
     for field_key, value in normalized["custom_fields"].items():
         custom_field = await session.scalar(
@@ -527,6 +594,16 @@ async def upsert_custom_fields(
                 LeadCustomField.field_key == field_key,
             )
         )
+        if (
+            field_key == "quiz_status"
+            and value == "draft"
+            and custom_field is not None
+            and custom_field.value == "completed"
+            and custom_field.updated_at is not None
+            and (now - custom_field.updated_at) < timedelta(minutes=10)
+        ):
+            custom_fields[field_key] = custom_field
+            continue
         raw_data = {"field_key": field_key, "value": value}
         field_label = human_custom_field_label(field_key)
         if custom_field is None:
@@ -539,6 +616,7 @@ async def upsert_custom_fields(
                 value=value,
                 normalized_bool=normalize_bool(value),
                 raw_data=raw_data,
+                updated_at=now,
             )
             session.add(custom_field)
         else:
@@ -546,6 +624,7 @@ async def upsert_custom_fields(
             custom_field.value = value
             custom_field.normalized_bool = normalize_bool(value)
             custom_field.raw_data = raw_data
+            custom_field.updated_at = now
         custom_fields[field_key] = custom_field
 
     return custom_fields

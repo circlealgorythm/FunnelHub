@@ -32,5 +32,8 @@ bot.aisukam.ru {
 	}
 
 	# Проксирование входящих запросов в сервис FunnelHub FastAPI
-	reverse_proxy 127.0.0.1:8000
+	reverse_proxy 127.0.0.1:8000 {
+		lb_try_duration 10s
+		lb_try_interval 250ms
+	}
 }

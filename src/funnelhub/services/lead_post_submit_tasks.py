@@ -10,12 +10,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from funnelhub.config import Settings
-from funnelhub.db.models import LeadPostSubmitTask
+from funnelhub.db.models import Lead, LeadPostSubmitTask
 from funnelhub.services.email_messaging import EmailProviderClient
 from funnelhub.services.getcourse_api import (
     GetCourseConsultationFormClient,
     enrich_lead_from_getcourse_api,
 )
+from funnelhub.services.getcourse_webhook import normalize_email, normalize_phone
 from funnelhub.services.lead_notifications import (
     send_lead_application_notification,
     send_lead_tag_notification,
@@ -27,6 +28,7 @@ TASK_GETCOURSE_PROFILE_ENRICHMENT = "getcourse_profile_enrichment"
 TASK_GETCOURSE_CONSULTATION_SUBMISSION = "getcourse_consultation_submission"
 TASK_LEAD_APPLICATION_NOTIFICATION = "lead_application_notification"
 TASK_LEAD_TAG_NOTIFICATION = "lead_tag_notification"
+CONSULTATION_SUBMISSION_DEDUPE_WINDOW = timedelta(minutes=30)
 
 
 @dataclass(frozen=True)
@@ -63,6 +65,43 @@ async def enqueue_lead_post_submit_tasks(
         )
 
 
+def _consultation_contact_signature(name: str, phone: str, email: str) -> tuple[str, str, str]:
+    return (
+        name.strip().casefold(),
+        normalize_phone(phone) or phone.strip(),
+        normalize_email(email) or email.strip().casefold(),
+    )
+
+
+async def resolve_application_is_new_lead(
+    session: AsyncSession,
+    *,
+    lead_id: uuid.UUID,
+    created: bool,
+) -> bool:
+    if created:
+        return True
+    lead = await session.get(Lead, lead_id)
+    if lead is None:
+        return False
+    now = datetime.now(UTC)
+    if (now - lead.created_at) > timedelta(hours=1):
+        return False
+    if lead.getcourse_created_at is not None and (
+        lead.getcourse_created_at < lead.created_at - timedelta(hours=1)
+    ):
+        return False
+    existing_notification = await session.scalar(
+        select(LeadPostSubmitTask.id)
+        .where(
+            LeadPostSubmitTask.lead_id == lead_id,
+            LeadPostSubmitTask.task_type == TASK_LEAD_APPLICATION_NOTIFICATION,
+        )
+        .limit(1)
+    )
+    return existing_notification is None
+
+
 async def enqueue_getcourse_consultation_submission(
     *,
     session: AsyncSession,
@@ -71,6 +110,33 @@ async def enqueue_getcourse_consultation_submission(
     phone: str,
     email: str,
 ) -> None:
+    now = datetime.now(UTC)
+    recent_task = await session.scalar(
+        select(LeadPostSubmitTask)
+        .where(
+            LeadPostSubmitTask.lead_id == lead_id,
+            LeadPostSubmitTask.task_type == TASK_GETCOURSE_CONSULTATION_SUBMISSION,
+            LeadPostSubmitTask.created_at >= now - CONSULTATION_SUBMISSION_DEDUPE_WINDOW,
+            LeadPostSubmitTask.status.in_(["pending", "processing", "completed"]),
+        )
+        .order_by(LeadPostSubmitTask.created_at.desc())
+        .limit(1)
+    )
+    if recent_task is not None:
+        existing_payload = recent_task.payload or {}
+        existing_sig = _consultation_contact_signature(
+            str(existing_payload.get("name") or ""),
+            str(existing_payload.get("phone") or ""),
+            str(existing_payload.get("email") or ""),
+        )
+        current_sig = _consultation_contact_signature(name, phone, email)
+        if existing_sig == current_sig:
+            return
+        if recent_task.status == "pending":
+            recent_task.payload = {"name": name, "phone": phone, "email": email}
+            await session.flush()
+            return
+
     await enqueue_lead_post_submit_task(
         session=session,
         lead_id=lead_id,

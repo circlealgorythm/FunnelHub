@@ -15,6 +15,12 @@
 ## Status
 
 ### What's Done
+- [x] **Сессия 2026-11-18: изоляция Блога от анкеты, дедупликация Шаг 1 → Шаг 2, сортировка базы `GREATEST`, уведомления и оптимизация Docker/Caddy:**
+  1. **Изоляция заявок из Блога (`webhooks.py`, `inbox_database.py`, `inbox-app/src/App.tsx`):** убрана подстановка `or "completed"` по умолчанию для `quiz_status`; в `extract_quiz_detail` добавлена проверка `lead_source` и защита от старых ответов при `draft` или пустом `completed`; секция «Анкета консультации» скрыта на вкладках «Блог»/«Мост ценностей» и у лидов из Блога без анкеты (`inbox-app/dist` пересобран).
+  2. **Дедупликация Шаг 1 → Шаг 2 (`lead_post_submit_tasks.py`, `getcourse_webhook.py`):** в `enqueue_getcourse_consultation_submission` добавлена проверка 30-минутного окна по нормализованной сигнатуре контактов (отправка черновика в GetCourse на Шаге 1 сохранена, повтор на Шаге 2 с теми же контактами исключён, смена контактов в `pending`-задаче обновляет `payload`); добавлены дедупликация `LeadUtm`, сброс `is_primary` предыдущих контактов и защита от перезаписи `completed` запоздавшим `draft`.
+  3. **Хронологическая сортировка без поломки импортов (`inbox_database.py`, `getcourse_api.py`, `webhooks.py`, `messenger.py`):** внедрена `apply_database_leads_ordering` через `func.greatest(coalesce(getcourse_created_at, created_at), max(landing.application.received), max(getcourse_consultation_submission))`; передано `preserve_updated_at=True` для enrichment и импорта CSV/XLSX; добавлена запись `landing.application.received` на живых точках приёма.
+  4. **Уведомления (`lead_post_submit_tasks.py`, `lead_notifications.py`):** добавлена `resolve_application_is_new_lead` для корректной темы «Новая заявка» на Шаге 2 и вывод 4 ответов анкеты + фоллбэк поля `Форма` в тексте письма.
+  5. **Docker/Caddy (`Dockerfile`, `docker-compose.prod.yml`, `Caddyfile`, `deploy_files.py`):** вынесен кэшируемый слой зависимостей, настроен единый образ `funnelhub:latest`, в `Caddyfile` добавлен `lb_try_duration 10s` / `lb_try_interval 250ms` против 502 на рестарте; добавлены 5 unit-тестов в `tests/test_blog_segmentation.py`.
 - [x] **Сессия 2026-11-16: бэкенд анкеты консультации, админка Inbox (секция №1) и баннер на странице «Спасибо»:**
   1. **Бэкенд FunnelHub (`src/funnelhub`):**
      - В `api/webhooks.py` (`AisuLandingApplicationRequest`) и `services/getcourse_webhook.py` добавлена поддержка полей анкеты (`quiz_status`, `quiz_messenger`, `quiz_known`, `quiz_goal`, `quiz_training`).
@@ -332,3 +338,5 @@
 - **2026-11-16 19:23** | feat(funnel-hub): consultation quiz backend, join banner, inbox-app quiz section #1
 
 - **2026-11-16 19:53** | fix(inbox): sort database leads by updated_at desc to bump repeat applications to top
+
+- **2026-11-18 01:05** | fix(funnel-hub): blog quiz isolation, step1-2 dedupe, greatest ordering, email quiz answers and docker layer cache
